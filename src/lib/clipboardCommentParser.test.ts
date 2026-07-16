@@ -1,0 +1,149 @@
+import { describe, expect, it } from 'vitest';
+
+import { extractNaverCafeCommentAuthors } from './clipboardCommentParser';
+
+describe('extractNaverCafeCommentAuthors', () => {
+  it('keeps only writers from a comment JSON response and marks replies', () => {
+    const input = JSON.stringify({
+      result: {
+        comments: {
+          items: [
+            {
+              commentId: 'c-1',
+              writer: { memberId: 'member-1', nick: '말랑콩' },
+              replies: [
+                {
+                  commentId: 'c-2',
+                  writer: { memberId: 'member-2', nickname: '구름냥' },
+                },
+              ],
+            },
+            {
+              commentId: 'c-3',
+              writer: { memberId: 'member-1', nick: '말랑콩' },
+            },
+          ],
+        },
+      },
+      writer: { memberId: 'post-writer', nick: '본문작성자' },
+    });
+
+    expect(extractNaverCafeCommentAuthors(input)).toEqual([
+      { id: 'member-1', nick: '말랑콩', reply: false },
+      { id: 'member-2', nick: '구름냥', reply: true },
+    ]);
+  });
+
+  it('reads obvious comment nickname attributes from pasted HTML', () => {
+    const html = `
+      <article><span data-nickname="본문작성자">본문작성자</span></article>
+      <section class="comment-area">
+        <span data-member-id="m-1" data-nickname="딸기우유">딸기우유</span>
+        <span class="comment-writer">민트초코</span>
+      </section>
+    `;
+
+    expect(extractNaverCafeCommentAuthors(html)).toEqual([
+      { id: 'm-1', nick: '딸기우유', reply: false },
+      { id: 'clipboard-2', nick: '민트초코', reply: false },
+    ]);
+  });
+
+  it('uses name-before-time records from Ctrl+A copied page text', () => {
+    const copied = `
+      게시글 제목
+      댓글 3
+      말랑콩
+      2026. 07. 17. 12:34
+      첫 댓글입니다
+      구름냥 오후 1:02
+      답글쓰기
+      딸기우유
+      3분 전
+      반가워요
+    `;
+
+    expect(extractNaverCafeCommentAuthors(copied)).toEqual([
+      { id: 'clipboard-4', nick: '말랑콩', reply: false },
+      { id: 'clipboard-6', nick: '구름냥', reply: false },
+      { id: 'clipboard-9', nick: '딸기우유', reply: false },
+    ]);
+  });
+
+  it('keeps only chronological parent comments from the copied Naver comment layout', () => {
+    const profilePhoto = '\uD504\uB85C\uD544 \uC0AC\uC9C4';
+    const copied = [
+      `${profilePhoto}\uC778\uAE30\uBA64\uBC84`,
+      'Host',
+      '\uB313\uAE00 9',
+      profilePhoto,
+      'Player A',
+      'gift please',
+      '2026.07.16. 21:56',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      profilePhoto,
+      'Reply Agent',
+      '1',
+      '2026.07.16. 23:19',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      profilePhoto,
+      'Player B',
+      'gift please',
+      '2026.07.16. 21:57',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      profilePhoto,
+      'Reply Agent',
+      '2',
+      '2026.07.16. 23:20',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      profilePhoto,
+      'Player C',
+      'gift please',
+      '2026.07.16. 21:58',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      profilePhoto,
+      'Reply Agent',
+      '3',
+      '2026.07.16. 23:21',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      profilePhoto,
+      'Player D',
+      'gift please',
+      '2026.07.16. 21:59',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      profilePhoto,
+      'Reply Agent',
+      '4',
+      '2026.07.16. 23:22',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      profilePhoto,
+      'Host',
+      'sorry',
+      '2026.07.16. 23:23',
+      '\uB2F5\uAE00\uC4F0\uAE30',
+      '\uB313\uAE00\uC744 \uC785\uB825\uD558\uC138\uC694',
+    ].join('\n');
+
+    expect(extractNaverCafeCommentAuthors(copied)).toEqual([
+      { id: 'clipboard-3', nick: 'Player A', reply: false },
+      { id: 'clipboard-13', nick: 'Player B', reply: false },
+      { id: 'clipboard-23', nick: 'Player C', reply: false },
+      { id: 'clipboard-33', nick: 'Player D', reply: false },
+    ]);
+
+    expect(extractNaverCafeCommentAuthors(copied, {
+      before: '2026-07-16T21:57',
+      limit: 1,
+    })).toEqual([
+      { id: 'clipboard-3', nick: 'Player A', reply: false },
+    ]);
+  });
+
+  it('recognizes the relative-time phrase for a simple copied record', () => {
+    const copied = '\uB313\uAE00 1\nMint\n\uBC29\uAE08 \uC804';
+
+    expect(extractNaverCafeCommentAuthors(copied)).toEqual([
+      { id: 'clipboard-2', nick: 'Mint', reply: false },
+    ]);
+  });
+});

@@ -214,8 +214,7 @@ export default function RouletteWheel({
 
                 {participantCount === 0 && (
                   <g className="roulette-wheel__empty-copy">
-                    <text y="-16" textAnchor="middle">댓글을 불러오면</text>
-                    <text y="24" textAnchor="middle">룰렛이 완성돼요!</text>
+                    <text y="4" textAnchor="middle">참여자 없음</text>
                   </g>
                 )}
               </g>

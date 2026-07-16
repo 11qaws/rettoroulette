@@ -221,12 +221,12 @@ export default function MarbleRace({
     <section className={rootClassName} aria-label="Retto 마블 레이스">
       <div className="marble-race__header">
         <div>
-          <p className="marble-race__eyebrow">RETTO SPECIAL MODE</p>
-          <h2 className="marble-race__title">마블 대시 룰렛</h2>
+          <p className="marble-race__eyebrow">마블 추첨</p>
+          <h2 className="marble-race__title">마블 레이스</h2>
         </div>
         <div className="marble-race__badge" aria-hidden="true">
           <span className="marble-race__badge-dot" />
-          {racing ? '달리는 중!' : validWinner ? '우승 마블!' : '출발 대기'}
+          {racing ? '추첨 중' : validWinner ? '당첨' : '대기'}
         </div>
       </div>
 
@@ -261,9 +261,9 @@ export default function MarbleRace({
           <g aria-hidden="true">
             <path className="marble-race__start-line" d="M 115 130 V 490" />
             <path className="marble-race__start-flag" d="M 83 132 H 141 L 128 163 H 83 Z" />
-            <text className="marble-race__start-copy" x="112" y="110" textAnchor="middle">START!</text>
+            <text className="marble-race__start-copy" x="112" y="110" textAnchor="middle">출발</text>
             <path className="marble-race__finish-post" d="M 881 121 V 498" />
-            <text className="marble-race__finish-copy" x="866" y="107" textAnchor="middle">FINISH</text>
+            <text className="marble-race__finish-copy" x="866" y="107" textAnchor="middle">도착</text>
             {CHECKERS.map((checker) => (
               <rect
                 key={`${checker.x}-${checker.y}`}
@@ -342,30 +342,28 @@ export default function MarbleRace({
 
           {participants.length === 0 && (
             <g className="marble-race__empty-copy">
-              <text x="500" y="278" textAnchor="middle">댓글 마블을 불러오면</text>
-              <text x="500" y="326" textAnchor="middle">여기서 신나게 달려요!</text>
-              <text x="500" y="372" textAnchor="middle">● ● ●</text>
+              <text x="500" y="308" textAnchor="middle">참여자가 없습니다.</text>
             </g>
           )}
         </svg>
 
         {hiddenCount > 0 && (
           <p className="marble-race__overflow" aria-label={`총 ${hiddenCount}명의 추가 참가자`}>
-            +{hiddenCount}명의 마블도 같이 달리는 중
+            +{hiddenCount}명 포함
           </p>
         )}
       </div>
 
       <div className="marble-race__footer">
-        <span className="marble-race__count">● {participants.length.toLocaleString('ko-KR')} MARBLES</span>
+        <span className="marble-race__count">참여자 {participants.length.toLocaleString('ko-KR')}명</span>
         <span className="marble-race__status" aria-live="polite">
           {racing
-            ? '마블들이 결승선을 향해 질주 중이에요!'
+            ? '추첨 중'
             : validWinner
-              ? `오늘의 행운 마블은 ${winnerName}님!`
+              ? `당첨: ${winnerName}`
               : participants.length > 0
-                ? '버튼을 누르면 마블 대시가 시작돼요.'
-                : '네이버 카페 댓글을 불러와 주세요.'}
+                ? '추첨 대기'
+                : '참여자 없음'}
         </span>
       </div>
     </section>

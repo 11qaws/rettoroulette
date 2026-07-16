@@ -3,12 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MarbleRace from './components/MarbleRace';
 import RouletteWheel from './components/RouletteWheel';
 import { demoParticipants, demoPrizes } from './data/demo';
+import { extractNaverCafeCommentAuthors } from './lib/clipboardCommentParser';
 import { pickWeightedIndex, sampleWithoutReplacement } from './lib/draw';
 import {
-  buildCollectorBookmarklet,
   parseImportHash,
   parseNaverCafeArticle,
 } from './lib/naverCollector';
+import { importPublicCafeAuthors, PublicCafeImportError } from './lib/publicCafeImport';
 import type { NaverCafeImport } from './lib/naverCollector';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize } from './types';
 
@@ -19,6 +20,8 @@ type DrawOption = {
   name: string;
   weight: number;
 };
+
+type ImportStatus = 'idle' | 'checking' | 'loading' | 'complete' | 'error';
 
 const DEFAULT_CAFE_URL =
   'https://cafe.naver.com/f-e/cafes/31662960/articles/1105?boardtype=L&referrerAllArticles=true';
@@ -64,6 +67,16 @@ function makeParticipants(names: string[]): Participant[] {
   }));
 }
 
+function importErrorMessage(error: unknown) {
+  if (error instanceof PublicCafeImportError) {
+    if (error.code === 'ARTICLE_NOT_PUBLIC' || error.code === 'ACCESS_DENIED') {
+      return '이 글은 공개 댓글이 아니어서 자동으로 가져올 수 없어요.';
+    }
+    return error.message;
+  }
+  return '댓글 작성자를 가져오지 못했어요.';
+}
+
 function App() {
   const [drawMode, setDrawMode] = useState<DrawMode>('wheel');
   const [drawTarget, setDrawTarget] = useState<DrawTarget>('people');
@@ -85,26 +98,19 @@ function App() {
   const [drawTargetSnapshot, setDrawTargetSnapshot] = useState<DrawTarget>('people');
   const [latestResult, setLatestResult] = useState<DrawRecord | null>(null);
   const [history, setHistory] = useState<DrawRecord[]>([]);
-  const [showImporter, setShowImporter] = useState(false);
   const [manualNames, setManualNames] = useState('');
   const [articleUrl, setArticleUrl] = useState(DEFAULT_CAFE_URL);
-  const [includeReplies, setIncludeReplies] = useState(false);
+  const [clipboardLimit, setClipboardLimit] = useState(0);
+  const [clipboardBefore, setClipboardBefore] = useState('');
+  const [importStatus, setImportStatus] = useState<ImportStatus>('idle');
+  const [importStatusMessage, setImportStatusMessage] = useState('URL을 붙여넣으면 자동으로 가져옵니다.');
   const [toast, setToast] = useState<string | null>(null);
-  const collectorLinkRef = useRef<HTMLAnchorElement>(null);
+  const autoImportRequestRef = useRef(0);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 3200);
   }, []);
-
-  const collectorHref = useMemo(() => {
-    const appUrl = new URL(import.meta.env.BASE_URL, window.location.origin).toString();
-    return buildCollectorBookmarklet(appUrl);
-  }, []);
-
-  useEffect(() => {
-    collectorLinkRef.current?.setAttribute('href', collectorHref);
-  }, [collectorHref, showImporter]);
 
   useEffect(() => {
     try {
@@ -126,7 +132,7 @@ function App() {
     const byNickname = new Map<string, Participant>();
 
     for (const candidate of payload.candidates) {
-      if (!includeReplies && candidate.reply) continue;
+      if (candidate.reply) continue;
 
       const normalizedName = candidate.nick.replace(/\s+/g, ' ').trim();
       const nameKey = normalizedName.toLocaleLowerCase('ko-KR');
@@ -147,7 +153,7 @@ function App() {
 
     const imported = [...byNickname.values()];
     if (imported.length === 0) {
-      showToast('가져올 댓글 참여자가 없어요. 답글 포함 설정을 확인해 주세요.');
+      showToast('가져올 원댓글 작성자가 없어요.');
       return;
     }
 
@@ -157,9 +163,8 @@ function App() {
     setPoolLimit(0);
     setWinnerIndex(null);
     setPresentedOptions([]);
-    setShowImporter(false);
     showToast(`${imported.length}명의 카페 댓글 참여자를 담았어요!`);
-  }, [includeReplies, showToast]);
+  }, [showToast]);
 
   useEffect(() => {
     const imported = parseImportHash(window.location.hash);
@@ -169,16 +174,45 @@ function App() {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   }, [acceptNaverImport]);
 
-  useEffect(() => {
-    const onMessage = (event: MessageEvent<unknown>) => {
-      if (event.origin !== 'https://cafe.naver.com') return;
-      const imported = parseImportHash(`#import=${encodeURIComponent(JSON.stringify(event.data))}`);
-      if (imported) acceptNaverImport(imported);
-    };
+  const updateArticleUrl = (value: string) => {
+    autoImportRequestRef.current += 1;
+    setArticleUrl(value);
+    setImportStatus('checking');
+    setImportStatusMessage('게시글 주소를 확인하고 있어요.');
+  };
 
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [acceptNaverImport]);
+  useEffect(() => {
+    const requestId = autoImportRequestRef.current;
+    if (requestId === 0) return;
+
+    if (!parseNaverCafeArticle(articleUrl)) {
+      setImportStatus('error');
+      setImportStatusMessage('네이버 카페 게시글 주소를 확인해 주세요.');
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setImportStatus('loading');
+      setImportStatusMessage('댓글 작성자를 가져오고 있어요.');
+
+      void importPublicCafeAuthors(articleUrl)
+        .then((payload) => {
+          if (requestId !== autoImportRequestRef.current) return;
+          setImportStatus('complete');
+          setImportStatusMessage(`${payload.candidates.length}개의 댓글 작성자를 확인했어요.`);
+          acceptNaverImport(payload);
+        })
+        .catch((error: unknown) => {
+          if (requestId !== autoImportRequestRef.current) return;
+          setImportStatus('error');
+          setImportStatusMessage(importErrorMessage(error));
+        });
+    }, 550);
+
+    return () => window.clearTimeout(timer);
+    // The fetch must run only for a newly pasted or typed URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [articleUrl]);
 
   const eligibleParticipants = useMemo(
     () => participants.filter((participant) => !excludedParticipantIds.includes(participant.id)),
@@ -337,18 +371,37 @@ function App() {
     showToast('새 방송 세션을 준비했어요. 참여자는 그대로 보관됩니다.');
   };
 
-  const importManualNames = () => {
-    const possibleJson = manualNames.trim().startsWith('{')
-      ? parseImportHash(`#import=${encodeURIComponent(manualNames.trim())}`)
+  const importManualNames = (value = manualNames) => {
+    const possibleJson = value.trim().startsWith('{')
+      ? parseImportHash(`#import=${encodeURIComponent(value.trim())}`)
       : null;
 
     if (possibleJson) {
       acceptNaverImport(possibleJson);
+      setManualNames('');
       return;
     }
 
-    const names = parseManualNames(manualNames);
-    const imported = makeParticipants(names);
+    const extractedAuthors = extractNaverCafeCommentAuthors(value, {
+      limit: clipboardLimit,
+      before: clipboardBefore,
+    });
+    if (extractedAuthors.length > 0) {
+      const article = parseNaverCafeArticle(articleUrl);
+      acceptNaverImport({
+        version: 1,
+        source: 'naver-cafe',
+        cafeId: article?.cafeId ?? '0',
+        articleId: article?.articleId ?? '0',
+        collectedAt: new Date().toISOString(),
+        candidates: extractedAuthors,
+      });
+      setManualNames('');
+      return;
+    }
+
+    const names = parseManualNames(value);
+    const imported = makeParticipants(clipboardLimit > 0 ? names.slice(0, clipboardLimit) : names);
 
     if (imported.length === 0) {
       showToast('가져올 닉네임을 찾지 못했어요. 한 줄에 한 명씩 붙여 넣어 주세요.');
@@ -360,8 +413,7 @@ function App() {
     setPoolIds([]);
     setPoolLimit(0);
     setManualNames('');
-    setShowImporter(false);
-    showToast(`${imported.length}명의 참여자를 담았어요. 룰렛 준비 완료!`);
+    showToast(`${imported.length}명의 참여자를 담았어요.`);
   };
 
   const updateParticipantWeight = (id: string, weight: number) => {
@@ -417,74 +469,130 @@ function App() {
     showToast('당첨 기록을 비웠어요.');
   };
 
-  const candidateLabel = drawTarget === 'people' ? '참여자' : '상품';
-  const articleInfo = useMemo(() => parseNaverCafeArticle(articleUrl), [articleUrl]);
+  const copyAuthorList = async () => {
+    const numbered = participants.map((participant, index) => `${index + 1}. ${participant.name}`).join('\n');
+    if (!numbered) {
+      showToast('복사할 작성자가 없어요.');
+      return;
+    }
 
-  const copyCollector = async () => {
     try {
-      await navigator.clipboard.writeText(collectorHref);
-      showToast('수집 도우미 코드를 복사했어요. 북마크 URL에 붙여넣어도 됩니다.');
+      await navigator.clipboard.writeText(numbered);
+      showToast(`${participants.length}명의 작성자 목록을 복사했어요.`);
     } catch {
-      showToast('복사 권한을 허용한 뒤 다시 시도해 주세요.');
+      showToast('클립보드 권한을 허용한 뒤 다시 시도해 주세요.');
     }
   };
+
+  const candidateLabel = drawTarget === 'people' ? '참여자' : '상품';
   const drawButtonLabel =
     pendingDraws > 0 || spinning
       ? '추첨 진행 중…'
       : drawMode === 'wheel'
-        ? `${winnerCount}명 룰렛 돌리기 ✦`
-        : `${winnerCount}명 마블 굴리기 ●`;
+        ? `${winnerCount}명 추첨하기`
+        : `${winnerCount}명 마블 추첨하기`;
 
   return (
     <main className="app-shell">
       <header className="brand-header">
         <a className="brand" href="./" aria-label="Retto Roulette 홈">
-          <span className="brand__mark" aria-hidden="true">R</span>
+          <span className="brand__mark" aria-hidden="true">🍸 💝</span>
           <span>
             <strong>Retto Roulette</strong>
-            <small>댓글이 선물이 되는 순간</small>
           </span>
         </a>
         <div className="header-actions">
-          <span className="header-pill">STREAMER GIFT DRAW</span>
+          <span className="header-pill">참여자 {eligibleParticipants.length}명</span>
           <button className="ghost-button" type="button" onClick={resetSession}>
-            새 방송
+            새 추첨
           </button>
         </div>
       </header>
 
-      <section className="hero-strip" aria-labelledby="hero-title">
-        <div>
-          <p className="eyebrow">COMMENT → CONFETTI → GIFT</p>
-          <h1 id="hero-title">오늘의 행운, 레또가 쏜다!</h1>
-          <p>
-            네이버 카페 댓글을 가져와 사람도, 상품도, 굴러가는 마블도 귀엽게 뽑아보세요.
-          </p>
-        </div>
-        <div className="hero-strip__mascot" aria-hidden="true">🎀</div>
-      </section>
-
       <div className="dashboard-grid">
         <aside className="control-panel" aria-label="추첨 설정">
           <div className="panel-title-row">
-            <h2>방송 부스 설정</h2>
-            <span className="panel-kicker">빠르게, 귀엽게</span>
+            <h2>추첨 설정</h2>
+            <span className="panel-kicker">댓글 → 추첨</span>
           </div>
 
           <section className="import-card" aria-labelledby="import-title">
             <h3 className="import-card__title" id="import-title">네이버 카페 댓글 가져오기</h3>
-            <p className="import-card__hint">카페 글에서 수집 도우미를 한 번 누르면 닉네임이 바로 들어와요.</p>
+            <p className="import-card__hint">게시글 주소를 붙여넣고 댓글 작성자 목록을 가져옵니다.</p>
             <div className="url-row">
               <input
                 className="text-field"
                 value={articleUrl}
-                onChange={(event) => setArticleUrl(event.target.value)}
+                onChange={(event) => updateArticleUrl(event.target.value)}
                 aria-label="네이버 카페 글 주소"
               />
-              <button className="compact-button" type="button" onClick={() => setShowImporter(true)}>
-                댓글 수집하기
+            </div>
+            <p className={`import-status import-status--${importStatus}`} role="status">
+              {importStatusMessage}
+            </p>
+          </section>
+
+          <section className="clipboard-import-card" aria-labelledby="clipboard-import-title">
+            <h3 id="clipboard-import-title">페이지 붙여넣기</h3>
+            <textarea
+              className="textarea-field"
+              value={manualNames}
+              onChange={(event) => setManualNames(event.target.value)}
+              onPaste={(event) => {
+                const pasted = event.clipboardData.getData('text');
+                if (!pasted) return;
+                event.preventDefault();
+                setManualNames(pasted);
+                window.setTimeout(() => importManualNames(pasted), 0);
+              }}
+              aria-label="카페 글에서 복사한 페이지 내용"
+              placeholder="카페 글에서 Ctrl+A → Ctrl+C 후 여기에 Ctrl+V"
+            />
+            <div className="clipboard-import-options" aria-label="댓글 가져오기 범위">
+              <label>
+                <span>앞에서 N명</span>
+                <input
+                  className="number-field"
+                  type="number"
+                  min="0"
+                  value={clipboardLimit}
+                  onChange={(event) => setClipboardLimit(Math.max(0, Number(event.target.value) || 0))}
+                  aria-label="가져올 댓글 작성자 수"
+                />
+                <small>0이면 전부</small>
+              </label>
+              <label>
+                <span>이 시간까지</span>
+                <input
+                  className="text-field"
+                  type="datetime-local"
+                  value={clipboardBefore}
+                  onChange={(event) => setClipboardBefore(event.target.value)}
+                  aria-label="댓글 마감 시간"
+                />
+              </label>
+            </div>
+            <div className="clipboard-import-card__footer">
+              <span>대댓글 제외 · 시간순 번호 정렬</span>
+              <button className="compact-button" type="button" onClick={() => importManualNames()}>
+                작성자 추출
               </button>
             </div>
+          </section>
+
+          <section className="author-list-card" aria-labelledby="author-list-title">
+            <div className="panel-title-row">
+              <h3 id="author-list-title">댓글 작성자</h3>
+              <button className="compact-button" type="button" onClick={copyAuthorList}>
+                목록 복사
+              </button>
+            </div>
+            <ol className="author-list">
+              {participants.slice(0, 100).map((participant) => (
+                <li key={participant.id}>{participant.name}</li>
+              ))}
+            </ol>
+            {participants.length > 100 && <p className="input-help">목록 복사에는 전체 {participants.length}명이 포함됩니다.</p>}
           </section>
 
           <div className="draw-mode-tabs" aria-label="추첨 연출 모드">
@@ -496,7 +604,7 @@ function App() {
               onClick={() => setDrawMode('wheel')}
             >
               룰렛
-              <small>팡! 하고 멈추는</small>
+              <small>회전 추첨</small>
             </button>
             <button
               className="draw-mode-button"
@@ -506,12 +614,12 @@ function App() {
               onClick={() => setDrawMode('marble')}
             >
               마블 레이스
-              <small>구슬이 먼저 골인!</small>
+              <small>레이스 추첨</small>
             </button>
           </div>
 
           <div className="settings-heading">
-            <h2>무엇을 뽑을까요?</h2>
+            <h2>추첨 대상</h2>
           </div>
           <div className="target-tabs" aria-label="추첨 대상">
             <button
@@ -544,7 +652,7 @@ function App() {
 
           <div className="settings-heading">
             <h2>이번 라운드</h2>
-            <span className="panel-kicker">전체 중 원하는 만큼</span>
+            <span className="panel-kicker">전체 중 선택</span>
           </div>
           <div className="settings-grid">
             <section className="setting-card">
@@ -706,10 +814,10 @@ function App() {
           <div className="stage-heading">
             <div className="stage-title-row">
               <h2 id="stage-title">
-                {drawTarget === 'people' ? '누가 행운의 주인공?' : '어떤 선물이 주인공?'}
+                {drawTarget === 'people' ? '참여자 추첨' : '상품 추첨'}
               </h2>
               <span className="mode-chip">
-                {drawMode === 'wheel' ? '✦ 룰렛' : '● 마블'} · {useWeights ? '가중 추첨' : '공정 추첨'}
+                {drawMode === 'wheel' ? '룰렛' : '마블'} · {useWeights ? '가중' : '동일 확률'}
               </span>
             </div>
             <p className="stage-subtitle">
@@ -739,18 +847,18 @@ function App() {
 
           <div className="result-ribbon" aria-live="polite">
             <div>
-              <span className="result-ribbon__label">{latestResult ? '방금 당첨' : 'READY TO SPIN'}</span>
+              <span className="result-ribbon__label">{latestResult ? '방금 당첨' : '추첨 대기'}</span>
               <strong>
                 {latestResult
                   ? latestResult.target === 'prizes' && latestResult.recipient
                     ? `${latestResult.recipient}님 · ${latestResult.winner}`
                     : latestResult.winner
                   : drawTarget === 'people'
-                    ? '참여자들의 심장이 두근두근'
-                    : '선물 상자가 기다려요'}
+                    ? '추첨 버튼을 누르세요.'
+                    : '상품을 선택해 주세요.'}
               </strong>
             </div>
-            <span className="result-ribbon__emoji" aria-hidden="true">{latestResult ? '🎉' : '🍀'}</span>
+            <span className="result-ribbon__emoji" aria-hidden="true">{latestResult ? '💝' : '🍸'}</span>
           </div>
 
           <div className="stage-action">
@@ -768,7 +876,6 @@ function App() {
         <section className="history-panel" aria-labelledby="history-title">
           <div className="history-header">
             <div>
-              <p className="eyebrow">SAVED WINNERS</p>
               <h2 id="history-title">당첨 기록</h2>
             </div>
             <div className="header-actions">
@@ -791,80 +898,10 @@ function App() {
               ))}
             </div>
           ) : (
-            <p className="history-empty">첫 번째 행운의 주인공을 기다리고 있어요. ✦</p>
+            <p className="history-empty">당첨 기록이 없습니다.</p>
           )}
         </section>
       </div>
-
-      {showImporter && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowImporter(false)}>
-          <section
-            className="import-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="import-modal-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <div>
-                <p className="eyebrow">NAVER CAFE COMMENT HELPER</p>
-                <h2 id="import-modal-title">댓글 닉네임을 가져와요</h2>
-              </div>
-              <button className="icon-button" type="button" aria-label="닫기" onClick={() => setShowImporter(false)}>×</button>
-            </div>
-            <ol className="helper-steps">
-              <li>아래 수집 버튼을 북마크바에 끌어다 놓습니다.</li>
-              <li>네이버 카페 글을 열고, 북마크바의 버튼을 한 번 누릅니다.</li>
-              <li>로그인된 카페 댓글 닉네임만 이 룰렛으로 가져옵니다.</li>
-            </ol>
-            <div className="bookmarklet-row">
-              <a
-                className="bookmarklet"
-                href="#bookmarklet"
-                ref={collectorLinkRef}
-                onClick={(event) => event.preventDefault()}
-                draggable
-              >
-                🍓 Retto 댓글수집기
-              </a>
-              <button className="compact-button" type="button" onClick={copyCollector}>코드 복사</button>
-              <small>버튼을 북마크바로 끌어 놓거나, 코드를 새 북마크의 URL에 붙여 넣어 주세요.</small>
-            </div>
-            <p className="helper-note">
-              {articleInfo
-                ? `카페 ${articleInfo.cafeId} · 글 ${articleInfo.articleId} 주소를 확인했어요. 수집 버튼은 이 글을 열어 둔 네이버 카페 탭에서 실행하세요.`
-                : '주소가 카페 글 링크인지 확인해 주세요. 수집 버튼은 네이버 카페 글 탭에서 실행합니다.'}
-            </p>
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={includeReplies}
-                onChange={(event) => setIncludeReplies(event.target.checked)}
-              />
-              <span>
-                답글도 참여자로 포함
-                <small>기본은 최상위 댓글만 한 사람당 한 표로 정리합니다.</small>
-              </span>
-            </label>
-            <hr className="modal-divider" />
-            <div className="field-stack">
-              <label htmlFor="manual-names">닉네임 목록 붙여넣기</label>
-              <textarea
-                className="textarea-field"
-                id="manual-names"
-                value={manualNames}
-                onChange={(event) => setManualNames(event.target.value)}
-                placeholder={'말랑콩\n구름냥\n딸기우유'}
-              />
-              <span className="input-help">한 줄에 한 명씩 넣거나, 수집기가 복사한 JSON 전체를 붙여 넣어도 됩니다. 중복 닉네임은 하나만 남겨요.</span>
-            </div>
-            <div className="manual-import-actions">
-              <button className="ghost-button" type="button" onClick={() => setShowImporter(false)}>취소</button>
-              <button className="compact-button" type="button" onClick={importManualNames}>참여자 담기</button>
-            </div>
-          </section>
-        </div>
-      )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </main>
