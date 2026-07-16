@@ -1,0 +1,410 @@
+.marble-race {
+  --race-ink: var(--ink, #251c32);
+  --race-cream: var(--cream, #fff9e7);
+  --race-pink: var(--hot-pink, #ff4f87);
+  --race-lemon: var(--lemon, #ffe45c);
+  --race-mint: var(--mint, #8ee3c2);
+  --race-sky: var(--sky, #83c9ff);
+  --race-lavender: var(--lavender, #b9a3ff);
+  --race-orange: var(--orange, #ff9d54);
+  width: 100%;
+  color: var(--race-ink);
+  font-family: 'Arial Rounded MT Bold', 'Noto Sans KR', system-ui, sans-serif;
+  isolation: isolate;
+}
+
+.marble-race__header,
+.marble-race__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.marble-race__header {
+  margin: 0 0 0.7rem;
+  padding: 0 0.25rem;
+}
+
+.marble-race__eyebrow,
+.marble-race__title,
+.marble-race__footer p {
+  margin: 0;
+}
+
+.marble-race__eyebrow {
+  color: var(--race-pink);
+  font-family: 'Arial Black', 'Noto Sans KR', system-ui, sans-serif;
+  font-size: clamp(0.58rem, 1.5vw, 0.72rem);
+  font-weight: 900;
+  letter-spacing: 0.11em;
+}
+
+.marble-race__title {
+  margin-top: 0.08rem;
+  font-size: clamp(1.2rem, 3.4vw, 1.7rem);
+  font-weight: 950;
+  letter-spacing: -0.075em;
+  line-height: 1.05;
+}
+
+.marble-race__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  flex: 0 0 auto;
+  padding: 0.45rem 0.68rem;
+  border: 0.14rem solid var(--race-ink);
+  border-radius: 999px;
+  background: var(--race-lemon);
+  box-shadow: 0 0.18rem 0 var(--race-ink);
+  font-size: clamp(0.68rem, 1.7vw, 0.82rem);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  transform: rotate(2deg);
+}
+
+.marble-race__badge-dot {
+  width: 0.5rem;
+  aspect-ratio: 1;
+  border: 0.1rem solid var(--race-ink);
+  border-radius: 50%;
+  background: var(--race-pink);
+}
+
+.marble-race.is-racing .marble-race__badge-dot {
+  animation: marble-race-blink 600ms ease-in-out infinite alternate;
+}
+
+.marble-race__board {
+  position: relative;
+  overflow: hidden;
+  border: clamp(0.2rem, 0.6vw, 0.35rem) solid var(--race-ink);
+  border-radius: clamp(1.25rem, 4vw, 2.25rem);
+  background: var(--race-cream);
+  box-shadow:
+    0 0.45rem 0 var(--race-ink),
+    0 1.05rem 1.6rem color-mix(in srgb, var(--race-ink) 23%, transparent);
+}
+
+.marble-race__board::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0.35rem;
+  content: '';
+  border: 1px solid color-mix(in srgb, white 72%, transparent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.marble-race__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 16rem;
+}
+
+.marble-race__backdrop {
+  fill: var(--race-sky);
+}
+
+.marble-race__cloud {
+  fill: color-mix(in srgb, var(--race-cream) 86%, white);
+  opacity: 0.68;
+}
+
+.marble-race__confetti {
+  fill: var(--race-pink);
+  stroke: var(--race-ink);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+
+.marble-race__confetti circle:nth-of-type(1) {
+  fill: var(--race-lemon);
+}
+
+.marble-race__confetti path:nth-of-type(2) {
+  fill: var(--race-mint);
+}
+
+.marble-race__confetti path:nth-of-type(3) {
+  fill: var(--race-orange);
+}
+
+.marble-race__confetti circle:nth-of-type(2) {
+  fill: var(--race-lavender);
+}
+
+.marble-race.has-winner .marble-race__confetti {
+  animation: marble-race-confetti 700ms cubic-bezier(0.2, 1.45, 0.45, 1) 2 alternate;
+  transform-origin: 50% 50%;
+}
+
+.marble-race__start-line,
+.marble-race__finish-post {
+  fill: none;
+  stroke: var(--race-ink);
+  stroke-linecap: round;
+  stroke-width: 7px;
+}
+
+.marble-race__start-flag {
+  fill: var(--race-pink);
+  stroke: var(--race-ink);
+  stroke-linejoin: round;
+  stroke-width: 5px;
+}
+
+.marble-race__start-copy,
+.marble-race__finish-copy {
+  fill: var(--race-ink);
+  font-family: 'Arial Black', 'Noto Sans KR', system-ui, sans-serif;
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: -0.08em;
+}
+
+.marble-race__finish-copy {
+  fill: var(--race-pink);
+}
+
+.marble-race__checker {
+  fill: var(--race-cream);
+  stroke: var(--race-ink);
+  stroke-width: 2px;
+}
+
+.marble-race__checker.is-dark {
+  fill: var(--race-ink);
+}
+
+.marble-race__lane-shadow,
+.marble-race__lane-track,
+.marble-race__lane-dashes {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.marble-race__lane-shadow {
+  stroke: color-mix(in srgb, var(--race-ink) 20%, transparent);
+}
+
+.marble-race__lane-track {
+  stroke: color-mix(in srgb, var(--race-cream) 88%, white);
+}
+
+.marble-race__lane-dashes {
+  stroke: color-mix(in srgb, var(--race-lavender) 80%, var(--race-sky));
+  stroke-dasharray: 3 15;
+  stroke-width: 2.7px;
+}
+
+.marble-race.is-racing .marble-race__lane-dashes {
+  animation: marble-race-dash 520ms linear infinite;
+}
+
+.marble-race__runner {
+  filter: drop-shadow(0 0.25rem 0.12rem color-mix(in srgb, var(--race-ink) 25%, transparent));
+}
+
+.marble-race__marble-motion {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.marble-race.is-racing .marble-race__marble-motion {
+  animation: marble-race-bob 440ms ease-in-out infinite alternate;
+}
+
+.marble-race__marble-shadow {
+  fill: color-mix(in srgb, var(--race-ink) 35%, transparent);
+}
+
+.marble-race__marble-outline {
+  fill: var(--race-ink);
+}
+
+.marble-race__marble-shine {
+  fill: color-mix(in srgb, white 82%, transparent);
+}
+
+.marble-race__marble-swoop {
+  fill: none;
+  stroke: color-mix(in srgb, var(--race-ink) 31%, transparent);
+  stroke-linecap: round;
+  stroke-width: 2.8px;
+}
+
+.marble-race__runner-name {
+  fill: var(--race-ink);
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--race-cream) 86%, white);
+  stroke-linejoin: round;
+  stroke-width: 4px;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -0.07em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.marble-race__winner-ring {
+  fill: none;
+  stroke: var(--race-lemon);
+  stroke-width: 6px;
+  animation: marble-race-winner-ring 700ms ease-out infinite alternate;
+}
+
+.marble-race__runner--winner {
+  filter: drop-shadow(0 0 0.58rem color-mix(in srgb, var(--race-lemon) 95%, transparent));
+}
+
+.marble-race__crown {
+  fill: var(--race-lemon);
+  paint-order: stroke;
+  stroke: var(--race-ink);
+  stroke-linejoin: round;
+  stroke-width: 4px;
+  font-size: 25px;
+}
+
+.marble-race__empty-copy {
+  fill: var(--race-ink);
+  font-family: 'Arial Rounded MT Bold', 'Noto Sans KR', system-ui, sans-serif;
+  font-size: 27px;
+  font-weight: 900;
+  letter-spacing: -0.07em;
+}
+
+.marble-race__empty-copy text:last-child {
+  fill: var(--race-pink);
+  font-size: 34px;
+  letter-spacing: 0.3em;
+}
+
+.marble-race__overflow {
+  position: absolute;
+  z-index: 3;
+  right: clamp(0.55rem, 2.4vw, 1rem);
+  bottom: clamp(0.55rem, 2.4vw, 1rem);
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border: 0.12rem solid var(--race-ink);
+  border-radius: 0.7rem;
+  background: var(--race-cream);
+  box-shadow: 0 0.18rem 0 var(--race-ink);
+  font-size: clamp(0.62rem, 1.7vw, 0.78rem);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  transform: rotate(-2deg);
+}
+
+.marble-race__footer {
+  margin-top: 0.95rem;
+  padding: 0 0.3rem;
+  color: color-mix(in srgb, var(--race-ink) 76%, transparent);
+  font-size: clamp(0.72rem, 1.85vw, 0.86rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.marble-race__count {
+  color: var(--race-pink);
+  font-family: 'Arial Black', 'Noto Sans KR', system-ui, sans-serif;
+  font-size: 0.83em;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.marble-race__status {
+  text-align: right;
+}
+
+@keyframes marble-race-dash {
+  to {
+    stroke-dashoffset: -18px;
+  }
+}
+
+@keyframes marble-race-bob {
+  from {
+    transform: translateY(-2px) rotate(-3deg);
+  }
+  to {
+    transform: translateY(2px) rotate(3deg);
+  }
+}
+
+@keyframes marble-race-blink {
+  from {
+    opacity: 0.45;
+    scale: 0.8;
+  }
+  to {
+    opacity: 1;
+    scale: 1.16;
+  }
+}
+
+@keyframes marble-race-winner-ring {
+  from {
+    opacity: 0.45;
+    scale: 0.84;
+  }
+  to {
+    opacity: 1;
+    scale: 1.17;
+  }
+}
+
+@keyframes marble-race-confetti {
+  from {
+    opacity: 0.3;
+    transform: scale(0.86) rotate(-4deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.06) rotate(4deg);
+  }
+}
+
+@media (max-width: 540px) {
+  .marble-race__header {
+    align-items: flex-end;
+  }
+
+  .marble-race__badge {
+    padding: 0.38rem 0.52rem;
+  }
+
+  .marble-race__start-copy,
+  .marble-race__finish-copy {
+    font-size: 15px;
+  }
+
+  .marble-race__runner-name {
+    font-size: 12px;
+  }
+
+  .marble-race__footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .marble-race__status {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marble-race *,
+  .marble-race *::before,
+  .marble-race *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}
