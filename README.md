@@ -18,5 +18,6 @@ npm run build
 
 ## 배포
 
-`main` 브랜치에 push하면 GitHub Actions가 테스트와 빌드를 실행한 뒤 GitHub Pages에 배포합니다.
+`docs/`에는 검증된 정적 배포본이 들어 있습니다. GitHub Pages의 배포 원본을
+`main` 브랜치의 `/docs` 폴더로 지정하면 바로 공개할 수 있습니다.
 Vite의 기본 경로는 `/rettoroulette/`로 설정되어 있습니다.

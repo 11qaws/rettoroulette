@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Retto Roulette">
+  <circle cx="32" cy="34" r="26" fill="#fff" stroke="#4e342e" stroke-width="4"/>
+  <path d="M32 34 32 8A26 26 0 0 1 54.5 47Z" fill="#ffb6c1"/>
+  <path d="M32 34 54.5 47A26 26 0 0 1 9.5 47Z" fill="#ffd166"/>
+  <path d="M32 34 9.5 47A26 26 0 0 1 32 8Z" fill="#7e57c2"/>
+  <path d="M32 1 38 10H26Z" fill="#e91e63" stroke="#4e342e" stroke-linejoin="round" stroke-width="2"/>
+  <circle cx="32" cy="34" r="6" fill="#fff0f3" stroke="#4e342e" stroke-width="3"/>
+</svg>
