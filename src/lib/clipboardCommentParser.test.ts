@@ -49,6 +49,26 @@ describe('extractNaverCafeCommentAuthors', () => {
     ]);
   });
 
+  it('marks nested reply markup without guessing from timestamps', () => {
+    const html = `
+      <section class="comment-item" data-comment-id="root-1">
+        <span data-member-id="member-1" data-nickname="사악한고래밥">사악한고래밥</span>
+      </section>
+      <section class="comment-item comment-item--reply" data-parent-comment-id="root-1">
+        <span data-member-id="member-2" data-nickname="번호 답글">번호 답글</span>
+      </section>
+      <section class="comment-item" data-comment-id="root-2">
+        <span data-member-id="member-3" data-nickname="POPO">POPO</span>
+      </section>
+    `;
+
+    expect(extractNaverCafeCommentAuthors(html)).toEqual([
+      { id: 'member-1', nick: '사악한고래밥', reply: false },
+      { id: 'member-2', nick: '번호 답글', reply: true },
+      { id: 'member-3', nick: 'POPO', reply: false },
+    ]);
+  });
+
   it('uses name-before-time records from Ctrl+A copied page text', () => {
     const copied = `
       게시글 제목
@@ -70,7 +90,50 @@ describe('extractNaverCafeCommentAuthors', () => {
     ]);
   });
 
-  it('keeps only chronological parent comments from the copied Naver comment layout', () => {
+  it('keeps image-only and long copied comment blocks', () => {
+    const profilePhoto = '프로필 사진';
+    const copied = [
+      `${profilePhoto}인기멤버`,
+      '아모레또',
+      '댓글 3',
+      profilePhoto,
+      '사악한고래밥',
+      '첨부사진',
+      '2026.07.16. 21:56',
+      '답글쓰기',
+      profilePhoto,
+      '답글 번호 답글',
+      '1',
+      '2026.07.16. 23:19',
+      '답글쓰기',
+      profilePhoto,
+      '사이버싸이코',
+      '첨부사진',
+      '2026.07.16. 22:04',
+      '답글쓰기',
+      profilePhoto,
+      '답글 번호 답글',
+      '2',
+      '2026.07.16. 23:20',
+      '답글쓰기',
+      profilePhoto,
+      'POPO',
+      '레또님 부기 말고 전신 삼면도 나 디자인 시트 올려주실 수 있나요 ㅠㅠ',
+      '데뷔 방송 때 올려주신다고한거같은데 아무리 찾아도 안보여서요 ㅠㅠ',
+      '디자인 보기가 좀 힘드네요ㅠㅠ',
+      '2026.07.16. 22:34',
+      '답글쓰기',
+      '댓글을 입력하세요',
+    ].join('\n');
+
+    expect(extractNaverCafeCommentAuthors(copied).map((candidate) => candidate.nick)).toEqual([
+      '사악한고래밥',
+      '사이버싸이코',
+      'POPO',
+    ]);
+  });
+
+  it('excludes comments that are explicitly marked as replies in copied text', () => {
     const profilePhoto = '\uD504\uB85C\uD544 \uC0AC\uC9C4';
     const copied = [
       `${profilePhoto}\uC778\uAE30\uBA64\uBC84`,
@@ -82,7 +145,7 @@ describe('extractNaverCafeCommentAuthors', () => {
       '2026.07.16. 21:56',
       '\uB2F5\uAE00\uC4F0\uAE30',
       profilePhoto,
-      'Reply Agent',
+      '답글 Reply Agent',
       '1',
       '2026.07.16. 23:19',
       '\uB2F5\uAE00\uC4F0\uAE30',
@@ -92,7 +155,7 @@ describe('extractNaverCafeCommentAuthors', () => {
       '2026.07.16. 21:57',
       '\uB2F5\uAE00\uC4F0\uAE30',
       profilePhoto,
-      'Reply Agent',
+      '답글 Reply Agent',
       '2',
       '2026.07.16. 23:20',
       '\uB2F5\uAE00\uC4F0\uAE30',
@@ -102,7 +165,7 @@ describe('extractNaverCafeCommentAuthors', () => {
       '2026.07.16. 21:58',
       '\uB2F5\uAE00\uC4F0\uAE30',
       profilePhoto,
-      'Reply Agent',
+      '답글 Reply Agent',
       '3',
       '2026.07.16. 23:21',
       '\uB2F5\uAE00\uC4F0\uAE30',
@@ -112,7 +175,7 @@ describe('extractNaverCafeCommentAuthors', () => {
       '2026.07.16. 21:59',
       '\uB2F5\uAE00\uC4F0\uAE30',
       profilePhoto,
-      'Reply Agent',
+      '답글 Reply Agent',
       '4',
       '2026.07.16. 23:22',
       '\uB2F5\uAE00\uC4F0\uAE30',

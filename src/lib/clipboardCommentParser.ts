@@ -24,7 +24,8 @@ const COMMENT_END_LINE = /^(?:댓글을 입력하세요|글쓰기목록(?:\s+TOP
 const REPLY_PREFIX = /^(?:[ㄴ↳└]\s*|(?:답글|대댓글|댓글의 댓글|원댓글)\s*)/;
 const COMMENT_MEDIA_LINE = /^(?:첨부사진|스티커)$/;
 const MARKDOWN_COMMENT_AUTHOR = /^\[\*\*(.+?)\*\*\]\(https?:\/\/(?:[a-z0-9-]+\.)?cafe\.naver\.com\/[^)]*\)$/i;
-const NUMBERED_REPLY_BODY = /^\d{1,4}(?:\s*\([^)]{0,80}\))?$/;
+const HTML_COMMENT_ROOT = /<(?:article|section|li|div)\b[^>]*(?:\bdata-(?:comment|parent-comment)[\w-]*=|\bclass=(['"])[^'"]*comment[^'"]*\1)[^>]*>/gi;
+const HTML_REPLY_MARKER = /\bdata-(?:is-)?reply\s*=\s*(?:['"])?(?:true|1)\b|\bdata-parent-comment(?:-)?(?:id|no)\s*=|\bclass\s*=\s*(['"])[^'"]*\b(?:reply|recomment)\b[^'"]*\1/i;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -83,7 +84,14 @@ function pushCandidate(
   const candidate = normalizeCandidate(id, nick, reply, candidates.length + 1);
   if (!candidate) return;
   const key = candidate.nick.toLocaleLowerCase('ko-KR');
-  if (seen.has(key)) return;
+  if (seen.has(key)) {
+    const existing = candidates.find((item) => item.nick.toLocaleLowerCase('ko-KR') === key);
+    if (existing?.reply && !candidate.reply) {
+      existing.id = candidate.id;
+      existing.reply = false;
+    }
+    return;
+  }
   seen.add(key);
   candidates.push(candidate);
 }
@@ -161,21 +169,36 @@ function collectFromJsonSources(input: string, candidates: NaverCafeCandidate[],
   }
 }
 
+function closestFallbackCommentRoot(input: string, before: number) {
+  const prefix = input.slice(0, before);
+  let root = '';
+
+  for (const match of prefix.matchAll(HTML_COMMENT_ROOT)) root = match[0];
+  return root;
+}
+
+function hasHtmlReplyMarker(...markup: string[]) {
+  return markup.some((value) => HTML_REPLY_MARKER.test(value));
+}
+
 function collectFromHtmlAttributes(input: string, candidates: NaverCafeCandidate[], seen: Set<string>) {
   if (!/<[a-z][\s\S]*>/i.test(input)) return;
   if (typeof DOMParser === 'undefined') {
     const taggedNickname = /<[^>]*\bdata-(?:nickname|nick|member-nickname)=(['"])(.*?)\1[^>]*>/gi;
     for (const match of input.matchAll(taggedNickname)) {
-      const nearbyMarkup = input.slice(Math.max(0, match.index - 1_200), match.index);
-      if (!/\b(?:class|data-[\w-]+)=(['"])[^'"]*comment/i.test(nearbyMarkup) && !/\bdata-comment-writer=/i.test(match[0])) {
+      const rootMarkup = closestFallbackCommentRoot(input, match.index ?? 0);
+      if (!rootMarkup && !/\bdata-comment-writer=/i.test(match[0])) {
         continue;
       }
       const idMatch = match[0].match(/\bdata-member(?:-)?id=(['"])(.*?)\1/i);
-      pushCandidate(candidates, seen, idMatch?.[2] ?? '', match[2], false);
+      const reply = hasHtmlReplyMarker(rootMarkup, match[0]);
+      pushCandidate(candidates, seen, idMatch?.[2] ?? '', match[2], reply);
     }
     const commentWriter = /<([a-z0-9]+)\b[^>]*\bclass=(['"])[^'"]*comment[^'"]*(?:writer|nick)[^'"]*\2[^>]*>([^<]+)<\/\1>/gi;
     for (const match of input.matchAll(commentWriter)) {
-      pushCandidate(candidates, seen, '', match[3], false);
+      const rootMarkup = closestFallbackCommentRoot(input, match.index ?? 0);
+      const reply = hasHtmlReplyMarker(rootMarkup, match[0]);
+      pushCandidate(candidates, seen, '', match[3], reply);
     }
     return;
   }
@@ -189,11 +212,23 @@ function collectFromHtmlAttributes(input: string, candidates: NaverCafeCandidate
     '[class*="comment"] [class*="writer"]',
   ];
 
+  const commentSelector = '[class*="comment" i], [data-comment], [data-comment-writer], [data-comment-id], [data-comment-no]';
+  const replySelector = [
+    '[data-is-reply="true"]',
+    '[data-is-reply="1"]',
+    '[data-reply="true"]',
+    '[data-reply="1"]',
+    '[data-parent-comment-id]',
+    '[data-parent-comment-no]',
+    '[data-parent-commentid]',
+    '[data-parent-commentno]',
+    '[class*="reply" i]',
+    '[class*="recomment" i]',
+  ].join(',');
+
   for (const element of document.querySelectorAll(selectors.join(','))) {
-    const isCommentWriter = Boolean(
-      element.closest('[class*="comment" i], [data-comment], [data-comment-writer]') ||
-      element.hasAttribute('data-comment-writer'),
-    );
+    const commentRoot = element.closest(commentSelector);
+    const isCommentWriter = Boolean(commentRoot || element.hasAttribute('data-comment-writer'));
     if (!isCommentWriter) continue;
     const name =
       element.getAttribute('data-nickname') ??
@@ -201,8 +236,14 @@ function collectFromHtmlAttributes(input: string, candidates: NaverCafeCandidate
       element.getAttribute('data-member-nickname') ??
       element.getAttribute('data-comment-writer') ??
       element.textContent;
-    const id = element.getAttribute('data-member-id') ?? element.getAttribute('data-memberid') ?? '';
-    pushCandidate(candidates, seen, id, name, false);
+    const id =
+      element.getAttribute('data-member-id') ??
+      element.getAttribute('data-memberid') ??
+      commentRoot?.getAttribute('data-member-id') ??
+      commentRoot?.getAttribute('data-memberid') ??
+      '';
+    const reply = Boolean(element.closest(replySelector) || commentRoot?.matches(replySelector));
+    pushCandidate(candidates, seen, id, name, reply);
   }
 }
 
@@ -362,84 +403,6 @@ function collectMarkdownComments(lines: string[], commentStart: number) {
   return records;
 }
 
-function longestTimestampSequence(records: CopiedCommentRecord[], descending: boolean) {
-  const tails: Array<{ key: number; index: number }> = [];
-  const previous = new Array<number>(records.length).fill(-1);
-
-  for (let index = 0; index < records.length; index += 1) {
-    const timestamp = records[index].timestampKey;
-    if (!timestamp) continue;
-
-    const key = (descending ? -1 : 1) * Number(timestamp);
-    let low = 0;
-    let high = tails.length;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (tails[middle].key <= key) low = middle + 1;
-      else high = middle;
-    }
-
-    previous[index] = low > 0 ? tails[low - 1].index : -1;
-    tails[low] = { key, index };
-  }
-
-  const indexes = new Set<number>();
-  let cursor = tails.length > 0 ? tails[tails.length - 1].index : -1;
-  while (cursor >= 0) {
-    indexes.add(cursor);
-    cursor = previous[cursor];
-  }
-
-  return { indexes, length: tails.length };
-}
-
-function likelyNumberReplyAuthors(records: CopiedCommentRecord[]) {
-  const stats = new Map<string, { total: number; numbered: number }>();
-
-  for (const record of records) {
-    const key = nicknameKey(record.name);
-    const stat = stats.get(key) ?? { total: 0, numbered: 0 };
-    stat.total += 1;
-    if (NUMBERED_REPLY_BODY.test(record.body.replace(/\s+/g, ' ').trim())) stat.numbered += 1;
-    stats.set(key, stat);
-  }
-
-  return new Set(
-    [...stats]
-      .filter(([, stat]) => stat.total >= 4 && stat.numbered / stat.total >= 0.75)
-      .map(([key]) => key),
-  );
-}
-
-function originalRecordIndexesForReplyAuthors(
-  records: CopiedCommentRecord[],
-  parentIndexes: Set<number>,
-  replyAuthors: Set<string>,
-) {
-  const originals = new Map<string, number>();
-
-  records.forEach((record, index) => {
-    const key = nicknameKey(record.name);
-    if (!parentIndexes.has(index) || !replyAuthors.has(key)) return;
-    if (NUMBERED_REPLY_BODY.test(record.body.replace(/\s+/g, ' ').trim())) return;
-
-    const current = originals.get(key);
-    if (current === undefined) {
-      originals.set(key, index);
-      return;
-    }
-
-    const currentRecord = records[current];
-    const currentTime = currentRecord.timestampKey ?? '999999999999';
-    const nextTime = record.timestampKey ?? '999999999999';
-    if (nextTime.localeCompare(currentTime) < 0 || (nextTime === currentTime && record.index < currentRecord.index)) {
-      originals.set(key, index);
-    }
-  });
-
-  return originals;
-}
-
 function collectStructuredCopiedText(
   lines: string[],
   commentStart: number,
@@ -452,25 +415,13 @@ function collectStructuredCopiedText(
   const records = markdownRecords.length > profileRecords.length ? markdownRecords : profileRecords;
   if (records.length === 0) return false;
 
-  const ascending = longestTimestampSequence(records, false);
-  const descending = longestTimestampSequence(records, true);
-  const parentIndexes = ascending.length >= descending.length ? ascending.indexes : descending.indexes;
-  // A relative-time comment cannot be placed reliably in a chronological chain;
-  // keep it unless another explicit reply signal rejects it.
-  records.forEach((record, index) => {
-    if (!record.timestampKey) parentIndexes.add(index);
-  });
-
   const articleAuthor = nicknameKey(findArticleAuthor(lines, commentStart));
-  const replyAuthors = likelyNumberReplyAuthors(records);
-  const replyAuthorOriginals = originalRecordIndexesForReplyAuthors(records, parentIndexes, replyAuthors);
   const before = cutoffKey(options.before);
   const limit = importLimit(options);
   const sorted = records
-    .filter((record, index) => {
+    .filter((record) => {
       const key = nicknameKey(record.name);
-      const isReplyAgentResponse = replyAuthors.has(key) && replyAuthorOriginals.get(key) !== index;
-      return parentIndexes.has(index) && !record.explicitReply && key !== articleAuthor && !isReplyAgentResponse;
+      return !record.explicitReply && key !== articleAuthor;
     })
     .filter((record) => !before || (record.timestampKey !== null && record.timestampKey <= before))
     .sort((left, right) => {

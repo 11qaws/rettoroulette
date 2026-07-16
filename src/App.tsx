@@ -371,7 +371,7 @@ function App() {
     showToast('새 방송 세션을 준비했어요. 참여자는 그대로 보관됩니다.');
   };
 
-  const importManualNames = (value = manualNames) => {
+  const importManualNames = (value = manualNames, plainTextFallback = '') => {
     const possibleJson = value.trim().startsWith('{')
       ? parseImportHash(`#import=${encodeURIComponent(value.trim())}`)
       : null;
@@ -382,11 +382,21 @@ function App() {
       return;
     }
 
-    const extractedAuthors = extractNaverCafeCommentAuthors(value, {
-      limit: clipboardLimit,
+    let extractedAuthors = extractNaverCafeCommentAuthors(value, {
       before: clipboardBefore,
     });
-    if (extractedAuthors.length > 0) {
+    if (
+      !extractedAuthors.some((candidate) => !candidate.reply) &&
+      plainTextFallback &&
+      plainTextFallback !== value
+    ) {
+      extractedAuthors = extractNaverCafeCommentAuthors(plainTextFallback, {
+        before: clipboardBefore,
+      });
+    }
+    const rootAuthors = extractedAuthors.filter((candidate) => !candidate.reply);
+    const limitedAuthors = clipboardLimit > 0 ? rootAuthors.slice(0, clipboardLimit) : rootAuthors;
+    if (limitedAuthors.length > 0) {
       const article = parseNaverCafeArticle(articleUrl);
       acceptNaverImport({
         version: 1,
@@ -394,13 +404,13 @@ function App() {
         cafeId: article?.cafeId ?? '0',
         articleId: article?.articleId ?? '0',
         collectedAt: new Date().toISOString(),
-        candidates: extractedAuthors,
+        candidates: limitedAuthors,
       });
       setManualNames('');
       return;
     }
 
-    const names = parseManualNames(value);
+    const names = parseManualNames(plainTextFallback || value);
     const imported = makeParticipants(clipboardLimit > 0 ? names.slice(0, clipboardLimit) : names);
 
     if (imported.length === 0) {
@@ -539,11 +549,12 @@ function App() {
               value={manualNames}
               onChange={(event) => setManualNames(event.target.value)}
               onPaste={(event) => {
-                const pasted = event.clipboardData.getData('text');
-                if (!pasted) return;
+                const plainText = event.clipboardData.getData('text/plain') || event.clipboardData.getData('text');
+                const richText = event.clipboardData.getData('text/html');
+                if (!plainText && !richText) return;
                 event.preventDefault();
-                setManualNames(pasted);
-                window.setTimeout(() => importManualNames(pasted), 0);
+                setManualNames(plainText || richText);
+                window.setTimeout(() => importManualNames(richText || plainText, plainText), 0);
               }}
               aria-label="카페 글에서 복사한 페이지 내용"
               placeholder="카페 글에서 Ctrl+A → Ctrl+C 후 여기에 Ctrl+V"
