@@ -139,6 +139,58 @@ describe('extractNaverCafeCommentAuthors', () => {
     ]);
   });
 
+  it('reads linked clipboard authors, including photo-only original comments', () => {
+    const commentUrl = 'https://cafe.naver.com/ca-fe/cafes/31662960/articles/1105#';
+    const author = (name: string) => `[**${name}**](${commentUrl})`;
+    const replyButton = `[\uB2F5\uAE00\uC4F0\uAE30](${commentUrl})`;
+    const copied = [
+      author('Reply Agent'),
+      '\uCCA8\uBD80\uC0AC\uC9C4',
+      '2026.07.16. 21:56',
+      replyButton,
+      author('Player A'),
+      'gift please',
+      '2026.07.16. 21:57',
+      replyButton,
+      author('Reply Agent'),
+      '1',
+      '2026.07.16. 23:19',
+      replyButton,
+      author('Player B'),
+      'gift please',
+      '2026.07.16. 21:58',
+      replyButton,
+      author('Reply Agent'),
+      '2',
+      '2026.07.16. 23:20',
+      replyButton,
+      author('POPO'),
+      'a long multi-line parent comment',
+      '2026.07.16. 22:34',
+      replyButton,
+      author('Reply Agent'),
+      '3',
+      '2026.07.16. 23:21',
+      replyButton,
+      author('Cyber Photo'),
+      '\uCCA8\uBD80\uC0AC\uC9C4',
+      '2026.07.16. 22:35',
+      replyButton,
+      author('Reply Agent'),
+      '4',
+      '2026.07.16. 23:22',
+      replyButton,
+    ].join('\n');
+
+    expect(extractNaverCafeCommentAuthors(copied)).toEqual([
+      { id: 'clipboard-0', nick: 'Reply Agent', reply: false },
+      { id: 'clipboard-4', nick: 'Player A', reply: false },
+      { id: 'clipboard-12', nick: 'Player B', reply: false },
+      { id: 'clipboard-20', nick: 'POPO', reply: false },
+      { id: 'clipboard-28', nick: 'Cyber Photo', reply: false },
+    ]);
+  });
+
   it('recognizes the relative-time phrase for a simple copied record', () => {
     const copied = '\uB313\uAE00 1\nMint\n\uBC29\uAE08 \uC804';
 

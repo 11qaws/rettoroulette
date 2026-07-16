@@ -23,7 +23,8 @@ const COMMENT_COUNT_LINE = /^댓글\s*\d{1,3}(?:,\d{3})*$/;
 const COMMENT_END_LINE = /^(?:댓글을 입력하세요|글쓰기목록(?:\s+TOP)?|전체글|전체보기|이 카페 인기글|페이징 이동)/;
 const REPLY_PREFIX = /^(?:[ㄴ↳└]\s*|(?:답글|대댓글|댓글의 댓글|원댓글)\s*)/;
 const COMMENT_MEDIA_LINE = /^(?:첨부사진|스티커)$/;
-const SHORT_REPLY_BODY = /^(?:\d{1,4}(?:\s*\([^)]{0,80}\))?|첨부사진|스티커)$/;
+const MARKDOWN_COMMENT_AUTHOR = /^\[\*\*(.+?)\*\*\]\(https?:\/\/(?:[a-z0-9-]+\.)?cafe\.naver\.com\/[^)]*\)$/i;
+const NUMBERED_REPLY_BODY = /^\d{1,4}(?:\s*\([^)]{0,80}\))?$/;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -320,6 +321,47 @@ function collectProfileComments(lines: string[], commentStart: number) {
   return records;
 }
 
+function markdownCommentAuthor(line: string) {
+  const match = line.match(MARKDOWN_COMMENT_AUTHOR);
+  if (!match) return '';
+  const name = safeText(match[1]);
+  return validNickname(name) ? name : '';
+}
+
+function collectMarkdownComments(lines: string[], commentStart: number) {
+  const records: CopiedCommentRecord[] = [];
+
+  for (let authorIndex = commentStart; authorIndex < lines.length; authorIndex += 1) {
+    const name = markdownCommentAuthor(lines[authorIndex]);
+    if (!name) continue;
+
+    let writtenAtIndex = -1;
+    for (let index = authorIndex + 1; index < lines.length; index += 1) {
+      if (COMMENT_END_LINE.test(lines[index]) || markdownCommentAuthor(lines[index])) break;
+      if (TIME_LINE.test(lines[index])) {
+        writtenAtIndex = index;
+        break;
+      }
+    }
+    if (writtenAtIndex < 0) continue;
+
+    const body = lines
+      .slice(authorIndex + 1, writtenAtIndex)
+      .filter((value) => value && !NOISE_LINE.test(value))
+      .join(' ');
+    records.push({
+      index: authorIndex,
+      name,
+      body,
+      timestampKey: timestampKey(lines[writtenAtIndex]),
+      explicitReply: REPLY_PREFIX.test(lines[authorIndex]),
+    });
+    authorIndex = writtenAtIndex;
+  }
+
+  return records;
+}
+
 function longestTimestampSequence(records: CopiedCommentRecord[], descending: boolean) {
   const tails: Array<{ key: number; index: number }> = [];
   const previous = new Array<number>(records.length).fill(-1);
@@ -351,22 +393,51 @@ function longestTimestampSequence(records: CopiedCommentRecord[], descending: bo
   return { indexes, length: tails.length };
 }
 
-function likelyReplyAuthors(records: CopiedCommentRecord[]) {
-  const stats = new Map<string, { total: number; shortReplyBodies: number }>();
+function likelyNumberReplyAuthors(records: CopiedCommentRecord[]) {
+  const stats = new Map<string, { total: number; numbered: number }>();
 
   for (const record of records) {
     const key = nicknameKey(record.name);
-    const stat = stats.get(key) ?? { total: 0, shortReplyBodies: 0 };
+    const stat = stats.get(key) ?? { total: 0, numbered: 0 };
     stat.total += 1;
-    if (SHORT_REPLY_BODY.test(record.body.replace(/\s+/g, ' ').trim())) stat.shortReplyBodies += 1;
+    if (NUMBERED_REPLY_BODY.test(record.body.replace(/\s+/g, ' ').trim())) stat.numbered += 1;
     stats.set(key, stat);
   }
 
   return new Set(
     [...stats]
-      .filter(([, stat]) => stat.total >= 4 && stat.shortReplyBodies / stat.total >= 0.75)
+      .filter(([, stat]) => stat.total >= 4 && stat.numbered / stat.total >= 0.75)
       .map(([key]) => key),
   );
+}
+
+function originalRecordIndexesForReplyAuthors(
+  records: CopiedCommentRecord[],
+  parentIndexes: Set<number>,
+  replyAuthors: Set<string>,
+) {
+  const originals = new Map<string, number>();
+
+  records.forEach((record, index) => {
+    const key = nicknameKey(record.name);
+    if (!parentIndexes.has(index) || !replyAuthors.has(key)) return;
+    if (NUMBERED_REPLY_BODY.test(record.body.replace(/\s+/g, ' ').trim())) return;
+
+    const current = originals.get(key);
+    if (current === undefined) {
+      originals.set(key, index);
+      return;
+    }
+
+    const currentRecord = records[current];
+    const currentTime = currentRecord.timestampKey ?? '999999999999';
+    const nextTime = record.timestampKey ?? '999999999999';
+    if (nextTime.localeCompare(currentTime) < 0 || (nextTime === currentTime && record.index < currentRecord.index)) {
+      originals.set(key, index);
+    }
+  });
+
+  return originals;
 }
 
 function collectStructuredCopiedText(
@@ -376,7 +447,9 @@ function collectStructuredCopiedText(
   seen: Set<string>,
   options: ClipboardCommentImportOptions,
 ) {
-  const records = collectProfileComments(lines, commentStart);
+  const profileRecords = collectProfileComments(lines, commentStart);
+  const markdownRecords = collectMarkdownComments(lines, commentStart);
+  const records = markdownRecords.length > profileRecords.length ? markdownRecords : profileRecords;
   if (records.length === 0) return false;
 
   const ascending = longestTimestampSequence(records, false);
@@ -389,13 +462,15 @@ function collectStructuredCopiedText(
   });
 
   const articleAuthor = nicknameKey(findArticleAuthor(lines, commentStart));
-  const replyAuthors = likelyReplyAuthors(records);
+  const replyAuthors = likelyNumberReplyAuthors(records);
+  const replyAuthorOriginals = originalRecordIndexesForReplyAuthors(records, parentIndexes, replyAuthors);
   const before = cutoffKey(options.before);
   const limit = importLimit(options);
   const sorted = records
     .filter((record, index) => {
       const key = nicknameKey(record.name);
-      return parentIndexes.has(index) && !record.explicitReply && key !== articleAuthor && !replyAuthors.has(key);
+      const isReplyAgentResponse = replyAuthors.has(key) && replyAuthorOriginals.get(key) !== index;
+      return parentIndexes.has(index) && !record.explicitReply && key !== articleAuthor && !isReplyAgentResponse;
     })
     .filter((record) => !before || (record.timestampKey !== null && record.timestampKey <= before))
     .sort((left, right) => {
@@ -429,7 +504,7 @@ function collectFromCopiedText(
     .map((line) => safeText(line, 180));
   const marker = lines.findIndex((line) => COMMENT_COUNT_LINE.test(line));
   const commentStart = marker >= 0 ? marker + 1 : 0;
-  if (marker >= 0 && collectStructuredCopiedText(lines, commentStart, candidates, seen, options)) return;
+  if (collectStructuredCopiedText(lines, commentStart, candidates, seen, options)) return;
 
   for (let index = commentStart; index < lines.length; index += 1) {
     const line = lines[index];
