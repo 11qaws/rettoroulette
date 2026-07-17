@@ -34,6 +34,26 @@ describe('extractNaverCafeCommentAuthors', () => {
     ]);
   });
 
+  it('keeps a root comment when the same person also appears first as a reply', () => {
+    const input = JSON.stringify({
+      comments: [
+        {
+          commentId: 'reply-first',
+          parentCommentId: 'parent-1',
+          writer: { memberId: 'member-1', nick: '사악한고래밥' },
+        },
+        {
+          commentId: 'parent-1',
+          writer: { memberId: 'member-1', nick: '사악한고래밥' },
+        },
+      ],
+    });
+
+    expect(extractNaverCafeCommentAuthors(input)).toEqual([
+      { id: 'member-1', nick: '사악한고래밥', reply: false },
+    ]);
+  });
+
   it('reads obvious comment nickname attributes from pasted HTML', () => {
     const html = `
       <article><span data-nickname="본문작성자">본문작성자</span></article>
@@ -259,6 +279,22 @@ describe('extractNaverCafeCommentAuthors', () => {
 
     expect(extractNaverCafeCommentAuthors(copied)).toEqual([
       { id: 'clipboard-2', nick: 'Mint', reply: false },
+    ]);
+  });
+
+  it('never treats a copied image or sticker marker as a commenter', () => {
+    const copied = [
+      '\uB313\uAE00 3',
+      '\uD2F0\uC580\uD0A4',
+      '2026.07.16. 21:56',
+      '첨부사진',
+      '2026.07.16. 22:34',
+      '스티커',
+      '2026.07.16. 22:35',
+    ].join('\n');
+
+    expect(extractNaverCafeCommentAuthors(copied)).toEqual([
+      { id: 'clipboard-2', nick: '\uD2F0\uC580\uD0A4', reply: false },
     ]);
   });
 });

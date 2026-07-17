@@ -1,4 +1,13 @@
-import type { NaverCafeCandidate } from './naverCollector';
+/**
+ * A deliberately small, local-only representation of a pasted comment author.
+ * Keep this module independent of Naver URL/import helpers so it can also be
+ * used by the clipboard fallback when no article URL is available.
+ */
+export interface ClipboardCommentCandidate {
+  id: string;
+  nick: string;
+  reply: boolean;
+}
 
 const MAX_INPUT_BYTES = 3_000_000;
 const MAX_CANDIDATES = 25_000;
@@ -58,7 +67,7 @@ function safeText(value: unknown, maxLength = MAX_NICK_LENGTH) {
 }
 
 function validNickname(value: string) {
-  if (!value || value.length > MAX_NICK_LENGTH || NOISE_LINE.test(value) || TIME_LINE.test(value)) return false;
+  if (!value || value.length > MAX_NICK_LENGTH || NOISE_LINE.test(value) || TIME_LINE.test(value) || COMMENT_MEDIA_LINE.test(value)) return false;
   if (/[\r\n<>]/.test(value)) return false;
   if (/^(?:https?:\/\/|www\.)/i.test(value)) return false;
   // Whole sentences are usually comment bodies; names almost never contain these.
@@ -66,7 +75,12 @@ function validNickname(value: string) {
   return true;
 }
 
-function normalizeCandidate(id: unknown, nick: unknown, reply: boolean, order: number): NaverCafeCandidate | null {
+function normalizeCandidate(
+  id: unknown,
+  nick: unknown,
+  reply: boolean,
+  order: number,
+): ClipboardCommentCandidate | null {
   const name = safeText(nick);
   if (!validNickname(name)) return null;
   const memberId = safeText(id, 160) || `clipboard-${order}`;
@@ -74,7 +88,7 @@ function normalizeCandidate(id: unknown, nick: unknown, reply: boolean, order: n
 }
 
 function pushCandidate(
-  candidates: NaverCafeCandidate[],
+  candidates: ClipboardCommentCandidate[],
   seen: Set<string>,
   id: unknown,
   nick: unknown,
@@ -110,7 +124,7 @@ function candidateFromComment(record: UnknownRecord, inheritedReply: boolean, or
 
 function walkCommentJson(
   value: unknown,
-  candidates: NaverCafeCandidate[],
+  candidates: ClipboardCommentCandidate[],
   seen: Set<string>,
   context: 'root' | 'comment' = 'root',
   inheritedReply = false,
@@ -127,13 +141,7 @@ function walkCommentJson(
 
   if (context === 'comment') {
     const candidate = candidateFromComment(value, inheritedReply, candidates.length + 1);
-    if (candidate) {
-      const key = candidate.nick.toLocaleLowerCase('ko-KR');
-      if (!seen.has(key)) {
-        seen.add(key);
-        candidates.push(candidate);
-      }
-    }
+    if (candidate) pushCandidate(candidates, seen, candidate.id, candidate.nick, candidate.reply);
   }
 
   for (const [key, child] of Object.entries(value)) {
@@ -158,7 +166,7 @@ function tryJson(value: string) {
   }
 }
 
-function collectFromJsonSources(input: string, candidates: NaverCafeCandidate[], seen: Set<string>) {
+function collectFromJsonSources(input: string, candidates: ClipboardCommentCandidate[], seen: Set<string>) {
   const direct = tryJson(input.trim());
   if (direct !== null) walkCommentJson(direct, candidates, seen);
 
@@ -181,7 +189,7 @@ function hasHtmlReplyMarker(...markup: string[]) {
   return markup.some((value) => HTML_REPLY_MARKER.test(value));
 }
 
-function collectFromHtmlAttributes(input: string, candidates: NaverCafeCandidate[], seen: Set<string>) {
+function collectFromHtmlAttributes(input: string, candidates: ClipboardCommentCandidate[], seen: Set<string>) {
   if (!/<[a-z][\s\S]*>/i.test(input)) return;
   if (typeof DOMParser === 'undefined') {
     const taggedNickname = /<[^>]*\bdata-(?:nickname|nick|member-nickname)=(['"])(.*?)\1[^>]*>/gi;
@@ -406,7 +414,7 @@ function collectMarkdownComments(lines: string[], commentStart: number) {
 function collectStructuredCopiedText(
   lines: string[],
   commentStart: number,
-  candidates: NaverCafeCandidate[],
+  candidates: ClipboardCommentCandidate[],
   seen: Set<string>,
   options: ClipboardCommentImportOptions,
 ) {
@@ -443,7 +451,7 @@ function collectStructuredCopiedText(
 
 function collectFromCopiedText(
   input: string,
-  candidates: NaverCafeCandidate[],
+  candidates: ClipboardCommentCandidate[],
   seen: Set<string>,
   options: ClipboardCommentImportOptions,
 ) {
@@ -476,10 +484,10 @@ function collectFromCopiedText(
 export function extractNaverCafeCommentAuthors(
   input: string,
   options: ClipboardCommentImportOptions = {},
-): NaverCafeCandidate[] {
+): ClipboardCommentCandidate[] {
   if (typeof input !== 'string' || input.trim() === '' || bytesOf(input) > MAX_INPUT_BYTES) return [];
 
-  const candidates: NaverCafeCandidate[] = [];
+  const candidates: ClipboardCommentCandidate[] = [];
   const seen = new Set<string>();
   collectFromJsonSources(input, candidates, seen);
   collectFromHtmlAttributes(input, candidates, seen);

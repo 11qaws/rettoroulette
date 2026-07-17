@@ -5,6 +5,7 @@ import './MarbleRace.css';
 
 export interface MarbleRaceProps {
   participants: string[];
+  itemType?: 'participant' | 'prize';
   winnerIndex: number | null;
   racing: boolean;
   raceKey: number;
@@ -146,6 +147,7 @@ function raceDistance(progress: number, entry: RaceEntry, isWinner: boolean) {
 
 export default function MarbleRace({
   participants,
+  itemType = 'participant',
   winnerIndex,
   racing,
   raceKey,
@@ -204,6 +206,9 @@ export default function MarbleRace({
   }, [raceKey, racing]);
 
   const winnerName = validWinner && winnerIndex !== null ? participants[winnerIndex] : '';
+  const isPrizeDraw = itemType === 'prize';
+  const itemNoun = isPrizeDraw ? '상품' : '참여자';
+  const countUnit = isPrizeDraw ? '개' : '명';
   const displayCount = entries.length;
   const hiddenCount = Math.max(0, participants.length - displayCount);
   const laneStroke = displayCount > 8 ? 24 : 31;
@@ -237,12 +242,14 @@ export default function MarbleRace({
           role="img"
           aria-label={
             racing
-              ? `${participants.length}명의 마블이 결승선을 향해 달리고 있습니다.`
+              ? `${participants.length}${countUnit}의 마블이 결승선을 향해 달리고 있습니다.`
               : validWinner
-                ? `${winnerName} 마블이 우승했습니다.`
+                ? isPrizeDraw
+                  ? `당첨 상품은 ${winnerName}입니다.`
+                  : `${winnerName} 마블이 우승했습니다.`
                 : participants.length > 0
-                  ? `${participants.length}명의 마블이 출발을 기다리고 있습니다.`
-                  : '참가자 마블을 기다리고 있습니다.'
+                  ? `${participants.length}${countUnit}의 마블이 출발을 기다리고 있습니다.`
+                  : `${itemNoun} 마블을 기다리고 있습니다.`
           }
         >
           <title>Retto Marble Dash</title>
@@ -342,28 +349,28 @@ export default function MarbleRace({
 
           {participants.length === 0 && (
             <g className="marble-race__empty-copy">
-              <text x="500" y="308" textAnchor="middle">참여자가 없습니다.</text>
+              <text x="500" y="308" textAnchor="middle">{itemNoun}이 없습니다.</text>
             </g>
           )}
         </svg>
 
         {hiddenCount > 0 && (
-          <p className="marble-race__overflow" aria-label={`총 ${hiddenCount}명의 추가 참가자`}>
-            +{hiddenCount}명 포함
+          <p className="marble-race__overflow" aria-label={`총 ${hiddenCount}${countUnit}의 추가 ${itemNoun}`}>
+            +{hiddenCount}{countUnit} 포함
           </p>
         )}
       </div>
 
       <div className="marble-race__footer">
-        <span className="marble-race__count">참여자 {participants.length.toLocaleString('ko-KR')}명</span>
+        <span className="marble-race__count">{itemNoun} {participants.length.toLocaleString('ko-KR')}{countUnit}</span>
         <span className="marble-race__status" aria-live="polite">
           {racing
             ? '추첨 중'
             : validWinner
-              ? `당첨: ${winnerName}`
+              ? isPrizeDraw ? `당첨 상품: ${winnerName}` : `당첨: ${winnerName}`
               : participants.length > 0
                 ? '추첨 대기'
-                : '참여자 없음'}
+                : `${itemNoun} 없음`}
         </span>
       </div>
     </section>

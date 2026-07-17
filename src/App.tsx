@@ -1,16 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import MarbleRace from './components/MarbleRace';
+import ParticipantSetup from './components/ParticipantSetup';
 import RouletteWheel from './components/RouletteWheel';
-import { demoParticipants, demoPrizes } from './data/demo';
-import { extractNaverCafeCommentAuthors } from './lib/clipboardCommentParser';
 import { pickWeightedIndex, sampleWithoutReplacement } from './lib/draw';
-import {
-  parseImportHash,
-  parseNaverCafeArticle,
-} from './lib/naverCollector';
-import { importPublicCafeAuthors, PublicCafeImportError } from './lib/publicCafeImport';
-import type { NaverCafeImport } from './lib/naverCollector';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize } from './types';
 
 import './App.css';
@@ -21,10 +14,8 @@ type DrawOption = {
   weight: number;
 };
 
-type ImportStatus = 'idle' | 'checking' | 'loading' | 'complete' | 'error';
-
-const DEFAULT_CAFE_URL =
-  'https://cafe.naver.com/f-e/cafes/31662960/articles/1105?boardtype=L&referrerAllArticles=true';
+type SideTab = 'participants' | 'prizes' | 'history';
+type SetupStartStep = 'paste' | 'edit';
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -37,58 +28,25 @@ function formatTime(iso: string) {
   }).format(new Date(iso));
 }
 
-function parseManualNames(value: string) {
-  const timePattern = /^(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}:\d{2}|답글쓰기|더보기|등록)$/;
-
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.split('\t')[0].trim())
-    .map((line) => line.replace(/^[-•·]\s*/, '').trim())
-    .filter((line) => line.length > 0 && line.length <= 40 && !timePattern.test(line));
+function clampInteger(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, Math.floor(value) || min));
 }
 
-function uniqueNames(names: string[]) {
-  const seen = new Set<string>();
-
-  return names.filter((name) => {
-    const key = name.replace(/\s+/g, ' ').trim().toLocaleLowerCase('ko-KR');
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function makeParticipants(names: string[]): Participant[] {
-  return uniqueNames(names).map((name, index) => ({
-    id: `import-${Date.now()}-${index}`,
-    name,
-    weight: 1,
-    commentCount: 1,
-  }));
-}
-
-function importErrorMessage(error: unknown) {
-  if (error instanceof PublicCafeImportError) {
-    if (error.code === 'ARTICLE_NOT_PUBLIC' || error.code === 'ACCESS_DENIED') {
-      return '이 글은 공개 댓글이 아니어서 자동으로 가져올 수 없어요.';
-    }
-    return error.message;
-  }
-  return '댓글 작성자를 가져오지 못했어요.';
+function prizeTotal(prizes: Prize[]) {
+  return prizes.reduce((sum, prize) => sum + Math.max(0, prize.quantity), 0);
 }
 
 function App() {
   const [drawMode, setDrawMode] = useState<DrawMode>('wheel');
   const [drawTarget, setDrawTarget] = useState<DrawTarget>('people');
-  const [participants, setParticipants] = useState<Participant[]>(demoParticipants);
-  const [prizes, setPrizes] = useState<Prize[]>(demoPrizes);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [prizes, setPrizes] = useState<Prize[]>([]);
   const [excludedParticipantIds, setExcludedParticipantIds] = useState<string[]>([]);
   const [poolLimit, setPoolLimit] = useState(0);
   const [poolIds, setPoolIds] = useState<string[]>([]);
   const [winnerCount, setWinnerCount] = useState(1);
   const [removeAfterDraw, setRemoveAfterDraw] = useState(true);
   const [useWeights, setUseWeights] = useState(false);
-  const [linkPrizeDraw, setLinkPrizeDraw] = useState(false);
   const [recipient, setRecipient] = useState('');
   const [pendingDraws, setPendingDraws] = useState(0);
   const [spinning, setSpinning] = useState(false);
@@ -98,14 +56,11 @@ function App() {
   const [drawTargetSnapshot, setDrawTargetSnapshot] = useState<DrawTarget>('people');
   const [latestResult, setLatestResult] = useState<DrawRecord | null>(null);
   const [history, setHistory] = useState<DrawRecord[]>([]);
-  const [manualNames, setManualNames] = useState('');
-  const [articleUrl, setArticleUrl] = useState(DEFAULT_CAFE_URL);
-  const [clipboardLimit, setClipboardLimit] = useState(0);
-  const [clipboardBefore, setClipboardBefore] = useState('');
-  const [importStatus, setImportStatus] = useState<ImportStatus>('idle');
-  const [importStatusMessage, setImportStatusMessage] = useState('URL을 붙여넣으면 자동으로 가져옵니다.');
+  const [sideTab, setSideTab] = useState<SideTab>('participants');
+  const [setupOpen, setSetupOpen] = useState(true);
+  const [setupSession, setSetupSession] = useState(0);
+  const [setupStartStep, setSetupStartStep] = useState<SetupStartStep>('paste');
   const [toast, setToast] = useState<string | null>(null);
-  const autoImportRequestRef = useRef(0);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -115,10 +70,9 @@ function App() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem('retto-roulette-history');
-      if (saved) {
-        const parsed = JSON.parse(saved) as DrawRecord[];
-        if (Array.isArray(parsed)) setHistory(parsed.slice(0, 100));
-      }
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as DrawRecord[];
+      if (Array.isArray(parsed)) setHistory(parsed.slice(0, 100));
     } catch {
       // A history failure should never prevent a live giveaway from working.
     }
@@ -128,91 +82,15 @@ function App() {
     localStorage.setItem('retto-roulette-history', JSON.stringify(history.slice(0, 100)));
   }, [history]);
 
-  const acceptNaverImport = useCallback((payload: NaverCafeImport) => {
-    const byNickname = new Map<string, Participant>();
-
-    for (const candidate of payload.candidates) {
-      if (candidate.reply) continue;
-
-      const normalizedName = candidate.nick.replace(/\s+/g, ' ').trim();
-      const nameKey = normalizedName.toLocaleLowerCase('ko-KR');
-      if (!normalizedName || !nameKey) continue;
-
-      const current = byNickname.get(nameKey);
-      if (current) {
-        current.commentCount = (current.commentCount ?? 1) + 1;
-      } else {
-        byNickname.set(nameKey, {
-          id: candidate.id || createId('naver'),
-          name: normalizedName,
-          weight: 1,
-          commentCount: 1,
-        });
-      }
-    }
-
-    const imported = [...byNickname.values()];
-    if (imported.length === 0) {
-      showToast('가져올 원댓글 작성자가 없어요.');
-      return;
-    }
-
-    setParticipants(imported);
-    setExcludedParticipantIds([]);
-    setPoolIds([]);
-    setPoolLimit(0);
-    setWinnerIndex(null);
-    setPresentedOptions([]);
-    showToast(`${imported.length}명의 카페 댓글 참여자를 담았어요!`);
+  useEffect(() => {
+    if (!window.location.hash.startsWith('#import=')) return;
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    showToast('네이버 URL 자동 가져오기는 종료됐어요. 카페 페이지를 붙여넣어 주세요.');
   }, [showToast]);
 
   useEffect(() => {
-    const imported = parseImportHash(window.location.hash);
-    if (!imported) return;
-
-    acceptNaverImport(imported);
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-  }, [acceptNaverImport]);
-
-  const updateArticleUrl = (value: string) => {
-    autoImportRequestRef.current += 1;
-    setArticleUrl(value);
-    setImportStatus('checking');
-    setImportStatusMessage('게시글 주소를 확인하고 있어요.');
-  };
-
-  useEffect(() => {
-    const requestId = autoImportRequestRef.current;
-    if (requestId === 0) return;
-
-    if (!parseNaverCafeArticle(articleUrl)) {
-      setImportStatus('error');
-      setImportStatusMessage('네이버 카페 게시글 주소를 확인해 주세요.');
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setImportStatus('loading');
-      setImportStatusMessage('댓글 작성자를 가져오고 있어요.');
-
-      void importPublicCafeAuthors(articleUrl)
-        .then((payload) => {
-          if (requestId !== autoImportRequestRef.current) return;
-          setImportStatus('complete');
-          setImportStatusMessage(`${payload.candidates.length}개의 댓글 작성자를 확인했어요.`);
-          acceptNaverImport(payload);
-        })
-        .catch((error: unknown) => {
-          if (requestId !== autoImportRequestRef.current) return;
-          setImportStatus('error');
-          setImportStatusMessage(importErrorMessage(error));
-        });
-    }, 550);
-
-    return () => window.clearTimeout(timer);
-    // The fetch must run only for a newly pasted or typed URL.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [articleUrl]);
+    if (!setupOpen) window.scrollTo(0, 0);
+  }, [setupOpen]);
 
   const eligibleParticipants = useMemo(
     () => participants.filter((participant) => !excludedParticipantIds.includes(participant.id)),
@@ -226,19 +104,16 @@ function App() {
     }
 
     const limit = Math.min(poolLimit, eligibleParticipants.length);
-    const eligibleIdSet = new Set(eligibleParticipants.map((participant) => participant.id));
-    const stillAvailable = poolIds.filter((id) => eligibleIdSet.has(id)).slice(0, limit);
-
-    if (stillAvailable.length === limit) {
-      if (stillAvailable.join('|') !== poolIds.join('|')) setPoolIds(stillAvailable);
+    const availableIds = new Set(eligibleParticipants.map((participant) => participant.id));
+    const retained = poolIds.filter((id) => availableIds.has(id)).slice(0, limit);
+    if (retained.length === limit) {
+      if (retained.join('|') !== poolIds.join('|')) setPoolIds(retained);
       return;
     }
 
-    const rest = eligibleParticipants.filter((participant) => !stillAvailable.includes(participant.id));
-    const fillers = sampleWithoutReplacement(rest, limit - stillAvailable.length).map(
-      (participant) => participant.id,
-    );
-    setPoolIds([...stillAvailable, ...fillers]);
+    const remaining = eligibleParticipants.filter((participant) => !retained.includes(participant.id));
+    const fill = sampleWithoutReplacement(remaining, limit - retained.length).map((participant) => participant.id);
+    setPoolIds([...retained, ...fill]);
   }, [eligibleParticipants, poolIds, poolLimit]);
 
   const candidateParticipants = useMemo(() => {
@@ -248,54 +123,54 @@ function App() {
   }, [eligibleParticipants, poolIds, poolLimit]);
 
   const drawOptions = useMemo<DrawOption[]>(() => {
-    if (drawTarget === 'people') {
-      return candidateParticipants.map((participant) => ({
-        id: participant.id,
-        name: participant.name,
-        weight: useWeights ? participant.weight : 1,
-      }));
-    }
+    const options = drawTarget === 'people'
+      ? candidateParticipants.map((participant) => ({
+          id: participant.id,
+          name: participant.name,
+          weight: useWeights ? participant.weight : 1,
+        }))
+      : prizes
+          .filter((prize) => prize.quantity > 0)
+          .map((prize) => ({
+            id: prize.id,
+            name: prize.name,
+            weight: useWeights ? prize.weight : 1,
+          }));
 
-    return prizes
-      .filter((prize) => prize.quantity > 0)
-      .map((prize) => ({
-        id: prize.id,
-        name: prize.name,
-        weight: useWeights ? prize.weight : 1,
-      }));
+    return useWeights ? options.filter((option) => option.weight > 0) : options;
   }, [candidateParticipants, drawTarget, prizes, useWeights]);
 
   const displayOptions = spinning || winnerIndex !== null ? presentedOptions : drawOptions;
   const displayNames = displayOptions.map((option) => option.name);
+  const availablePrizeCount = prizeTotal(prizes);
 
   useEffect(() => {
     if (pendingDraws === 0 || spinning) return;
     if (drawOptions.length === 0) {
       setPendingDraws(0);
-      showToast('추첨할 대상이 없어요. 후보나 상품을 먼저 채워 주세요.');
+      showToast(drawTarget === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
       return;
     }
 
     const snapshot = drawOptions;
-    const nextWinner = pickWeightedIndex(snapshot);
     setPresentedOptions(snapshot);
     setDrawTargetSnapshot(drawTarget);
-    setWinnerIndex(nextWinner);
+    setWinnerIndex(pickWeightedIndex(snapshot));
     setSpinning(true);
     setSpinKey((value) => value + 1);
     setPendingDraws((value) => Math.max(0, value - 1));
   }, [drawOptions, drawTarget, pendingDraws, showToast, spinning]);
 
-  const reshufflePool = () => {
-    if (poolLimit === 0) {
-      showToast('현재는 전체 참여자를 사용 중이에요. 후보 수를 먼저 정해 주세요.');
-      return;
-    }
-
-    const count = Math.min(poolLimit, eligibleParticipants.length);
-    setPoolIds(sampleWithoutReplacement(eligibleParticipants, count).map((participant) => participant.id));
+  const clearStageResult = () => {
     setWinnerIndex(null);
     setPresentedOptions([]);
+    setLatestResult(null);
+  };
+
+  const changeTarget = (target: DrawTarget) => {
+    if (spinning) return;
+    setDrawTarget(target);
+    clearStageResult();
   };
 
   const completeDraw = () => {
@@ -310,7 +185,7 @@ function App() {
       return;
     }
 
-    const record: DrawRecord = {
+    const result: DrawRecord = {
       id: createId('result'),
       createdAt: new Date().toISOString(),
       mode: drawMode,
@@ -319,142 +194,129 @@ function App() {
       recipient: drawTargetSnapshot === 'prizes' ? recipient.trim() || undefined : undefined,
     };
 
-    setHistory((items) => [record, ...items].slice(0, 100));
-    setLatestResult(record);
+    setHistory((items) => [result, ...items].slice(0, 100));
+    setLatestResult(result);
 
     if (drawTargetSnapshot === 'people' && removeAfterDraw) {
-      setExcludedParticipantIds((ids) => [...ids, chosen.id]);
+      setExcludedParticipantIds((ids) => (ids.includes(chosen.id) ? ids : [...ids, chosen.id]));
     }
 
     if (drawTargetSnapshot === 'prizes') {
-      setPrizes((items) =>
-        items.map((prize) =>
-          prize.id === chosen.id
-            ? { ...prize, quantity: Math.max(0, prize.quantity - 1) }
-            : prize,
-        ),
-      );
+      setPrizes((items) => items.map((prize) => (
+        prize.id === chosen.id
+          ? { ...prize, quantity: Math.max(0, prize.quantity - 1) }
+          : prize
+      )));
+      setSideTab('history');
     }
 
     setSpinning(false);
-
-    if (drawTargetSnapshot === 'people' && linkPrizeDraw) {
-      setRecipient(chosen.name);
-      setDrawTarget('prizes');
-      showToast(`${chosen.name}님 당첨! 이제 상품 룰렛을 돌려 주세요. ✦`);
-    }
   };
 
   const startDraw = () => {
     if (spinning || pendingDraws > 0) return;
-
     const possibleCount = Math.min(winnerCount, drawOptions.length);
     if (possibleCount < 1) {
-      showToast('추첨할 대상이 없어요.');
+      showToast(drawTarget === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
       return;
     }
-
-    setLatestResult(null);
-    setWinnerIndex(null);
+    clearStageResult();
     setPendingDraws(possibleCount);
   };
 
-  const resetSession = () => {
-    setExcludedParticipantIds([]);
-    setPoolIds([]);
-    setPoolLimit(0);
-    setWinnerIndex(null);
-    setPresentedOptions([]);
-    setLatestResult(null);
-    setPendingDraws(0);
-    setSpinning(false);
-    showToast('새 방송 세션을 준비했어요. 참여자는 그대로 보관됩니다.');
+  const reshufflePool = () => {
+    if (poolLimit === 0) return;
+    const count = Math.min(poolLimit, eligibleParticipants.length);
+    setPoolIds(sampleWithoutReplacement(eligibleParticipants, count).map((participant) => participant.id));
+    clearStageResult();
+    showToast(`후보 ${count}명을 새로 골랐어요.`);
   };
 
-  const importManualNames = (value = manualNames, plainTextFallback = '') => {
-    const possibleJson = value.trim().startsWith('{')
-      ? parseImportHash(`#import=${encodeURIComponent(value.trim())}`)
-      : null;
+  const openParticipantEditor = () => {
+    setSetupStartStep('edit');
+    setSetupSession((value) => value + 1);
+    setSetupOpen(true);
+  };
 
-    if (possibleJson) {
-      acceptNaverImport(possibleJson);
-      setManualNames('');
+  const saveParticipants = (nextParticipants: Participant[]) => {
+    const nextIds = new Set(nextParticipants.map((participant) => participant.id));
+    setParticipants(nextParticipants);
+    setExcludedParticipantIds((ids) => ids.filter((id) => nextIds.has(id)));
+    setPoolIds([]);
+    setSetupOpen(false);
+    clearStageResult();
+    showToast(`${nextParticipants.length}명의 참여자 명단을 준비했어요.`);
+  };
+
+  const restoreParticipant = (id: string, name: string) => {
+    setExcludedParticipantIds((ids) => ids.filter((excludedId) => excludedId !== id));
+    showToast(`${name}님을 다시 추첨 명단에 넣었어요.`);
+  };
+
+  const resetWinnerState = () => {
+    if (excludedParticipantIds.length === 0) {
+      showToast('초기화할 당첨 제외 인원이 없어요.');
       return;
     }
-
-    let extractedAuthors = extractNaverCafeCommentAuthors(value, {
-      before: clipboardBefore,
-    });
-    if (
-      !extractedAuthors.some((candidate) => !candidate.reply) &&
-      plainTextFallback &&
-      plainTextFallback !== value
-    ) {
-      extractedAuthors = extractNaverCafeCommentAuthors(plainTextFallback, {
-        before: clipboardBefore,
-      });
-    }
-    const rootAuthors = extractedAuthors.filter((candidate) => !candidate.reply);
-    const limitedAuthors = clipboardLimit > 0 ? rootAuthors.slice(0, clipboardLimit) : rootAuthors;
-    if (limitedAuthors.length > 0) {
-      const article = parseNaverCafeArticle(articleUrl);
-      acceptNaverImport({
-        version: 1,
-        source: 'naver-cafe',
-        cafeId: article?.cafeId ?? '0',
-        articleId: article?.articleId ?? '0',
-        collectedAt: new Date().toISOString(),
-        candidates: limitedAuthors,
-      });
-      setManualNames('');
-      return;
-    }
-
-    const names = parseManualNames(plainTextFallback || value);
-    const imported = makeParticipants(clipboardLimit > 0 ? names.slice(0, clipboardLimit) : names);
-
-    if (imported.length === 0) {
-      showToast('가져올 닉네임을 찾지 못했어요. 한 줄에 한 명씩 붙여 넣어 주세요.');
-      return;
-    }
-
-    setParticipants(imported);
+    if (!window.confirm(`당첨 제외 ${excludedParticipantIds.length}명을 다시 명단에 넣을까요? 당첨 기록은 유지됩니다.`)) return;
     setExcludedParticipantIds([]);
     setPoolIds([]);
-    setPoolLimit(0);
-    setManualNames('');
-    showToast(`${imported.length}명의 참여자를 담았어요.`);
+    clearStageResult();
+    showToast('당첨 제외 상태를 초기화했어요. 기록은 그대로예요.');
+  };
+
+  const startPrizeForLatestWinner = () => {
+    if (!latestResult || latestResult.target !== 'people') return;
+    if (availablePrizeCount === 0) {
+      setSideTab('prizes');
+      showToast('먼저 상품을 추가해 주세요.');
+      return;
+    }
+    setRecipient(latestResult.winner);
+    setWinnerCount(1);
+    setDrawTarget('prizes');
+    setSideTab('prizes');
+    clearStageResult();
+    showToast(`${latestResult.winner}님에게 드릴 상품을 뽑아 주세요.`);
   };
 
   const updateParticipantWeight = (id: string, weight: number) => {
-    setParticipants((items) =>
-      items.map((participant) =>
-        participant.id === id
-          ? { ...participant, weight: Math.max(0, Math.min(weight, 99)) }
-          : participant,
-      ),
-    );
+    setParticipants((items) => items.map((participant) => (
+      participant.id === id
+        ? { ...participant, weight: Math.max(0, Math.min(99, Math.floor(weight) || 0)) }
+        : participant
+    )));
   };
 
   const updatePrize = (id: string, patch: Partial<Prize>) => {
-    setPrizes((items) =>
-      items.map((prize) => (prize.id === id ? { ...prize, ...patch } : prize)),
-    );
+    setPrizes((items) => items.map((prize) => (prize.id === id ? { ...prize, ...patch } : prize)));
   };
 
   const addPrize = () => {
-    setPrizes((items) => [
-      ...items,
-      { id: createId('prize'), name: '새 선물', quantity: 1, weight: 1 },
-    ]);
+    setPrizes((items) => [...items, { id: createId('prize'), name: '새 선물', quantity: 1, weight: 1 }]);
+  };
+
+  const removePrize = (id: string, name: string) => {
+    if (!window.confirm(`${name} 상품을 목록에서 지울까요?`)) return;
+    setPrizes((items) => items.filter((prize) => prize.id !== id));
+  };
+
+  const copyParticipantList = async () => {
+    if (participants.length === 0) return;
+    const numbered = participants.map((participant, index) => `${index + 1}. ${participant.name}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(numbered);
+      showToast(`${participants.length}명의 참여자 목록을 복사했어요.`);
+    } catch {
+      showToast('클립보드 권한을 허용한 뒤 다시 시도해 주세요.');
+    }
   };
 
   const exportHistory = () => {
     if (history.length === 0) {
-      showToast('아직 저장할 당첨 결과가 없어요.');
+      showToast('저장할 당첨 기록이 없어요.');
       return;
     }
-
     const header = ['시간', '모드', '추첨 대상', '결과', '수령자'];
     const rows = history.map((item) => [
       new Date(item.createdAt).toLocaleString('ko-KR'),
@@ -475,371 +337,120 @@ function App() {
   };
 
   const clearHistory = () => {
+    if (history.length === 0) return;
+    if (!window.confirm('당첨 기록을 모두 비울까요? 이 작업은 되돌릴 수 없어요.')) return;
     setHistory([]);
     showToast('당첨 기록을 비웠어요.');
   };
 
-  const copyAuthorList = async () => {
-    const numbered = participants.map((participant, index) => `${index + 1}. ${participant.name}`).join('\n');
-    if (!numbered) {
-      showToast('복사할 작성자가 없어요.');
-      return;
-    }
+  const stageResult = latestResult && latestResult.target === drawTarget ? latestResult : null;
+  const drawButtonLabel = spinning || pendingDraws > 0
+    ? '추첨 진행 중…'
+    : drawTarget === 'people'
+      ? `${winnerCount}명 추첨하기`
+      : `${winnerCount}개 상품 뽑기`;
 
-    try {
-      await navigator.clipboard.writeText(numbered);
-      showToast(`${participants.length}명의 작성자 목록을 복사했어요.`);
-    } catch {
-      showToast('클립보드 권한을 허용한 뒤 다시 시도해 주세요.');
-    }
-  };
-
-  const candidateLabel = drawTarget === 'people' ? '참여자' : '상품';
-  const drawButtonLabel =
-    pendingDraws > 0 || spinning
-      ? '추첨 진행 중…'
-      : drawMode === 'wheel'
-        ? `${winnerCount}명 추첨하기`
-        : `${winnerCount}명 마블 추첨하기`;
+  if (setupOpen) {
+    return (
+      <main className="app-shell app-shell--setup">
+        <header className="brand-header">
+          <a className="brand" href="./" aria-label="Retto Roulette 홈">
+            <span className="brand__mark" aria-hidden="true">🍸 💝</span>
+            <strong>Retto Roulette</strong>
+          </a>
+          <span className="header-pill">v0.2.0</span>
+        </header>
+        <ParticipantSetup
+          key={setupSession}
+          initialParticipants={participants}
+          initialStep={setupStartStep}
+          onCancel={participants.length > 0 ? () => setSetupOpen(false) : undefined}
+          onStart={saveParticipants}
+        />
+        {toast && <div className="toast" role="status">{toast}</div>}
+      </main>
+    );
+  }
 
   return (
     <main className="app-shell">
       <header className="brand-header">
         <a className="brand" href="./" aria-label="Retto Roulette 홈">
           <span className="brand__mark" aria-hidden="true">🍸 💝</span>
-          <span>
-            <strong>Retto Roulette</strong>
-          </span>
+          <strong>Retto Roulette</strong>
         </a>
         <div className="header-actions">
-          <span className="header-pill">참여자 {eligibleParticipants.length}명</span>
-          <button className="ghost-button" type="button" onClick={resetSession}>
-            새 추첨
-          </button>
+          <span className="header-pill">남은 참여자 {eligibleParticipants.length}명</span>
+          <button className="compact-button" type="button" onClick={openParticipantEditor}>명단 조정</button>
+          <button className="ghost-button" type="button" onClick={resetWinnerState}>당첨 상태 초기화</button>
         </div>
       </header>
 
-      <div className="dashboard-grid">
-        <aside className="control-panel" aria-label="추첨 설정">
-          <div className="panel-title-row">
-            <h2>추첨 설정</h2>
-            <span className="panel-kicker">댓글 → 추첨</span>
-          </div>
+      <section className="round-bar" aria-label="이번 추첨 설정">
+        <div className="round-toggle" aria-label="추첨 대상">
+          <button type="button" aria-pressed={drawTarget === 'people'} disabled={spinning} onClick={() => changeTarget('people')}>사람 추첨</button>
+          <button type="button" aria-pressed={drawTarget === 'prizes'} disabled={spinning} onClick={() => changeTarget('prizes')}>상품 추첨</button>
+        </div>
 
-          <section className="import-card" aria-labelledby="import-title">
-            <h3 className="import-card__title" id="import-title">네이버 카페 댓글 가져오기</h3>
-            <p className="import-card__hint">게시글 주소를 붙여넣고 댓글 작성자 목록을 가져옵니다.</p>
-            <div className="url-row">
-              <input
-                className="text-field"
-                value={articleUrl}
-                onChange={(event) => updateArticleUrl(event.target.value)}
-                aria-label="네이버 카페 글 주소"
-              />
-            </div>
-            <p className={`import-status import-status--${importStatus}`} role="status">
-              {importStatusMessage}
-            </p>
-          </section>
+        <label className="round-number">
+          <span>이번 당첨</span>
+          <input
+            type="number"
+            min="1"
+            max={Math.max(1, drawOptions.length)}
+            value={winnerCount}
+            disabled={spinning}
+            onChange={(event) => setWinnerCount(clampInteger(Number(event.target.value), 1, Math.max(1, drawOptions.length)))}
+          />
+          <em>{drawTarget === 'people' ? '명' : '개'}</em>
+        </label>
 
-          <section className="clipboard-import-card" aria-labelledby="clipboard-import-title">
-            <h3 id="clipboard-import-title">페이지 붙여넣기</h3>
-            <textarea
-              className="textarea-field"
-              value={manualNames}
-              onChange={(event) => setManualNames(event.target.value)}
-              onPaste={(event) => {
-                const plainText = event.clipboardData.getData('text/plain') || event.clipboardData.getData('text');
-                const richText = event.clipboardData.getData('text/html');
-                if (!plainText && !richText) return;
-                event.preventDefault();
-                setManualNames(plainText || richText);
-                window.setTimeout(() => importManualNames(richText || plainText, plainText), 0);
-              }}
-              aria-label="카페 글에서 복사한 페이지 내용"
-              placeholder="카페 글에서 Ctrl+A → Ctrl+C 후 여기에 Ctrl+V"
-            />
-            <div className="clipboard-import-options" aria-label="댓글 가져오기 범위">
-              <label>
-                <span>앞에서 N명</span>
-                <input
-                  className="number-field"
-                  type="number"
-                  min="0"
-                  value={clipboardLimit}
-                  onChange={(event) => setClipboardLimit(Math.max(0, Number(event.target.value) || 0))}
-                  aria-label="가져올 댓글 작성자 수"
-                />
-                <small>0이면 전부</small>
-              </label>
-              <label>
-                <span>이 시간까지</span>
-                <input
-                  className="text-field"
-                  type="datetime-local"
-                  value={clipboardBefore}
-                  onChange={(event) => setClipboardBefore(event.target.value)}
-                  aria-label="댓글 마감 시간"
-                />
-              </label>
-            </div>
-            <div className="clipboard-import-card__footer">
-              <span>대댓글 제외 · 시간순 번호 정렬</span>
-              <button className="compact-button" type="button" onClick={() => importManualNames()}>
-                작성자 추출
-              </button>
-            </div>
-          </section>
-
-          <section className="author-list-card" aria-labelledby="author-list-title">
-            <div className="panel-title-row">
-              <h3 id="author-list-title">댓글 작성자</h3>
-              <button className="compact-button" type="button" onClick={copyAuthorList}>
-                목록 복사
-              </button>
-            </div>
-            <ol className="author-list">
-              {participants.slice(0, 100).map((participant) => (
-                <li key={participant.id}>{participant.name}</li>
-              ))}
-            </ol>
-            {participants.length > 100 && <p className="input-help">목록 복사에는 전체 {participants.length}명이 포함됩니다.</p>}
-          </section>
-
-          <div className="draw-mode-tabs" aria-label="추첨 연출 모드">
-            <button
-              className="draw-mode-button"
-              type="button"
-              aria-pressed={drawMode === 'wheel'}
-              disabled={spinning}
-              onClick={() => setDrawMode('wheel')}
-            >
-              룰렛
-              <small>회전 추첨</small>
-            </button>
-            <button
-              className="draw-mode-button"
-              type="button"
-              aria-pressed={drawMode === 'marble'}
-              disabled={spinning}
-              onClick={() => setDrawMode('marble')}
-            >
-              마블 레이스
-              <small>레이스 추첨</small>
-            </button>
-          </div>
-
-          <div className="settings-heading">
-            <h2>추첨 대상</h2>
-          </div>
-          <div className="target-tabs" aria-label="추첨 대상">
-            <button
-              className="target-button"
-              type="button"
-              aria-pressed={drawTarget === 'people'}
-              disabled={spinning}
-              onClick={() => {
-                setDrawTarget('people');
-                setWinnerIndex(null);
-              }}
-            >
-              사람 뽑기
-              <small>{eligibleParticipants.length}명 남음</small>
-            </button>
-            <button
-              className="target-button"
-              type="button"
-              aria-pressed={drawTarget === 'prizes'}
-              disabled={spinning}
-              onClick={() => {
-                setDrawTarget('prizes');
-                setWinnerIndex(null);
-              }}
-            >
-              상품 뽑기
-              <small>{prizes.reduce((sum, prize) => sum + prize.quantity, 0)}개 남음</small>
-            </button>
-          </div>
-
-          <div className="settings-heading">
-            <h2>이번 라운드</h2>
-            <span className="panel-kicker">전체 중 선택</span>
-          </div>
-          <div className="settings-grid">
-            <section className="setting-card">
-              <label htmlFor="pool-limit">후보 N명 담기</label>
-              <input
-                className="number-field"
-                id="pool-limit"
-                min="0"
-                max={eligibleParticipants.length}
-                type="number"
-                value={poolLimit}
-                onChange={(event) => setPoolLimit(Math.max(0, Number(event.target.value) || 0))}
-                disabled={drawTarget === 'prizes' || spinning}
-              />
-              <small>0이면 전체</small>
-            </section>
-            <section className="setting-card">
-              <label htmlFor="winner-count">당첨 N명 뽑기</label>
-              <input
-                className="number-field"
-                id="winner-count"
-                min="1"
-                max={Math.max(1, drawOptions.length)}
-                type="number"
-                value={winnerCount}
-                onChange={(event) => setWinnerCount(Math.max(1, Number(event.target.value) || 1))}
-                disabled={spinning}
-              />
-              <small>한 명씩 연출</small>
-            </section>
-
-            {drawTarget === 'prizes' && (
-              <section className="setting-card setting-card--wide">
-                <label htmlFor="recipient">이번 상품을 받을 사람</label>
-                <input
-                  className="text-field"
-                  id="recipient"
-                  value={recipient}
-                  onChange={(event) => setRecipient(event.target.value)}
-                  placeholder="예: 말랑콩"
-                />
-              </section>
-            )}
-          </div>
-
-          {drawTarget === 'people' && (
-            <>
-              <div className="pool-summary">
-                <strong>현재 룰렛 후보</strong>
-                <span>{candidateParticipants.length}명</span>
-              </div>
-              <div className="name-chips" aria-label="현재 후보 이름">
-                {candidateParticipants.slice(0, 10).map((participant) => (
-                  <span className="name-chip" key={participant.id}>{participant.name}</span>
-                ))}
-                {candidateParticipants.length > 10 && (
-                  <span className="name-chip name-chip--more">+{candidateParticipants.length - 10}</span>
-                )}
-              </div>
-              {poolLimit > 0 && (
-                <button className="compact-button" type="button" onClick={reshufflePool} disabled={spinning}>
-                  후보 다시 섞기
-                </button>
-              )}
-            </>
-          )}
-
-          <label className="switch-row">
+        {drawTarget === 'people' ? (
+          <label className="round-number">
+            <span>이번 후보</span>
             <input
-              type="checkbox"
-              checked={removeAfterDraw}
-              onChange={(event) => setRemoveAfterDraw(event.target.checked)}
-              disabled={drawTarget === 'prizes'}
+              type="number"
+              min="0"
+              max={eligibleParticipants.length}
+              value={poolLimit}
+              disabled={spinning}
+              onChange={(event) => setPoolLimit(Math.max(0, Math.min(eligibleParticipants.length, Number(event.target.value) || 0)))}
             />
-            <span>
-              당첨되면 후보에서 빼기
-              <small>켜 두면 중복 당첨 없이 순서대로 뽑아요.</small>
-            </span>
+            <em>명 · 0은 전체</em>
           </label>
-
-          <label className="switch-row">
-            <input
-              type="checkbox"
-              checked={linkPrizeDraw}
-              onChange={(event) => setLinkPrizeDraw(event.target.checked)}
-              disabled={drawTarget === 'prizes'}
-            />
-            <span>
-              사람 당첨 후 상품 룰렛으로 이어가기
-              <small>당첨자의 이름을 자동으로 상품 추첨에 넘겨요.</small>
-            </span>
+        ) : (
+          <label className="round-recipient">
+            <span>받을 사람</span>
+            <input value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="선택 입력" />
           </label>
+        )}
 
-          <section className="prize-card" aria-labelledby="prize-title">
-            <div className="panel-title-row">
-              <h2 id="prize-title">상품 지정</h2>
-              <button className="compact-button" type="button" onClick={addPrize}>+ 선물</button>
-            </div>
-            <div className="prize-list">
-              {prizes.map((prize) => (
-                <div className="prize-row" key={prize.id}>
-                  <input
-                    className="prize-name-input"
-                    aria-label={`${prize.name} 상품 이름`}
-                    value={prize.name}
-                    onChange={(event) => updatePrize(prize.id, { name: event.target.value })}
-                  />
-                  <input
-                    className="prize-quantity-input"
-                    aria-label={`${prize.name} 수량`}
-                    min="0"
-                    type="number"
-                    value={prize.quantity}
-                    onChange={(event) => updatePrize(prize.id, { quantity: Math.max(0, Number(event.target.value) || 0) })}
-                  />
-                  <span className="count-badge">{prize.quantity}개</span>
-                </div>
-              ))}
-            </div>
-          </section>
+        <div className="round-toggle round-toggle--mode" aria-label="추첨 연출">
+          <button type="button" aria-pressed={drawMode === 'wheel'} disabled={spinning} onClick={() => setDrawMode('wheel')}>룰렛</button>
+          <button type="button" aria-pressed={drawMode === 'marble'} disabled={spinning} onClick={() => setDrawMode('marble')}>마블</button>
+        </div>
+        <span className="round-status">{removeAfterDraw && drawTarget === 'people' ? '중복 당첨 방지 중' : useWeights ? '가중치 적용 중' : '동일 확률'}</span>
+      </section>
 
-          <details className="advanced-options">
-            <summary>확률 · 고급 설정</summary>
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={useWeights}
-                onChange={(event) => setUseWeights(event.target.checked)}
-              />
-              <span>
-                가중 추첨 사용
-                <small>켜면 아래 숫자가 높을수록 당첨 확률이 커져요. 방송 화면에도 가중 추첨임을 표시합니다.</small>
-              </span>
-            </label>
-            <div className="weight-editor">
-              {(drawTarget === 'people' ? candidateParticipants : prizes).slice(0, 10).map((item) => (
-                <label className="weight-editor__row" key={item.id}>
-                  <span>{item.name}</span>
-                  <input
-                    className="weight-input"
-                    min="0"
-                    max="99"
-                    type="number"
-                    value={item.weight}
-                    onChange={(event) => {
-                      const nextWeight = Math.max(0, Number(event.target.value) || 0);
-                      if (drawTarget === 'people') updateParticipantWeight(item.id, nextWeight);
-                      else updatePrize(item.id, { weight: nextWeight });
-                    }}
-                  />
-                </label>
-              ))}
+      <div className="broadcast-grid">
+        <section className="broadcast-stage" aria-labelledby="stage-title">
+          <div className="broadcast-stage__heading">
+            <div>
+              <p className="broadcast-stage__eyebrow">이번 라운드</p>
+              <h1 id="stage-title">
+                {drawTarget === 'people'
+                  ? '참여자 추첨'
+                  : recipient.trim() ? `${recipient.trim()}님 상품 추첨` : '상품 추첨'}
+              </h1>
             </div>
-            <p>기본값 1은 같은 확률입니다. 0은 이번 추첨에서 제외됩니다.</p>
-          </details>
-        </aside>
-
-        <section className="stage-panel" aria-labelledby="stage-title">
-          <div className="stage-heading">
-            <div className="stage-title-row">
-              <h2 id="stage-title">
-                {drawTarget === 'people' ? '참여자 추첨' : '상품 추첨'}
-              </h2>
-              <span className="mode-chip">
-                {drawMode === 'wheel' ? '룰렛' : '마블'} · {useWeights ? '가중' : '동일 확률'}
-              </span>
-            </div>
-            <p className="stage-subtitle">
-              {candidateLabel} {drawOptions.length}개 · {winnerCount}명씩 · {removeAfterDraw && drawTarget === 'people' ? '중복 없음' : '재당첨 가능'}
-            </p>
+            <span className="mode-chip">{drawMode === 'wheel' ? '룰렛' : '마블'} · 후보 {drawOptions.length}{drawTarget === 'people' ? '명' : '개'}</span>
           </div>
 
-          <div className="visual-stage">
+          <div className="visual-stage visual-stage--broadcast">
             {drawMode === 'wheel' ? (
               <RouletteWheel
                 participants={displayNames}
+                itemType={drawTarget === 'prizes' ? 'prize' : 'participant'}
                 winnerIndex={winnerIndex}
                 spinning={spinning}
                 spinKey={spinKey}
@@ -848,6 +459,7 @@ function App() {
             ) : (
               <MarbleRace
                 participants={displayNames}
+                itemType={drawTarget === 'prizes' ? 'prize' : 'participant'}
                 winnerIndex={winnerIndex}
                 racing={spinning}
                 raceKey={spinKey}
@@ -856,62 +468,143 @@ function App() {
             )}
           </div>
 
-          <div className="result-ribbon" aria-live="polite">
+          <div className={`live-result${stageResult ? ' has-result' : ''}`} aria-live="polite">
             <div>
-              <span className="result-ribbon__label">{latestResult ? '방금 당첨' : '추첨 대기'}</span>
+              <span>{stageResult ? '방금 당첨' : drawTarget === 'prizes' && recipient.trim() ? '상품을 받을 사람' : '추첨 준비'}</span>
               <strong>
-                {latestResult
-                  ? latestResult.target === 'prizes' && latestResult.recipient
-                    ? `${latestResult.recipient}님 · ${latestResult.winner}`
-                    : latestResult.winner
-                  : drawTarget === 'people'
-                    ? '추첨 버튼을 누르세요.'
-                    : '상품을 선택해 주세요.'}
+                {stageResult
+                  ? stageResult.target === 'prizes' && stageResult.recipient
+                    ? `${stageResult.recipient}님 · ${stageResult.winner}`
+                    : stageResult.winner
+                  : drawTarget === 'prizes' && recipient.trim()
+                    ? `${recipient.trim()}님에게 드릴 상품을 뽑아 주세요`
+                    : '추첨 버튼을 누르세요'}
               </strong>
             </div>
-            <span className="result-ribbon__emoji" aria-hidden="true">{latestResult ? '💝' : '🍸'}</span>
+            {stageResult?.target === 'people' && (
+              <button className="result-prize-button" type="button" onClick={startPrizeForLatestWinner}>이분 상품 뽑기</button>
+            )}
+            <span className="live-result__emoji" aria-hidden="true">{stageResult ? '💝' : '🍸'}</span>
           </div>
 
           <div className="stage-action">
-            <button
-              className="primary-button"
-              type="button"
-              onClick={startDraw}
-              disabled={spinning || pendingDraws > 0 || drawOptions.length === 0}
-            >
+            <button className="primary-button" type="button" onClick={startDraw} disabled={spinning || pendingDraws > 0 || drawOptions.length === 0}>
               {drawButtonLabel}
             </button>
+            {drawTarget === 'people' && poolLimit > 0 && (
+              <button className="stage-link" type="button" disabled={spinning} onClick={reshufflePool}>후보 다시 섞기</button>
+            )}
           </div>
         </section>
 
-        <section className="history-panel" aria-labelledby="history-title">
-          <div className="history-header">
-            <div>
-              <h2 id="history-title">당첨 기록</h2>
-            </div>
-            <div className="header-actions">
-              <button className="compact-button" type="button" onClick={exportHistory}>CSV 저장</button>
-              <button className="compact-button" type="button" onClick={clearHistory}>비우기</button>
-            </div>
-          </div>
-          {history.length > 0 ? (
-            <div className="history-list">
-              {history.slice(0, 6).map((item) => (
-                <article className="history-item" key={item.id}>
-                  <small>{formatTime(item.createdAt)} · {item.mode === 'wheel' ? '룰렛' : '마블'}</small>
-                  <strong>{item.winner}</strong>
-                  <span>
-                    {item.target === 'prizes'
-                      ? item.recipient ? `${item.recipient}님에게 전달` : '상품 추첨'
-                      : '사람 당첨'}
-                  </span>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="history-empty">당첨 기록이 없습니다.</p>
+        <aside className="live-sidebar" aria-label="방송 진행 정보">
+          <nav className="live-tabs" aria-label="방송 진행 패널">
+            <button type="button" aria-pressed={sideTab === 'participants'} onClick={() => setSideTab('participants')}>참여자 <span>{participants.length}</span></button>
+            <button type="button" aria-pressed={sideTab === 'prizes'} onClick={() => setSideTab('prizes')}>상품 <span>{availablePrizeCount}</span></button>
+            <button type="button" aria-pressed={sideTab === 'history'} onClick={() => setSideTab('history')}>당첨 기록 <span>{history.length}</span></button>
+          </nav>
+
+          {sideTab === 'participants' && (
+            <section className="live-panel" aria-labelledby="participant-panel-title">
+              <div className="live-panel__heading">
+                <div>
+                  <h2 id="participant-panel-title">현재 참여자</h2>
+                  <p>추첨 가능 {eligibleParticipants.length}명 · 당첨 제외 {excludedParticipantIds.length}명</p>
+                </div>
+                <button className="compact-button" type="button" onClick={openParticipantEditor}>편집</button>
+              </div>
+              <ol className="live-participant-list">
+                {participants.slice(0, 18).map((participant, index) => {
+                  const excluded = excludedParticipantIds.includes(participant.id);
+                  return (
+                    <li key={participant.id} className={excluded ? 'is-excluded' : ''}>
+                      <span>{index + 1}</span>
+                      <strong>{participant.name}</strong>
+                      {excluded ? <button type="button" onClick={() => restoreParticipant(participant.id, participant.name)}>복귀</button> : <em>참여 중</em>}
+                    </li>
+                  );
+                })}
+              </ol>
+              {participants.length > 18 && <p className="live-panel__note">+{participants.length - 18}명은 명단 조정에서 확인할 수 있어요.</p>}
+              <button className="panel-wide-button" type="button" onClick={copyParticipantList}>번호가 붙은 명단 복사</button>
+
+              <details className="live-advanced">
+                <summary>고급 추첨 설정</summary>
+                <label>
+                  <input type="checkbox" checked={useWeights} onChange={(event) => setUseWeights(event.target.checked)} />
+                  가중치 추첨 사용
+                </label>
+                <label>
+                  <input type="checkbox" checked={!removeAfterDraw} onChange={(event) => setRemoveAfterDraw(!event.target.checked)} />
+                  중복 당첨 허용
+                </label>
+                {useWeights && (
+                  <div className="weight-editor">
+                    {candidateParticipants.slice(0, 12).map((participant) => (
+                      <label className="weight-editor__row" key={participant.id}>
+                        <span>{participant.name}</span>
+                        <input type="number" min="0" max="99" value={participant.weight} onChange={(event) => updateParticipantWeight(participant.id, Number(event.target.value))} />
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </details>
+            </section>
           )}
-        </section>
+
+          {sideTab === 'prizes' && (
+            <section className="live-panel" aria-labelledby="prize-panel-title">
+              <div className="live-panel__heading">
+                <div>
+                  <h2 id="prize-panel-title">상품 수량</h2>
+                  <p>남은 상품 {availablePrizeCount}개</p>
+                </div>
+                <button className="compact-button" type="button" onClick={addPrize}>+ 상품</button>
+              </div>
+              <div className="live-prize-list">
+                {prizes.length === 0 && <p className="live-panel__empty">아직 상품이 없어요. 선물을 추가해 주세요.</p>}
+                {prizes.map((prize) => (
+                  <div className="live-prize-row" key={prize.id}>
+                    <input value={prize.name} onChange={(event) => updatePrize(prize.id, { name: event.target.value })} aria-label={`${prize.name} 상품 이름`} />
+                    <label>
+                      <span>수량</span>
+                      <input type="number" min="0" value={prize.quantity} onChange={(event) => updatePrize(prize.id, { quantity: Math.max(0, Number(event.target.value) || 0) })} aria-label={`${prize.name} 수량`} />
+                    </label>
+                    <button type="button" onClick={() => removePrize(prize.id, prize.name)} aria-label={`${prize.name} 삭제`}>×</button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {sideTab === 'history' && (
+            <section className="live-panel" aria-labelledby="history-panel-title">
+              <div className="live-panel__heading">
+                <div>
+                  <h2 id="history-panel-title">당첨 기록</h2>
+                  <p>최근 {history.length}건</p>
+                </div>
+                <div className="live-panel__actions">
+                  <button className="compact-button" type="button" onClick={exportHistory}>CSV</button>
+                  <button className="compact-button" type="button" onClick={clearHistory}>비우기</button>
+                </div>
+              </div>
+              {history.length === 0 ? (
+                <p className="live-panel__empty">아직 당첨 기록이 없어요.</p>
+              ) : (
+                <ol className="live-history-list">
+                  {history.slice(0, 12).map((item) => (
+                    <li key={item.id}>
+                      <small>{formatTime(item.createdAt)} · {item.target === 'people' ? '사람' : '상품'}</small>
+                      <strong>{item.winner}</strong>
+                      <span>{item.target === 'prizes' && item.recipient ? `${item.recipient}님에게 전달` : item.mode === 'wheel' ? '룰렛' : '마블'}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          )}
+        </aside>
       </div>
 
       {toast && <div className="toast" role="status">{toast}</div>}

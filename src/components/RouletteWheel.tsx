@@ -5,6 +5,7 @@ import './RouletteWheel.css';
 
 export interface RouletteWheelProps {
   participants: string[];
+  itemType?: 'participant' | 'prize';
   winnerIndex: number | null;
   spinning: boolean;
   spinKey: number;
@@ -68,6 +69,7 @@ function compactName(name: string, count: number) {
 
 export default function RouletteWheel({
   participants,
+  itemType = 'participant',
   winnerIndex,
   spinning,
   spinKey,
@@ -77,6 +79,9 @@ export default function RouletteWheel({
   const [isAnimating, setIsAnimating] = useState(false);
   const lastSpinKey = useRef<number | null>(null);
   const participantCount = participants.length;
+  const isPrizeDraw = itemType === 'prize';
+  const itemNoun = isPrizeDraw ? '상품' : '참가자';
+  const countUnit = isPrizeDraw ? '개' : '명';
 
   const slices = useMemo(() => {
     if (participantCount === 0) return [];
@@ -175,14 +180,14 @@ export default function RouletteWheel({
               role="img"
               aria-label={
                 participantCount > 0
-                  ? `${participantCount}명이 참여한 룰렛`
-                  : '참가자를 기다리는 빈 룰렛'
+                  ? `${participantCount}${countUnit}의 ${itemNoun} 룰렛`
+                  : `${itemNoun}을 기다리는 빈 룰렛`
               }
             >
               <title>
                 {participantCount > 0
-                  ? `Retto Roulette, 참가자 ${participantCount}명`
-                  : '댓글을 불러오면 룰렛이 완성됩니다.'}
+                  ? `Retto Roulette, ${itemNoun} ${participantCount}${countUnit}`
+                  : '명단을 준비하면 룰렛이 완성됩니다.'}
               </title>
 
               <g transform={`translate(${VIEWBOX_CENTER} ${VIEWBOX_CENTER})`}>
@@ -214,7 +219,7 @@ export default function RouletteWheel({
 
                 {participantCount === 0 && (
                   <g className="roulette-wheel__empty-copy">
-                    <text y="4" textAnchor="middle">참여자 없음</text>
+                    <text y="4" textAnchor="middle">{itemNoun} 없음</text>
                   </g>
                 )}
               </g>
@@ -232,10 +237,16 @@ export default function RouletteWheel({
         {visuallySpinning
           ? '룰렛이 회전 중입니다.'
           : validWinner
-            ? `당첨자는 ${participants[winnerIndex]}님입니다.`
+            ? isPrizeDraw
+              ? `당첨 상품은 ${participants[winnerIndex]}입니다.`
+              : `당첨자는 ${participants[winnerIndex]}님입니다.`
             : participantCount > 0
-              ? `${participantCount}명의 참가자가 준비되었습니다.`
-              : '아직 참가자가 없습니다.'}
+              ? isPrizeDraw
+                ? `${participantCount}개 상품이 준비되었습니다.`
+                : `${participantCount}명의 참가자가 준비되었습니다.`
+              : isPrizeDraw
+                ? '아직 상품이 없습니다.'
+                : '아직 참가자가 없습니다.'}
       </p>
     </section>
   );
