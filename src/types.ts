@@ -18,6 +18,10 @@ export interface Prize {
 export interface DrawRecord {
   id: string;
   createdAt: string;
+  /** Groups individual animation results from one multi-winner draw. */
+  roundId?: string;
+  /** One-based order within a multi-winner draw. */
+  roundOrder?: number;
   mode: DrawMode;
   target: DrawTarget;
   winner: string;

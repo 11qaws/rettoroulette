@@ -170,8 +170,8 @@ export default function ParticipantSetup({
           <p className="participant-setup__eyebrow">방송 준비</p>
           <h1 id="participant-setup-title">
             {step === 'paste' && '카페 페이지 붙여넣기'}
-            {step === 'review' && '파싱 명단 확인'}
-            {step === 'edit' && '명단 세부 조정'}
+            {step === 'review' && '댓글 명단 확인'}
+            {step === 'edit' && '명단 다듬기'}
           </h1>
         </div>
         {onCancel && (
@@ -182,7 +182,7 @@ export default function ParticipantSetup({
       </header>
 
       <ol className="setup-steps" aria-label="명단 준비 단계">
-        {['댓글 파싱', '명단 확인', '세부 조정'].map((label, index) => (
+        {['댓글 찾기', '명단 확인', '필요하면 다듬기'].map((label, index) => (
           <li key={label} className={index + 1 <= currentStep ? 'is-active' : ''} aria-current={index + 1 === currentStep ? 'step' : undefined}>
             <span>{index + 1}</span>
             {label}
@@ -207,10 +207,10 @@ export default function ParticipantSetup({
           />
           {parseError && <p className="setup-message setup-message--error" role="alert">{parseError}</p>}
           <div className="setup-actions">
-            <button className="setup-primary" type="button" onClick={handleParse}>댓글 파싱하기</button>
+            <button className="setup-primary" type="button" onClick={handleParse}>댓글 명단 만들기</button>
             <button className="setup-secondary" type="button" onClick={() => setStep('edit')}>이름 직접 입력하기</button>
           </div>
-          <p className="setup-privacy">붙여넣은 내용은 이 브라우저 안에서만 분석됩니다.</p>
+          <p className="setup-privacy">붙여넣은 내용은 이 브라우저 안에서만 확인합니다.</p>
         </div>
       )}
 
@@ -218,15 +218,16 @@ export default function ParticipantSetup({
         <div className="setup-pane">
           <div className="setup-summary">
             <strong>{summary?.total ?? draft.length}명</strong>
-            <span>추첨 명단에 담겼어요{summary && summary.replies > 0 ? ` · 대댓글 ${summary.replies}개 제외` : ''}</span>
+            <span>추첨 명단에 담겼어요{summary && summary.replies > 0 ? ` · 대댓글 ${summary.replies}개는 뺐어요` : ''}</span>
           </div>
           <ol className="setup-review-list">
             {draft.slice(0, 80).map((participant) => <li key={participant.id}>{participant.name}</li>)}
           </ol>
-          {draft.length > 80 && <p className="setup-list-note">처음 80명만 표시했어요. 전체 명단은 다음 단계에서 조정할 수 있어요.</p>}
+          {draft.length > 80 && <p className="setup-list-note">처음 80명만 표시했어요. 필요하면 다음 화면에서 전체 명단을 다듬을 수 있어요.</p>}
           <div className="setup-actions">
-            <button className="setup-primary" type="button" onClick={() => setStep('edit')}>명단 세부 조정하기</button>
-            <button className="setup-secondary" type="button" onClick={() => setStep('paste')}>다시 파싱하기</button>
+            <button className="setup-primary" type="button" onClick={finishSetup}>이 명단으로 방송 시작</button>
+            <button className="setup-secondary" type="button" onClick={() => setStep('edit')}>명단 다듬기</button>
+            <button className="setup-link-button" type="button" onClick={() => setStep('paste')}>다시 붙여넣기</button>
           </div>
         </div>
       )}
@@ -255,7 +256,7 @@ export default function ParticipantSetup({
               <strong>참여자 {draft.length}명</strong>
               <span>순서는 표시용이며 추첨 확률에는 영향을 주지 않아요.</span>
             </div>
-            <button className="setup-link-button" type="button" onClick={() => setStep('paste')}>카페 페이지 다시 파싱</button>
+            <button className="setup-link-button" type="button" onClick={() => setStep('paste')}>카페 페이지 다시 붙여넣기</button>
           </div>
           <ol className="setup-editor-list">
             {draft.map((participant, index) => (
