@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, TransitionEvent } from 'react';
 
+import DartFinish from './DartFinish';
+import { AUTO_POINTER_ANGLE, DART_IMPACT_ANGLE, nextWheelRotation } from '../lib/roulette';
+import type { WheelPresentation } from '../types';
 import './RouletteWheel.css';
 
 export interface RouletteWheelProps {
@@ -9,6 +12,8 @@ export interface RouletteWheelProps {
   winnerIndex: number | null;
   spinning: boolean;
   spinKey: number;
+  /** Changes only the on-air reveal; the winner is selected outside this component. */
+  presentation?: WheelPresentation;
   onSpinEnd: () => void;
 }
 
@@ -73,15 +78,20 @@ export default function RouletteWheel({
   winnerIndex,
   spinning,
   spinKey,
+  presentation = 'spin',
   onSpinEnd,
 }: RouletteWheelProps) {
   const [rotation, setRotation] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [dartPhase, setDartPhase] = useState<'idle' | 'launch' | 'approach' | 'impact' | 'settled'>('idle');
   const lastSpinKey = useRef<number | null>(null);
   const participantCount = participants.length;
   const isPrizeDraw = itemType === 'prize';
   const itemNoun = isPrizeDraw ? '상품' : '참가자';
   const countUnit = isPrizeDraw ? '개' : '명';
+  const isDartPresentation = presentation === 'dart';
+  const validWinner =
+    winnerIndex !== null && winnerIndex >= 0 && winnerIndex < participantCount;
 
   const slices = useMemo(() => {
     if (participantCount === 0) return [];
@@ -124,16 +134,35 @@ export default function RouletteWheel({
     lastSpinKey.current = spinKey;
     setIsAnimating(true);
 
-    setRotation((currentRotation) => {
-      const sliceAngle = 360 / participantCount;
-      const targetRotation = (360 - (winnerIndex + 0.5) * sliceAngle + 360) % 360;
-      const currentNormalized = ((currentRotation % 360) + 360) % 360;
-      const alignmentDelta = (targetRotation - currentNormalized + 360) % 360;
-      const fullTurns = 6 + (Math.abs(spinKey) % 3);
+    setRotation((currentRotation) => nextWheelRotation(
+      currentRotation,
+      winnerIndex,
+      participantCount,
+      isDartPresentation ? 2 + (Math.abs(spinKey) % 2) : 6 + (Math.abs(spinKey) % 3),
+      isDartPresentation ? DART_IMPACT_ANGLE : AUTO_POINTER_ANGLE,
+    ));
+  }, [isDartPresentation, participantCount, spinKey, spinning, winnerIndex]);
 
-      return currentRotation + fullTurns * 360 + alignmentDelta;
-    });
-  }, [participantCount, spinKey, spinning, winnerIndex]);
+  useEffect(() => {
+    if (!isDartPresentation) {
+      setDartPhase('idle');
+      return undefined;
+    }
+
+    if (!spinning || !validWinner) {
+      setDartPhase(validWinner ? 'settled' : 'idle');
+      return undefined;
+    }
+
+    setDartPhase('launch');
+    const approachTimer = window.setTimeout(() => setDartPhase('approach'), 720);
+    const impactTimer = window.setTimeout(() => setDartPhase('impact'), 1380);
+
+    return () => {
+      window.clearTimeout(approachTimer);
+      window.clearTimeout(impactTimer);
+    };
+  }, [isDartPresentation, spinKey, spinning, validWinner]);
 
   const handleTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
     if (event.propertyName !== 'transform' || !isAnimating) return;
@@ -142,12 +171,11 @@ export default function RouletteWheel({
     onSpinEnd();
   };
 
-  const validWinner =
-    winnerIndex !== null && winnerIndex >= 0 && winnerIndex < participantCount;
   const visuallySpinning = spinning && isAnimating;
   const rootClassName = [
     'roulette-wheel',
     visuallySpinning ? 'is-spinning' : '',
+    isDartPresentation ? 'is-dart' : '',
     validWinner && !visuallySpinning ? 'has-result' : '',
     participantCount === 0 ? 'is-empty' : '',
   ]
@@ -225,6 +253,8 @@ export default function RouletteWheel({
               </g>
             </svg>
           </div>
+
+          {isDartPresentation && <DartFinish phase={dartPhase} />}
 
           <div className="roulette-wheel__hub" aria-hidden="true">
             <span>RETTO</span>

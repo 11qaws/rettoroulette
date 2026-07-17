@@ -426,20 +426,15 @@
 
 .broadcast-focus {
   display: grid;
-  min-height: calc(100vh - 142px);
-  place-items: center;
-  padding: 12px 20px 16px;
-  background:
-    radial-gradient(circle at 50% 47%, rgb(255 255 255 / 94%) 0 21%, transparent 51%),
-    var(--cream);
-}
-
-.broadcast-focus.has-winners {
   grid-template-columns: minmax(0, 1.16fr) minmax(340px, 0.72fr);
   gap: 24px;
+  min-height: calc(100vh - 142px);
   align-items: center;
   place-items: stretch;
   padding: 14px 30px 18px;
+  background:
+    radial-gradient(circle at 50% 47%, rgb(255 255 255 / 94%) 0 21%, transparent 51%),
+    var(--cream);
 }
 
 .broadcast-focus__stage {
@@ -459,21 +454,39 @@
 }
 
 .broadcast-focus__visual {
+  position: relative;
   display: grid;
-  min-height: min(310px, 38vh);
+  min-height: min(345px, 42vh);
   place-items: center;
+  overflow: hidden;
+  border-radius: 18px;
+  isolation: isolate;
 }
 
 .broadcast-focus__visual .roulette-wheel {
-  --wheel-size: min(44vw, 27rem, 37vh);
-}
-
-.broadcast-focus.has-winners .broadcast-focus__visual {
-  min-height: min(345px, 42vh);
-}
-
-.broadcast-focus.has-winners .broadcast-focus__visual .roulette-wheel {
   --wheel-size: min(37vw, 24rem, 39vh);
+}
+
+.broadcast-focus__camera {
+  display: grid;
+  width: 100%;
+  min-height: inherit;
+  place-items: center;
+  transform-origin: 58% 30%;
+  will-change: transform;
+}
+
+.broadcast-focus__visual.is-dart-throwing .broadcast-focus__camera {
+  animation: dart-stage-zoom 1.74s cubic-bezier(0.18, 0.82, 0.18, 1) both;
+}
+
+@keyframes dart-stage-zoom {
+  0%, 42% {
+    transform: scale(1);
+  }
+  76%, 100% {
+    transform: scale(1.16);
+  }
 }
 
 .broadcast-focus__visual .roulette-wheel__status {
@@ -509,8 +522,10 @@
 }
 
 .broadcast-focus__results {
+  min-width: 0;
   display: grid;
-  align-self: center;
+  align-self: stretch;
+  align-content: center;
   gap: 13px;
 }
 
@@ -853,7 +868,7 @@
     grid-template-columns: minmax(320px, 0.88fr) minmax(0, 1.12fr);
   }
 
-  .broadcast-focus.has-winners {
+  .broadcast-focus {
     grid-template-columns: minmax(0, 1fr) minmax(310px, 0.76fr);
     gap: 18px;
     padding-inline: 20px;
@@ -862,7 +877,7 @@
 
 @media (max-width: 900px) {
   .preflight-layout,
-  .broadcast-focus.has-winners {
+  .broadcast-focus {
     grid-template-columns: 1fr;
   }
 
@@ -870,15 +885,11 @@
     min-height: 400px;
   }
 
-  .broadcast-focus.has-winners {
+  .broadcast-focus {
     padding: 14px;
   }
 
-  .broadcast-focus.has-winners .broadcast-focus__results {
-    order: -1;
-  }
-
-  .broadcast-focus.has-winners .broadcast-focus__visual .roulette-wheel {
+  .broadcast-focus__visual .roulette-wheel {
     --wheel-size: min(70vw, 27rem, 43vh);
   }
 }
@@ -932,8 +943,7 @@
     min-height: min(300px, 39vh);
   }
 
-  .broadcast-focus__visual .roulette-wheel,
-  .broadcast-focus.has-winners .broadcast-focus__visual .roulette-wheel {
+  .broadcast-focus__visual .roulette-wheel {
     --wheel-size: min(72vw, 22rem, 37vh);
   }
 

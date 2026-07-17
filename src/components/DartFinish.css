@@ -1,0 +1,444 @@
+.dart-finish {
+  /* -42deg at 71% of the fixed roulette rim: roughly one o'clock. */
+  --dart-impact-x: 73%;
+  --dart-impact-y: 30%;
+  --dart-angle: -38deg;
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.dart-finish__focus,
+.dart-finish__target,
+.dart-finish__impact-ring,
+.dart-finish__impact-spark {
+  position: absolute;
+  left: var(--dart-impact-x);
+  top: var(--dart-impact-y);
+  pointer-events: none;
+}
+
+.dart-finish__focus {
+  z-index: 0;
+  width: clamp(7rem, 28vw, 14rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--cream, #fff9e7) 5%, transparent) 0 21%,
+    color-mix(in srgb, var(--cream, #fff9e7) 42%, transparent) 47%,
+    transparent 72%
+  );
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.58);
+}
+
+.dart-finish__target {
+  z-index: 1;
+  width: clamp(0.72rem, 2.1vw, 1.08rem);
+  aspect-ratio: 1;
+  border: 2px solid color-mix(in srgb, var(--ink, #251c32) 76%, transparent);
+  border-radius: 50%;
+  background: var(--hot-pink, #ff4f87);
+  box-shadow:
+    0 0 0 0.2rem color-mix(in srgb, var(--cream, #fff9e7) 78%, transparent),
+    0 0 0 0.35rem color-mix(in srgb, var(--ink, #251c32) 17%, transparent);
+  opacity: 0.64;
+  transform: translate(-50%, -50%) scale(0.74);
+}
+
+.dart-finish__target::before,
+.dart-finish__target::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 190%;
+  height: 1px;
+  content: '';
+  background: color-mix(in srgb, var(--cream, #fff9e7) 82%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.dart-finish__target::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.dart-finish__dart {
+  position: absolute;
+  z-index: 5;
+  left: var(--dart-impact-x);
+  top: var(--dart-impact-y);
+  width: clamp(8.5rem, 29vw, 14rem);
+  height: clamp(0.9rem, 2.2vw, 1.2rem);
+  opacity: 0;
+  transform: translate(clamp(10rem, 32vw, 16rem), clamp(-10rem, -22vw, -6rem)) rotate(var(--dart-angle)) scale(0.86);
+  transform-origin: 0 50%;
+  filter: drop-shadow(0.16rem 0.22rem 0 color-mix(in srgb, var(--ink, #251c32) 30%, transparent));
+  will-change: transform, opacity;
+}
+
+.dart-finish__tip {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: clamp(-0.58rem, -1.6vw, -0.38rem);
+  width: 0;
+  height: 0;
+  border-top: clamp(0.26rem, 0.75vw, 0.4rem) solid transparent;
+  border-right: clamp(0.65rem, 1.85vw, 0.96rem) solid var(--ink, #251c32);
+  border-bottom: clamp(0.26rem, 0.75vw, 0.4rem) solid transparent;
+  transform: translateY(-50%);
+}
+
+.dart-finish__shaft {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 72%;
+  height: clamp(0.22rem, 0.62vw, 0.34rem);
+  border: 1px solid color-mix(in srgb, var(--ink, #251c32) 56%, transparent);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    var(--cream, #fff9e7) 0 25%,
+    var(--sky, #83c9ff) 26% 55%,
+    var(--ink, #251c32) 56% 100%
+  );
+  transform: translateY(-50%);
+}
+
+.dart-finish__grip {
+  position: absolute;
+  top: 50%;
+  left: 51%;
+  width: 15%;
+  height: clamp(0.48rem, 1.3vw, 0.7rem);
+  border: 1px solid color-mix(in srgb, var(--ink, #251c32) 64%, transparent);
+  border-radius: 999px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--orange, #ff9d54) 0 3px,
+    var(--lemon, #ffe45c) 3px 5px
+  );
+  transform: translateY(-50%);
+}
+
+.dart-finish__flight {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 29%;
+  height: clamp(1.45rem, 4.2vw, 2.35rem);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  transform: translateY(-50%);
+}
+
+.dart-finish__flight span {
+  display: block;
+  border: 2px solid var(--ink, #251c32);
+  background: var(--hot-pink, #ff4f87);
+}
+
+.dart-finish__flight span:first-child {
+  clip-path: polygon(0 50%, 100% 0, 100% 47%, 18% 50%, 100% 53%, 100% 100%);
+}
+
+.dart-finish__flight span:last-child {
+  background: var(--mint, #8ee3c2);
+  clip-path: polygon(0 0, 100% 50%, 0 100%, 0 53%, 82% 50%, 0 47%);
+}
+
+.dart-finish__trail {
+  position: absolute;
+  z-index: 2;
+  left: var(--dart-impact-x);
+  top: var(--dart-impact-y);
+  height: clamp(0.28rem, 0.8vw, 0.44rem);
+  border-radius: 999px;
+  opacity: 0;
+  transform-origin: right center;
+  transform: translate(clamp(2rem, 8vw, 4rem), clamp(-2rem, -6vw, -1rem)) rotate(var(--dart-angle));
+}
+
+.dart-finish__trail--long {
+  width: clamp(8rem, 25vw, 13rem);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--cream, #fff9e7) 76%, transparent));
+}
+
+.dart-finish__trail--short {
+  width: clamp(4rem, 14vw, 7rem);
+  margin-top: clamp(0.72rem, 1.8vw, 1rem);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--lemon, #ffe45c) 88%, transparent));
+}
+
+.dart-finish__impact-ring {
+  z-index: 6;
+  width: clamp(1.35rem, 4vw, 2.1rem);
+  aspect-ratio: 1;
+  border: clamp(0.12rem, 0.36vw, 0.2rem) solid var(--cream, #fff9e7);
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.28);
+}
+
+.dart-finish__impact-ring--two {
+  border-color: var(--lemon, #ffe45c);
+}
+
+.dart-finish__impact-spark {
+  z-index: 7;
+  width: clamp(0.36rem, 1vw, 0.52rem);
+  height: clamp(0.36rem, 1vw, 0.52rem);
+  border-radius: 50%;
+  background: var(--cream, #fff9e7);
+  box-shadow: 0 0 0.5rem var(--lemon, #ffe45c);
+  opacity: 0;
+}
+
+.dart-finish__impact-spark--one {
+  margin: -1.9rem 0 0 -1.4rem;
+}
+
+.dart-finish__impact-spark--two {
+  margin: 1.2rem 0 0 1.8rem;
+  background: var(--lemon, #ffe45c);
+}
+
+.dart-finish__impact-spark--three {
+  margin: -1.25rem 0 0 2rem;
+  background: var(--hot-pink, #ff4f87);
+}
+
+.dart-finish--idle .dart-finish__target,
+.dart-finish--settled .dart-finish__target {
+  opacity: 0.64;
+  transform: translate(-50%, -50%) scale(0.74);
+}
+
+.dart-finish--launch .dart-finish__target {
+  animation: dart-target-await 620ms ease-out both;
+}
+
+.dart-finish--launch .dart-finish__dart {
+  animation: dart-launch 720ms cubic-bezier(0.14, 0.72, 0.22, 1) both;
+}
+
+.dart-finish--launch .dart-finish__trail {
+  animation: dart-trail-launch 680ms ease-out both;
+}
+
+.dart-finish--approach .dart-finish__focus {
+  animation: dart-focus-in 660ms cubic-bezier(0.2, 0.82, 0.18, 1) both;
+}
+
+.dart-finish--approach .dart-finish__target {
+  animation: dart-target-lock 660ms cubic-bezier(0.2, 0.82, 0.18, 1) both;
+}
+
+.dart-finish--approach .dart-finish__dart {
+  animation: dart-approach 660ms cubic-bezier(0.18, 0.88, 0.2, 1) both;
+}
+
+.dart-finish--approach .dart-finish__trail {
+  animation: dart-trail-approach 660ms ease-out both;
+}
+
+.dart-finish--impact .dart-finish__focus {
+  animation: dart-focus-impact 360ms cubic-bezier(0.14, 0.7, 0.2, 1) both;
+}
+
+.dart-finish--impact .dart-finish__target {
+  opacity: 0;
+}
+
+.dart-finish--impact .dart-finish__dart {
+  animation: dart-impact 360ms cubic-bezier(0.15, 0.76, 0.22, 1) both;
+}
+
+.dart-finish--impact .dart-finish__impact-ring--one {
+  animation: dart-impact-ring 500ms cubic-bezier(0.12, 0.72, 0.2, 1) both;
+}
+
+.dart-finish--impact .dart-finish__impact-ring--two {
+  animation: dart-impact-ring 500ms 70ms cubic-bezier(0.12, 0.72, 0.2, 1) both;
+}
+
+.dart-finish--impact .dart-finish__impact-spark {
+  animation: dart-impact-spark 410ms cubic-bezier(0.18, 0.86, 0.24, 1) both;
+}
+
+.dart-finish--impact .dart-finish__impact-spark--two {
+  animation-delay: 45ms;
+}
+
+.dart-finish--impact .dart-finish__impact-spark--three {
+  animation-delay: 85ms;
+}
+
+.dart-finish--settled .dart-finish__focus {
+  opacity: 0.44;
+  transform: translate(-50%, -50%) scale(0.88);
+}
+
+.dart-finish--settled .dart-finish__dart {
+  opacity: 1;
+  transform: translate(-0.22rem, 0.12rem) rotate(var(--dart-angle)) scale(1);
+}
+
+@keyframes dart-launch {
+  from {
+    opacity: 0;
+    transform: translate(clamp(14rem, 43vw, 21rem), clamp(-14rem, -31vw, -8rem)) rotate(var(--dart-angle)) scale(0.72);
+  }
+  12% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translate(clamp(7rem, 22vw, 10rem), clamp(-6.8rem, -15vw, -3.8rem)) rotate(var(--dart-angle)) scale(0.9);
+  }
+}
+
+@keyframes dart-approach {
+  from {
+    opacity: 1;
+    transform: translate(clamp(7rem, 22vw, 10rem), clamp(-6.8rem, -15vw, -3.8rem)) rotate(var(--dart-angle)) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0.65rem, -0.34rem) rotate(var(--dart-angle)) scale(1.04);
+  }
+}
+
+@keyframes dart-impact {
+  from {
+    opacity: 1;
+    transform: translate(0.65rem, -0.34rem) rotate(var(--dart-angle)) scale(1.04);
+  }
+  68% {
+    opacity: 1;
+    transform: translate(-0.37rem, 0.2rem) rotate(var(--dart-angle)) scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-0.22rem, 0.12rem) rotate(var(--dart-angle)) scale(1);
+  }
+}
+
+@keyframes dart-trail-launch {
+  from {
+    opacity: 0;
+  }
+  16%, 76% {
+    opacity: 0.9;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dart-trail-approach {
+  from {
+    opacity: 0.76;
+    transform: translate(clamp(5rem, 17vw, 8rem), clamp(-4.6rem, -10vw, -2.8rem)) rotate(var(--dart-angle));
+  }
+  to {
+    opacity: 0;
+    transform: translate(0.8rem, -0.45rem) rotate(var(--dart-angle));
+  }
+}
+
+@keyframes dart-target-await {
+  0% {
+    opacity: 0.94;
+    transform: translate(-50%, -50%) scale(0.7);
+  }
+  52% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.16);
+  }
+  100% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.82);
+  }
+}
+
+@keyframes dart-target-lock {
+  from {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.18);
+  }
+}
+
+@keyframes dart-focus-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.56);
+  }
+  to {
+    opacity: 0.72;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes dart-focus-impact {
+  from {
+    opacity: 0.72;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0.15;
+    transform: translate(-50%, -50%) scale(1.35);
+  }
+}
+
+@keyframes dart-impact-ring {
+  from {
+    opacity: 0.94;
+    transform: translate(-50%, -50%) scale(0.32);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(3.3);
+  }
+}
+
+@keyframes dart-impact-spark {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  42% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.7);
+  }
+}
+
+@media (max-width: 420px) {
+  .dart-finish {
+    --dart-impact-x: 73%;
+    --dart-impact-y: 30%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dart-finish *,
+  .dart-finish *::before,
+  .dart-finish *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

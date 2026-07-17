@@ -89,6 +89,21 @@
   box-shadow: inset 4px 0 0 var(--hot-pink);
 }
 
+.current-round-winners__list li.is-pending {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--cream) 72%, white);
+}
+
+.current-round-winners__list li.is-pending .current-round-winners__identity strong,
+.current-round-winners__list li.is-pending .current-round-winners__number {
+  color: var(--muted);
+}
+
+.current-round-winners__list li.is-pending .current-round-winners__state {
+  background: #f3eee7;
+  color: var(--muted);
+}
+
 .current-round-winners__number {
   color: var(--magenta);
   font-family: 'Share Tech Mono', monospace;

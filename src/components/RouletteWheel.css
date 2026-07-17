@@ -1,11 +1,16 @@
 .roulette-wheel {
   --wheel-size: min(82vw, 34rem);
+  --wheel-spin-duration: 4.35s;
   position: relative;
   width: 100%;
   display: grid;
   place-items: center;
   color: var(--ink, #251c32);
   isolation: isolate;
+}
+
+.roulette-wheel.is-dart {
+  --wheel-spin-duration: 1.74s;
 }
 
 .roulette-wheel__stage {
@@ -51,6 +56,7 @@
 
 .roulette-wheel__rim {
   position: relative;
+  isolation: isolate;
   width: var(--wheel-size);
   max-width: 100%;
   aspect-ratio: 1;
@@ -80,7 +86,7 @@
   overflow: hidden;
   border-radius: 50%;
   transform: rotate(var(--wheel-rotation));
-  transition: transform 4.35s cubic-bezier(0.08, 0.74, 0.13, 1);
+  transition: transform var(--wheel-spin-duration) cubic-bezier(0.08, 0.74, 0.13, 1);
   will-change: transform;
 }
 
@@ -244,6 +250,15 @@
   animation: roulette-pointer-tick 170ms ease-in-out infinite;
 }
 
+.roulette-wheel.is-dart .roulette-wheel__pointer {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.82);
+}
+
+.roulette-wheel.is-dart.is-spinning .roulette-wheel__pointer {
+  animation: none;
+}
+
 .roulette-wheel.is-spinning .roulette-wheel__hub {
   animation: roulette-hub-pop 510ms ease-in-out infinite alternate;
 }
@@ -330,5 +345,10 @@
   .roulette-wheel.has-result .roulette-wheel__slice--winner,
   .roulette-wheel.has-result .roulette-wheel__spark {
     animation: none;
+  }
+
+  .roulette-wheel.is-dart .roulette-wheel__disc {
+    transition-duration: 720ms;
+    transition-timing-function: steps(1, end);
   }
 }

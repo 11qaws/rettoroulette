@@ -57,26 +57,41 @@ export default function CurrentRoundWinners({
     ? winners.findIndex((winner) => winner.id === latestWinnerId)
     : -1;
   const boardClassName = ['current-round-winners', className].filter(Boolean).join(' ');
-  const announcementText = announcement ?? `이번 추첨 당첨자 ${winners.length}명이 발표되었습니다.`;
-
-  if (winners.length === 0) return null;
+  const announcementText = announcement ?? (winners.length > 0 ? `이번 추첨 당첨자 ${winners.length}명이 발표되었습니다.` : undefined);
+  const slots = Array.from({ length: Math.max(count, winners.length) }, (_, index) => winners[index]);
 
   return (
     <section className={boardClassName} aria-labelledby={headingId}>
-      <p className="current-round-winners__announcement" role="status" aria-live="polite" aria-atomic="true">
-        {announcementText}
-      </p>
+      {announcementText && (
+        <p className="current-round-winners__announcement" role="status" aria-live="polite" aria-atomic="true">
+          {announcementText}
+        </p>
+      )}
 
       <header className="current-round-winners__header">
         <div>
           <p className="current-round-winners__eyebrow" aria-hidden="true">🎉 이번 추첨</p>
           <h2 id={headingId}>{title}</h2>
         </div>
-        <span className="current-round-winners__count" aria-label={`당첨자 ${count}명`}>{count}명</span>
+        <span className="current-round-winners__count" aria-label={`당첨자 ${winners.length}명 중 ${count}명`}>
+          {winners.length}/{count}
+        </span>
       </header>
 
-      <ol className="current-round-winners__list" aria-label={`${title} ${winners.length}명 목록`}>
-        {winners.map((winner, index) => {
+      <ol className="current-round-winners__list" aria-label={`${title} ${count}명 목록`}>
+        {slots.map((winner, index) => {
+          if (!winner) {
+            return (
+              <li key={`pending-${index}`} className="is-pending">
+                <span className="current-round-winners__number" aria-hidden="true">{index + 1}</span>
+                <span className="current-round-winners__identity">
+                  <strong>추첨 대기</strong>
+                </span>
+                <span className="current-round-winners__state">대기</span>
+              </li>
+            );
+          }
+
           const isLatest = index === latestIndex;
           const name = winner.name.trim() || '이름 없음';
 
@@ -93,7 +108,7 @@ export default function CurrentRoundWinners({
         })}
       </ol>
 
-      {removalMessage && <p className="current-round-winners__removal">{removalMessage}</p>}
+      {removalMessage && winners.length > 0 && <p className="current-round-winners__removal">{removalMessage}</p>}
     </section>
   );
 }
