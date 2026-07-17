@@ -40,6 +40,12 @@ npm run build
 npm run dev
 ```
 
+## CSS 관리 경계
+
+- `src/rettoStock.css`는 레또스톡 공통 스킨의 동결된 기준 파일입니다.
+- 룰렛·마블의 레또스톡식 재스킨은 `src/styles/rettoRoulette.skin.css`에, 프로젝트 셸과 반응형 보정은 `src/styles/rettoRoulette.shell.css`에 둡니다.
+- 화면 구조는 `src/App.css`, 개별 연출과 위젯은 각 컴포넌트의 CSS가 맡습니다. 새 룰렛 기능 스타일은 기준 파일을 수정하지 않고 이 경계 안에 추가합니다.
+
 ## GitHub Pages 배포
 
 정적 빌드 결과를 `docs/`에 반영합니다. GitHub Pages 원본은 `main` 브랜치의 `/docs`이고, Vite 기본 경로는 `/rettoroulette/`입니다.

@@ -1145,7 +1145,7 @@ function App() {
             <span className="brand__mark" aria-hidden="true">🍸 💝</span>
             <strong>Retto Roulette</strong>
           </a>
-          <span className="header-pill">v0.5.0</span>
+          <span className="header-pill">v0.5.1</span>
         </header>
         <ParticipantSetup
           key={setupSession}

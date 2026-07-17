@@ -1,0 +1,124 @@
+/*
+ * Retto Roulette's visual adapter.
+ *
+ * RettoStock's common skin stays in ../rettoStock.css. Put only roulette,
+ * marble, and future game-specific palette/font overrides in this file.
+ */
+
+.roulette-wheel {
+  --wheel-size: min(76vw, 32rem);
+}
+
+.roulette-wheel__stage::before {
+  display: none;
+}
+
+.roulette-wheel__stage::after {
+  background: rgb(255 182 193 / 34%);
+}
+
+.roulette-wheel__rim {
+  border-color: #ffb6c1;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.25rem #fff,
+    0 0 0 0.52rem #ffb6c1,
+    0 0.7rem 0 #ff9fb0,
+    0 1.2rem 2.2rem rgb(255 182 193 / 38%);
+}
+
+.roulette-wheel__slice {
+  stroke: #fff0f3;
+}
+
+.roulette-wheel__label,
+.roulette-wheel__empty-copy {
+  fill: #4e342e;
+  stroke: rgb(255 255 255 / 88%);
+  font-family: 'Jua', 'Fredoka', sans-serif;
+  font-weight: 400;
+}
+
+.roulette-wheel__hub {
+  border-color: #ffb6c1;
+  background: #fff0f3;
+  box-shadow: inset 0.2rem 0.2rem 0 rgb(255 255 255 / 72%), 0 0.28rem 0 #ff9fb0;
+}
+
+.roulette-wheel__hub span,
+.roulette-wheel__hub small {
+  color: #4e342e;
+  font-family: 'Jua', 'Fredoka', sans-serif;
+  font-weight: 400;
+}
+
+.roulette-wheel__hub small {
+  color: #e91e63;
+}
+
+.roulette-wheel__pointer {
+  filter: drop-shadow(0 0.3rem 0 #ff9fb0);
+}
+
+.roulette-wheel__pointer::before {
+  background: #ffb6c1;
+}
+
+.roulette-wheel__pointer-pin {
+  border-color: #ffb6c1;
+  background: #fff;
+}
+
+.roulette-wheel__spark {
+  display: none;
+}
+
+.marble-race {
+  --race-ink: #4e342e;
+  --race-cream: #fff0f3;
+  --race-pink: #ff9fb0;
+  --race-lemon: #ffd166;
+  --race-mint: #34e0a8;
+  --race-sky: #d8edf9;
+  --race-lavender: #c9bcf7;
+  font-family: 'Jua', 'Fredoka', sans-serif;
+}
+
+.marble-race__eyebrow {
+  color: #e91e63;
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-weight: 600;
+}
+
+.marble-race__title,
+.marble-race__start-copy,
+.marble-race__finish-copy,
+.marble-race__runner-name {
+  font-family: 'Jua', 'Fredoka', sans-serif;
+  font-weight: 400;
+}
+
+.marble-race__badge,
+.marble-race__board {
+  border-color: #ffb6c1;
+  box-shadow: 0 0.28rem 0 #ff9fb0;
+}
+
+.marble-race__badge-dot {
+  border-color: #ffb6c1;
+}
+
+.marble-race__start-line,
+.marble-race__finish-post {
+  stroke: #ffb6c1;
+}
+
+.marble-race__start-flag {
+  fill: #ffb6c1;
+  stroke: #ff9fb0;
+}
+
+.marble-race__checker.is-dark,
+.marble-race__marble-outline {
+  fill: #8d6e63;
+}
