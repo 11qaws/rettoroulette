@@ -1,13 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, TransitionEvent } from 'react';
 
 import DartFinish from './DartFinish';
-import { AUTO_POINTER_ANGLE, DART_IMPACT_ANGLE, nextWheelRotation } from '../lib/roulette';
+import {
+  AUTO_POINTER_ANGLE,
+  DART_IMPACT_ANGLE,
+  getRouletteSliceGeometry,
+  nextWheelRotation,
+} from '../lib/roulette';
 import type { WheelPresentation } from '../types';
 import './RouletteWheel.css';
 
 export interface RouletteWheelProps {
   participants: string[];
+  /** Optional positive draw weights; omitted keeps every visible slice equal. */
+  weights?: readonly number[];
   itemType?: 'participant' | 'prize';
   winnerIndex: number | null;
   spinning: boolean;
@@ -28,6 +35,11 @@ const WHEEL_COLORS = [
 
 const VIEWBOX_CENTER = 300;
 const WHEEL_RADIUS = 258;
+const AUTO_FINALE_TURNS = 0.78;
+const DART_APPROACH_DELAY = 860;
+const DART_IMPACT_DELAY = 1_920;
+
+type SpinPhase = 'idle' | 'auto-whirl' | 'auto-finale' | 'dart';
 
 type RouletteStyle = CSSProperties & {
   '--wheel-rotation': string;
@@ -43,14 +55,15 @@ function polarPoint(angleInDegrees: number, radius = WHEEL_RADIUS) {
   };
 }
 
-function makeSlicePath(index: number, count: number) {
-  if (count === 1) {
+function makeSlicePath(startAngle: number, endAngle: number) {
+  const sliceAngle = endAngle - startAngle;
+
+  if (sliceAngle >= 359.999) {
     return `M 0 -${WHEEL_RADIUS} A ${WHEEL_RADIUS} ${WHEEL_RADIUS} 0 1 1 0 ${WHEEL_RADIUS} A ${WHEEL_RADIUS} ${WHEEL_RADIUS} 0 1 1 0 -${WHEEL_RADIUS}`;
   }
 
-  const sliceAngle = 360 / count;
-  const startAngle = -90 + index * sliceAngle;
-  const endAngle = startAngle + sliceAngle;
+  if (sliceAngle <= 0.001) return null;
+
   const start = polarPoint(startAngle);
   const end = polarPoint(endAngle);
   const largeArc = sliceAngle > 180 ? 1 : 0;
@@ -74,6 +87,7 @@ function compactName(name: string, count: number) {
 
 export default function RouletteWheel({
   participants,
+  weights,
   itemType = 'participant',
   winnerIndex,
   spinning,
@@ -83,8 +97,14 @@ export default function RouletteWheel({
 }: RouletteWheelProps) {
   const [rotation, setRotation] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [spinPhase, setSpinPhase] = useState<SpinPhase>('idle');
   const [dartPhase, setDartPhase] = useState<'idle' | 'launch' | 'approach' | 'impact' | 'settled'>('idle');
   const lastSpinKey = useRef<number | null>(null);
+  const completedSpinKey = useRef<number | null>(null);
+  const completionFallbackTimer = useRef<number | null>(null);
+  const onSpinEndRef = useRef(onSpinEnd);
+  const rotationRef = useRef(0);
+  const finalRotationRef = useRef<number | null>(null);
   const participantCount = participants.length;
   const isPrizeDraw = itemType === 'prize';
   const itemNoun = isPrizeDraw ? '상품' : '참가자';
@@ -93,14 +113,50 @@ export default function RouletteWheel({
   const validWinner =
     winnerIndex !== null && winnerIndex >= 0 && winnerIndex < participantCount;
 
+  const sliceGeometry = useMemo(
+    () => getRouletteSliceGeometry(participantCount, weights),
+    [participantCount, weights],
+  );
+
+  useEffect(() => {
+    onSpinEndRef.current = onSpinEnd;
+  }, [onSpinEnd]);
+
+  const settleSpin = useCallback((completedKey: number) => {
+    if (completedSpinKey.current === completedKey) return;
+
+    completedSpinKey.current = completedKey;
+    if (completionFallbackTimer.current !== null) {
+      window.clearTimeout(completionFallbackTimer.current);
+      completionFallbackTimer.current = null;
+    }
+    setIsAnimating(false);
+    setSpinPhase('idle');
+    finalRotationRef.current = null;
+    onSpinEndRef.current();
+  }, []);
+
+  useEffect(() => () => {
+    if (completionFallbackTimer.current !== null) {
+      window.clearTimeout(completionFallbackTimer.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (spinning || completionFallbackTimer.current === null) return;
+    window.clearTimeout(completionFallbackTimer.current);
+    completionFallbackTimer.current = null;
+  }, [spinning]);
+
   const slices = useMemo(() => {
     if (participantCount === 0) return [];
 
-    const sliceAngle = 360 / participantCount;
-
-    return participants.map((participant, index) => {
-      const middleAngle = -90 + (index + 0.5) * sliceAngle;
-      const labelRadius = participantCount > 28 ? 205 : participantCount > 16 ? 195 : 178;
+    return sliceGeometry.map((geometry, index) => {
+      const participant = participants[index];
+      const sliceAngle = geometry.endAngle - geometry.startAngle;
+      const middleAngle = geometry.centreAngle;
+      const baseLabelRadius = participantCount > 28 ? 205 : participantCount > 16 ? 195 : 178;
+      const labelRadius = sliceAngle < 16 ? Math.min(WHEEL_RADIUS - 20, baseLabelRadius + 35) : baseLabelRadius;
       const labelPoint = polarPoint(middleAngle, labelRadius);
       const normalizedMiddle = ((middleAngle % 360) + 360) % 360;
       const labelRotation =
@@ -111,13 +167,14 @@ export default function RouletteWheel({
       return {
         participant,
         index,
-        path: makeSlicePath(index, participantCount),
+        path: makeSlicePath(geometry.startAngle, geometry.endAngle),
         color: WHEEL_COLORS[index % WHEEL_COLORS.length],
         label: compactName(participant, participantCount),
+        showLabel: sliceAngle > 1,
         labelTransform: `translate(${labelPoint.x.toFixed(2)} ${labelPoint.y.toFixed(2)}) rotate(${labelRotation.toFixed(2)})`,
       };
     });
-  }, [participantCount, participants]);
+  }, [participantCount, participants, sliceGeometry]);
 
   useEffect(() => {
     if (
@@ -132,16 +189,53 @@ export default function RouletteWheel({
     }
 
     lastSpinKey.current = spinKey;
+    completedSpinKey.current = null;
     setIsAnimating(true);
 
-    setRotation((currentRotation) => nextWheelRotation(
-      currentRotation,
+    const finalRotation = nextWheelRotation(
+      rotationRef.current,
       winnerIndex,
       participantCount,
       isDartPresentation ? 2 + (Math.abs(spinKey) % 2) : 6 + (Math.abs(spinKey) % 3),
       isDartPresentation ? DART_IMPACT_ANGLE : AUTO_POINTER_ANGLE,
-    ));
-  }, [isDartPresentation, participantCount, spinKey, spinning, winnerIndex]);
+      weights,
+    );
+
+    finalRotationRef.current = finalRotation;
+
+    if (completionFallbackTimer.current !== null) {
+      window.clearTimeout(completionFallbackTimer.current);
+    }
+
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const fallbackDelay = reduceMotion
+      ? (isDartPresentation ? 1_000 : 1_400)
+      : (isDartPresentation ? 2_900 : 5_800);
+    completionFallbackTimer.current = window.setTimeout(() => {
+      if (lastSpinKey.current !== spinKey || completedSpinKey.current === spinKey) return;
+
+      const settledRotation = finalRotationRef.current;
+      if (settledRotation !== null) {
+        rotationRef.current = settledRotation;
+        setRotation(settledRotation);
+      }
+      settleSpin(spinKey);
+    }, fallbackDelay);
+
+    if (isDartPresentation) {
+      rotationRef.current = finalRotation;
+      setSpinPhase('dart');
+      setRotation(finalRotation);
+      return;
+    }
+
+    // The first transition carries most of the momentum. The last 0.78 turn
+    // is deliberately held for the on-air slow approach below.
+    const preFinalRotation = finalRotation - AUTO_FINALE_TURNS * 360;
+    rotationRef.current = preFinalRotation;
+    setSpinPhase('auto-whirl');
+    setRotation(preFinalRotation);
+  }, [isDartPresentation, participantCount, settleSpin, spinKey, spinning, weights, winnerIndex]);
 
   useEffect(() => {
     if (!isDartPresentation) {
@@ -155,8 +249,8 @@ export default function RouletteWheel({
     }
 
     setDartPhase('launch');
-    const approachTimer = window.setTimeout(() => setDartPhase('approach'), 720);
-    const impactTimer = window.setTimeout(() => setDartPhase('impact'), 1380);
+    const approachTimer = window.setTimeout(() => setDartPhase('approach'), DART_APPROACH_DELAY);
+    const impactTimer = window.setTimeout(() => setDartPhase('impact'), DART_IMPACT_DELAY);
 
     return () => {
       window.clearTimeout(approachTimer);
@@ -165,10 +259,26 @@ export default function RouletteWheel({
   }, [isDartPresentation, spinKey, spinning, validWinner]);
 
   const handleTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
-    if (event.propertyName !== 'transform' || !isAnimating) return;
+    if (
+      event.target !== event.currentTarget ||
+      event.propertyName !== 'transform' ||
+      !isAnimating
+    ) {
+      return;
+    }
 
-    setIsAnimating(false);
-    onSpinEnd();
+    if (spinPhase === 'auto-whirl') {
+      const finalRotation = finalRotationRef.current;
+
+      if (finalRotation !== null) {
+        rotationRef.current = finalRotation;
+        setSpinPhase('auto-finale');
+        setRotation(finalRotation);
+        return;
+      }
+    }
+
+    settleSpin(spinKey);
   };
 
   const visuallySpinning = spinning && isAnimating;
@@ -176,7 +286,11 @@ export default function RouletteWheel({
     'roulette-wheel',
     visuallySpinning ? 'is-spinning' : '',
     isDartPresentation ? 'is-dart' : '',
-    validWinner && !visuallySpinning ? 'has-result' : '',
+    isDartPresentation ? 'is-arrow-shot' : '',
+    spinPhase === 'auto-whirl' ? 'is-auto-whirl' : '',
+    spinPhase === 'auto-finale' ? 'is-auto-finale' : '',
+    spinPhase === 'dart' ? 'is-arrow-flight' : '',
+    validWinner && !spinning && !visuallySpinning ? 'has-result' : '',
     participantCount === 0 ? 'is-empty' : '',
   ]
     .filter(Boolean)
@@ -221,27 +335,31 @@ export default function RouletteWheel({
               <g transform={`translate(${VIEWBOX_CENTER} ${VIEWBOX_CENTER})`}>
                 {slices.map((slice) => (
                   <g key={`${slice.index}-${slice.participant}`}>
-                    <path
-                      className={`roulette-wheel__slice${
-                        validWinner && slice.index === winnerIndex
-                          ? ' roulette-wheel__slice--winner'
-                          : ''
-                      }`}
-                      d={slice.path}
-                      fill={slice.color}
-                    />
-                    <text
-                      className="roulette-wheel__label"
-                      style={{
-                        fontSize: `${Math.max(10, Math.min(20, 170 / participantCount))}px`,
-                      }}
-                      transform={slice.labelTransform}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                    >
-                      {slice.label}
-                      <title>{slice.participant}</title>
-                    </text>
+                    {slice.path && (
+                      <path
+                        className={`roulette-wheel__slice${
+                          validWinner && slice.index === winnerIndex
+                            ? ' roulette-wheel__slice--winner'
+                            : ''
+                        }`}
+                        d={slice.path}
+                        fill={slice.color}
+                      />
+                    )}
+                    {slice.showLabel && (
+                      <text
+                        className="roulette-wheel__label"
+                        style={{
+                          fontSize: `${Math.max(10, Math.min(20, 170 / participantCount))}px`,
+                        }}
+                        transform={slice.labelTransform}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                      >
+                        {slice.label}
+                        <title>{slice.participant}</title>
+                      </text>
+                    )}
                   </g>
                 ))}
 

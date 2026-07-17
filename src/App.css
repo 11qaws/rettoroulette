@@ -3,7 +3,7 @@
   min-height: calc(100vh - 40px);
 }
 
-.app-shell--live {
+.app-shell.app-shell--live {
   overflow: visible;
 }
 
@@ -409,6 +409,14 @@
   font-size: 12px;
 }
 
+.weight-editor__note {
+  margin: 0;
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .weight-editor__row span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -426,8 +434,8 @@
 
 .broadcast-focus {
   display: grid;
-  grid-template-columns: minmax(0, 1.16fr) minmax(340px, 0.72fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 420px);
+  gap: clamp(20px, 2.2vw, 30px);
   min-height: calc(100vh - 142px);
   align-items: center;
   place-items: stretch;
@@ -440,6 +448,7 @@
 .broadcast-focus__stage {
   display: grid;
   min-width: 0;
+  width: 100%;
   place-items: center;
 }
 
@@ -453,10 +462,21 @@
   font-size: clamp(28px, 4vw, 46px);
 }
 
+.broadcast-focus__fairness {
+  width: 100%;
+  max-width: 760px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 12px;
+  text-align: center;
+}
+
 .broadcast-focus__visual {
   position: relative;
   display: grid;
-  min-height: min(345px, 42vh);
+  width: 100%;
+  min-height: min(420px, 56vh);
   place-items: center;
   overflow: hidden;
   border-radius: 18px;
@@ -464,7 +484,7 @@
 }
 
 .broadcast-focus__visual .roulette-wheel {
-  --wheel-size: min(37vw, 24rem, 39vh);
+  --wheel-size: min(50vw, 38rem, 49vh);
 }
 
 .broadcast-focus__camera {
@@ -476,16 +496,35 @@
   will-change: transform;
 }
 
-.broadcast-focus__visual.is-dart-throwing .broadcast-focus__camera {
-  animation: dart-stage-zoom 1.74s cubic-bezier(0.18, 0.82, 0.18, 1) both;
+.broadcast-focus__visual.is-arrow-throwing .broadcast-focus__camera {
+  animation: arrow-stage-approach 2.4s cubic-bezier(0.16, 0.82, 0.2, 1) both;
 }
 
-@keyframes dart-stage-zoom {
-  0%, 42% {
+@keyframes arrow-stage-approach {
+  0%, 28% {
     transform: scale(1);
   }
-  76%, 100% {
-    transform: scale(1.16);
+  62% {
+    transform: translate(-1.5%, 1.2%) scale(1.06);
+  }
+  84%, 100% {
+    transform: translate(-5%, 3.5%) scale(1.22);
+  }
+}
+
+.broadcast-focus__visual.is-auto-spinning .broadcast-focus__camera {
+  animation: auto-wheel-finale 5.2s cubic-bezier(0.14, 0.76, 0.16, 1) both;
+}
+
+@keyframes auto-wheel-finale {
+  0%, 60% {
+    transform: scale(1);
+  }
+  78% {
+    transform: translateY(0.4%) scale(1.025);
+  }
+  92%, 100% {
+    transform: translateY(1.2%) scale(1.12);
   }
 }
 
@@ -544,7 +583,6 @@
 
 .broadcast-tools-drawer {
   position: absolute;
-  z-index: 4;
   top: 92px;
   right: 30px;
   width: min(510px, calc(100% - 60px));
@@ -555,6 +593,30 @@
   border-radius: 18px;
   background: #fff;
   box-shadow: 0 14px 34px rgb(78 52 46 / 24%);
+  overscroll-behavior: contain;
+}
+
+.app-shell.app-shell--live > .broadcast-tools-scrim {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: rgb(78 52 46 / 22%);
+  cursor: default;
+}
+
+.app-shell.app-shell--live > .broadcast-tools-drawer {
+  position: fixed;
+  z-index: 20;
+  top: 92px;
+  right: max(30px, calc((100vw - 1400px) / 2 + 30px));
+  width: min(510px, calc(100vw - 60px));
+  max-height: calc(100vh - 116px);
 }
 
 .broadcast-tools-drawer__header {
@@ -869,7 +931,7 @@
   }
 
   .broadcast-focus {
-    grid-template-columns: minmax(0, 1fr) minmax(310px, 0.76fr);
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 30vw, 370px);
     gap: 18px;
     padding-inline: 20px;
   }
@@ -889,8 +951,43 @@
     padding: 14px;
   }
 
+  .broadcast-focus__visual {
+    min-height: min(400px, 56vh);
+  }
+
   .broadcast-focus__visual .roulette-wheel {
     --wheel-size: min(70vw, 27rem, 43vh);
+  }
+}
+
+/* Keep the broadcast control visible on a 720p capture without shrinking the
+   1080p+ showcase wheel. */
+@media (min-width: 901px) and (max-height: 780px) {
+  .broadcast-focus {
+    min-height: calc(100vh - 126px);
+    padding-block: 10px 12px;
+  }
+
+  .broadcast-focus h1 {
+    font-size: clamp(26px, 3.2vw, 40px);
+  }
+
+  .broadcast-focus__visual {
+    min-height: min(400px, 48vh);
+  }
+
+  .broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
+    --wheel-size: min(46vw, 31rem, 48vh);
+    --wheel-stage-padding: 1rem;
+  }
+
+  .broadcast-focus__prompt {
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .broadcast-focus__action {
+    margin-top: 6px;
   }
 }
 
@@ -940,11 +1037,11 @@
   }
 
   .broadcast-focus__visual {
-    min-height: min(300px, 39vh);
+    min-height: min(340px, 48vh);
   }
 
   .broadcast-focus__visual .roulette-wheel {
-    --wheel-size: min(72vw, 22rem, 37vh);
+    --wheel-size: min(82vw, 24rem, 42vh);
   }
 
   .broadcast-focus__prompt {
@@ -955,13 +1052,12 @@
     width: 100%;
   }
 
-  .broadcast-tools-drawer {
-    position: relative;
-    top: auto;
-    right: auto;
-    width: 100%;
-    max-height: none;
-    margin: 0 0 14px;
+  .app-shell.app-shell--live > .broadcast-tools-drawer {
+    top: 76px;
+    right: 10px;
+    width: calc(100% - 20px);
+    max-height: calc(100vh - 96px);
+    margin: 0;
   }
 
   .settings-number,
@@ -971,5 +1067,12 @@
 
   .settings-recipient {
     grid-template-columns: 72px minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .broadcast-focus__visual.is-arrow-throwing .broadcast-focus__camera,
+  .broadcast-focus__visual.is-auto-spinning .broadcast-focus__camera {
+    animation: none;
   }
 }

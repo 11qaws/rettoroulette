@@ -1,16 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import CurrentRoundWinners from './components/CurrentRoundWinners';
 import MarbleRace from './components/MarbleRace';
 import ParticipantSetup from './components/ParticipantSetup';
 import RouletteWheel from './components/RouletteWheel';
-import { pickWeightedIndex, sampleWithoutReplacement } from './lib/draw';
+import { csvField } from './lib/csv';
+import {
+  buildWeightedDrawPlanWithReplacement,
+  buildWeightedDrawPlanWithoutReplacement,
+  sampleWithoutReplacement,
+} from './lib/draw';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize, WheelPresentation } from './types';
 
 import './App.css';
 
 type DrawOption = {
   id: string;
+  /** Inventory source for a prize unit; participant options use their own id. */
+  sourceId?: string;
   name: string;
   weight: number;
 };
@@ -27,19 +34,34 @@ type CurrentRound = {
   wheelPresentation: WheelPresentation;
   winnerGoal: number;
   candidateCount: number;
+  candidateTotalWeight: number;
+  /** A limited people pool stays fixed for the whole active round. */
+  poolLimit: number;
   removeAfterDraw: boolean;
   useWeights: boolean;
+  recipient?: string;
   results: DrawRecord[];
+};
+
+type PlannedPresentation = {
+  options: DrawOption[];
+  winnerIndex: number;
+  target: DrawTarget;
+  selectedAt: string;
+  candidateFingerprint: string;
+  candidateTotalWeight: number;
+  recipient?: string;
 };
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function formatTime(iso: string) {
+function formatTime(iso: string, includeSeconds = false) {
   return new Intl.DateTimeFormat('ko-KR', {
     hour: '2-digit',
     minute: '2-digit',
+    ...(includeSeconds ? { second: '2-digit' } : {}),
   }).format(new Date(iso));
 }
 
@@ -49,6 +71,25 @@ function clampInteger(value: number, min: number, max: number) {
 
 function prizeTotal(prizes: Prize[]) {
   return prizes.reduce((sum, prize) => sum + Math.max(0, prize.quantity), 0);
+}
+
+function totalEffectiveWeight(options: readonly DrawOption[]) {
+  return options.reduce((sum, option) => sum + Math.max(0, option.weight), 0);
+}
+
+/** A compact audit marker without persisting an unbounded copy of a large roster. */
+function fingerprintOptions(options: readonly DrawOption[]) {
+  let hash = 0x811c9dc5;
+
+  for (const option of options) {
+    const token = `${option.id}\u001f${option.name}\u001f${option.weight}\u001e`;
+    for (let index = 0; index < token.length; index += 1) {
+      hash ^= token.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+  }
+
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 function App() {
@@ -64,12 +105,12 @@ function App() {
   const [removeAfterDraw, setRemoveAfterDraw] = useState(true);
   const [useWeights, setUseWeights] = useState(false);
   const [recipient, setRecipient] = useState('');
-  const [pendingDraws, setPendingDraws] = useState(0);
+  const [queuedPresentations, setQueuedPresentations] = useState<PlannedPresentation[]>([]);
   const [spinning, setSpinning] = useState(false);
   const [winnerIndex, setWinnerIndex] = useState<number | null>(null);
   const [spinKey, setSpinKey] = useState(0);
   const [presentedOptions, setPresentedOptions] = useState<DrawOption[]>([]);
-  const [drawTargetSnapshot, setDrawTargetSnapshot] = useState<DrawTarget>('people');
+  const [activePresentation, setActivePresentation] = useState<PlannedPresentation | null>(null);
   const [currentRound, setCurrentRound] = useState<CurrentRound | null>(null);
   const [history, setHistory] = useState<DrawRecord[]>([]);
   const [sideTab, setSideTab] = useState<SideTab>('participants');
@@ -79,11 +120,75 @@ function App() {
   const [setupStartStep, setSetupStartStep] = useState<SetupStartStep>('paste');
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const toolsTriggerRef = useRef<HTMLButtonElement>(null);
+  const toolsCloseRef = useRef<HTMLButtonElement>(null);
+  const toolsDrawerRef = useRef<HTMLElement>(null);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 3200);
   }, []);
+
+  const closeTools = useCallback((restoreFocus = false) => {
+    setToolsOpen(false);
+
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => toolsTriggerRef.current?.focus());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!toolsOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusTimer = window.setTimeout(() => toolsCloseRef.current?.focus(), 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeTools(true);
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+
+      const drawer = toolsDrawerRef.current;
+      if (!drawer) return;
+      const focusable = Array.from(drawer.querySelectorAll<HTMLElement>([
+        'a[href]',
+        'button:not([disabled])',
+        'input:not([disabled])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        '[tabindex]:not([tabindex="-1"])',
+      ].join(','))).filter((element) => !element.hasAttribute('hidden'));
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        drawer.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || !drawer.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !drawer.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.clearTimeout(focusTimer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeTools, toolsOpen]);
 
   useEffect(() => {
     try {
@@ -116,6 +221,10 @@ function App() {
   );
 
   useEffect(() => {
+    // A limited candidate pool must not silently refill between arrow shots.
+    // Once the round is complete, the usual pool maintenance can resume.
+    if (currentRound && currentRound.results.length < currentRound.winnerGoal) return;
+
     if (poolLimit === 0) {
       if (poolIds.length > 0) setPoolIds([]);
       return;
@@ -132,7 +241,7 @@ function App() {
     const remaining = eligibleParticipants.filter((participant) => !retained.includes(participant.id));
     const fill = sampleWithoutReplacement(remaining, limit - retained.length).map((participant) => participant.id);
     setPoolIds([...retained, ...fill]);
-  }, [eligibleParticipants, poolIds, poolLimit]);
+  }, [currentRound, eligibleParticipants, poolIds, poolLimit]);
 
   const candidateParticipants = useMemo(() => {
     if (poolLimit === 0) return eligibleParticipants;
@@ -148,57 +257,121 @@ function App() {
           weight: useWeights ? participant.weight : 1,
         }))
       : prizes
-          .filter((prize) => prize.quantity > 0)
-          .map((prize) => ({
-            id: prize.id,
-            name: prize.name,
-            weight: useWeights ? prize.weight : 1,
-          }));
+          .flatMap((prize) => Array.from(
+            { length: Math.max(0, prize.quantity) },
+            (_, unitIndex) => ({
+              id: `${prize.id}::${unitIndex + 1}`,
+              sourceId: prize.id,
+              name: prize.name,
+              weight: useWeights ? prize.weight : 1,
+            }),
+          ));
 
     return useWeights ? options.filter((option) => option.weight > 0) : options;
   }, [candidateParticipants, drawTarget, prizes, useWeights]);
+
+  // People can repeat only when the broadcaster deliberately allows it.
+  // Inventory and duplicate-prevention modes are always capped by candidates.
+  const maximumWinnerCount = Math.max(
+    1,
+    drawTarget === 'people' && !removeAfterDraw ? 99 : drawOptions.length,
+  );
+  const effectiveWinnerCount = Math.min(winnerCount, maximumWinnerCount);
+
+  useEffect(() => {
+    if (winnerCount > maximumWinnerCount) setWinnerCount(maximumWinnerCount);
+  }, [maximumWinnerCount, winnerCount]);
 
   const displayOptions = spinning || winnerIndex !== null ? presentedOptions : drawOptions;
   const displayNames = displayOptions.map((option) => option.name);
   const availablePrizeCount = prizeTotal(prizes);
   const isAutoPresentation = currentRound?.mode === 'marble' || currentRound?.wheelPresentation === 'spin';
-  const isDrawing = spinning || (pendingDraws > 0 && isAutoPresentation);
+  const isDrawing = spinning || (queuedPresentations.length > 0 && isAutoPresentation);
   const isRoundInProgress = Boolean(
     currentRound && currentRound.results.length < currentRound.winnerGoal,
   );
+  const isCompletedRound = Boolean(
+    currentRound && currentRound.results.length >= currentRound.winnerGoal && currentRound.results.length > 0,
+  );
   const isStageLocked = isDrawing || isRoundInProgress;
 
-  /** Starts the draw in the same input event that the streamer uses on air. */
-  const launchPresentation = useCallback((snapshot: DrawOption[], target: DrawTarget) => {
-    const selectedIndex = pickWeightedIndex(snapshot);
-    setPresentedOptions(snapshot);
-    setDrawTargetSnapshot(target);
-    setWinnerIndex(selectedIndex);
+  const buildPresentationPlan = useCallback((
+    snapshot: readonly DrawOption[],
+    count: number,
+    target: DrawTarget,
+    recipientSnapshot: string | undefined,
+    withoutReplacement: boolean,
+  ) => {
+    const options = [...snapshot];
+    const selectedAt = new Date().toISOString();
+    const drawPlan = withoutReplacement
+      ? buildWeightedDrawPlanWithoutReplacement(options, count)
+      : buildWeightedDrawPlanWithReplacement(options, count);
+
+    if (!withoutReplacement) {
+      return drawPlan.indices.map((winnerIndex) => ({
+        options,
+        winnerIndex,
+        target,
+        selectedAt,
+        recipient: recipientSnapshot,
+        candidateFingerprint: fingerprintOptions(options),
+        candidateTotalWeight: totalEffectiveWeight(options),
+      }));
+    }
+
+    const remaining = options.map((option, sourceIndex) => ({ option, sourceIndex }));
+
+    return drawPlan.indices.flatMap((sourceIndex) => {
+      const winnerIndex = remaining.findIndex((item) => item.sourceIndex === sourceIndex);
+      if (winnerIndex < 0) return [];
+
+      const candidateSnapshot = remaining.map((item) => item.option);
+      const presentation: PlannedPresentation = {
+        options: candidateSnapshot,
+        winnerIndex,
+        target,
+        selectedAt,
+        recipient: recipientSnapshot,
+        candidateFingerprint: fingerprintOptions(candidateSnapshot),
+        candidateTotalWeight: totalEffectiveWeight(candidateSnapshot),
+      };
+      remaining.splice(winnerIndex, 1);
+      return [presentation];
+    });
+  }, []);
+
+  /** Starts a previously committed reveal. It never chooses a result itself. */
+  const launchPresentation = useCallback((presentation: PlannedPresentation) => {
+    setActivePresentation(presentation);
+    setPresentedOptions(presentation.options);
+    setWinnerIndex(presentation.winnerIndex);
     setSpinning(true);
     setSpinKey((value) => value + 1);
   }, []);
 
   useEffect(() => {
     const activeRound = currentRound;
-    if (!activeRound || !isAutoPresentation || pendingDraws === 0 || spinning) return;
-    if (drawOptions.length === 0) {
-      setPendingDraws(0);
-      showToast(activeRound.target === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
-      return;
-    }
+    const nextPresentation = queuedPresentations[0];
+    if (!activeRound || !isAutoPresentation || !nextPresentation || spinning) return undefined;
 
-    launchPresentation(drawOptions, activeRound.target);
-    setPendingDraws((value) => Math.max(0, value - 1));
-  }, [currentRound, drawOptions, isAutoPresentation, launchPresentation, pendingDraws, showToast, spinning]);
+    const revealTimer = window.setTimeout(() => {
+      launchPresentation(nextPresentation);
+      setQueuedPresentations((presentations) => presentations.slice(1));
+    }, 720);
+
+    return () => window.clearTimeout(revealTimer);
+  }, [currentRound, isAutoPresentation, launchPresentation, queuedPresentations, spinning]);
 
   const clearStagePresentation = () => {
     setWinnerIndex(null);
     setPresentedOptions([]);
+    setActivePresentation(null);
   };
 
   const clearCurrentRound = () => {
     clearStagePresentation();
-    setPendingDraws(0);
+    setQueuedPresentations([]);
     setSpinning(false);
     setCurrentRound(null);
   };
@@ -226,53 +399,59 @@ function App() {
   };
 
   const completeDraw = () => {
-    if (winnerIndex === null) {
+    const presentation = activePresentation;
+    const activeRound = currentRound;
+    if (!spinning || !presentation || !activeRound) {
       setSpinning(false);
       return;
     }
 
-    const chosen = presentedOptions[winnerIndex];
+    const chosen = presentation.options[presentation.winnerIndex];
     if (!chosen) {
       setSpinning(false);
       return;
     }
 
-    const activeRound = currentRound ?? {
-      id: createId('round'),
-      target: drawTargetSnapshot,
-      mode: drawMode,
-      wheelPresentation,
-      winnerGoal: Math.max(1, winnerCount),
-      candidateCount: presentedOptions.length,
-      removeAfterDraw,
-      useWeights,
-      results: [],
-    };
+    const hasAnotherArrowShot =
+      activeRound.mode === 'wheel' &&
+      activeRound.wheelPresentation === 'dart' &&
+      activeRound.results.length + 1 < activeRound.winnerGoal;
+
     const result: DrawRecord = {
       id: createId('result'),
-      createdAt: new Date().toISOString(),
+      createdAt: presentation.selectedAt,
+      revealedAt: new Date().toISOString(),
       roundId: activeRound.id,
       roundOrder: activeRound.results.length + 1,
       mode: activeRound.mode,
       presentation: activeRound.mode === 'wheel' ? activeRound.wheelPresentation : undefined,
-      target: drawTargetSnapshot,
+      candidateCount: presentation.options.length,
+      candidateFingerprint: presentation.candidateFingerprint,
+      candidateTotalWeight: presentation.candidateTotalWeight,
+      useWeights: activeRound.useWeights,
+      removeAfterDraw: activeRound.removeAfterDraw,
+      target: presentation.target,
       winner: chosen.name,
-      recipient: drawTargetSnapshot === 'prizes' ? recipient.trim() || undefined : undefined,
+      prize: presentation.target === 'prizes' ? chosen.name : undefined,
+      prizeId: presentation.target === 'prizes' ? chosen.sourceId ?? chosen.id : undefined,
+      prizeUnitId: presentation.target === 'prizes' ? chosen.id : undefined,
+      recipient: presentation.target === 'prizes' ? presentation.recipient : undefined,
     };
 
     setHistory((items) => [result, ...items].slice(0, 100));
     setCurrentRound((round) => {
-      const baseRound = round ?? activeRound;
-      return { ...baseRound, results: [...baseRound.results, result] };
+      if (!round) return { ...activeRound, results: [...activeRound.results, result] };
+      return { ...round, results: [...round.results, result] };
     });
 
-    if (drawTargetSnapshot === 'people' && activeRound.removeAfterDraw) {
+    if (presentation.target === 'people' && activeRound.removeAfterDraw) {
       setExcludedParticipantIds((ids) => (ids.includes(chosen.id) ? ids : [...ids, chosen.id]));
     }
 
-    if (drawTargetSnapshot === 'prizes') {
+    if (presentation.target === 'prizes') {
+      const prizeId = chosen.sourceId ?? chosen.id;
       setPrizes((items) => items.map((prize) => (
-        prize.id === chosen.id
+        prize.id === prizeId
           ? { ...prize, quantity: Math.max(0, prize.quantity - 1) }
           : prize
       )));
@@ -280,17 +459,37 @@ function App() {
     }
 
     setSpinning(false);
+    // A following arrow uses a new click-time snapshot. Clear the previous
+    // wheel now so the audience sees the exact next-shot candidate pool.
+    if (hasAnotherArrowShot) clearStagePresentation();
   };
 
   const startDraw = () => {
     if (isStageLocked) return;
-    const possibleCount = Math.min(winnerCount, drawOptions.length);
+    const possibleCount = effectiveWinnerCount;
     if (possibleCount < 1) {
       showToast(drawTarget === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
       return;
     }
 
     clearStagePresentation();
+    const recipientSnapshot = drawTarget === 'prizes' ? recipient.trim() || undefined : undefined;
+    const withoutReplacement = drawTarget === 'prizes' || removeAfterDraw;
+    const freezeWholeRound = drawMode === 'marble' || wheelPresentation === 'spin';
+    const presentations = buildPresentationPlan(
+      drawOptions,
+      freezeWholeRound ? possibleCount : 1,
+      drawTarget,
+      recipientSnapshot,
+      withoutReplacement,
+    );
+    const firstPresentation = presentations[0];
+
+    if (!firstPresentation) {
+      showToast(drawTarget === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
+      return;
+    }
+
     const nextRound: CurrentRound = {
       id: createId('round'),
       target: drawTarget,
@@ -298,35 +497,45 @@ function App() {
       wheelPresentation,
       winnerGoal: possibleCount,
       candidateCount: drawOptions.length,
+      candidateTotalWeight: totalEffectiveWeight(drawOptions),
+      poolLimit,
       removeAfterDraw,
       useWeights,
+      recipient: recipientSnapshot,
       results: [],
     };
     setCurrentRound(nextRound);
     setToolsOpen(false);
-    // The result is chosen while handling this button press, never before it.
-    launchPresentation(drawOptions, drawTarget);
-    setPendingDraws(possibleCount - 1);
+    // Automatic multi-draws freeze the whole reveal plan on this one click.
+    launchPresentation(firstPresentation);
+    setQueuedPresentations(freezeWholeRound ? presentations.slice(1) : []);
   };
 
-  const startNextDart = () => {
+  const startNextArrow = () => {
     if (
       isDrawing ||
       !currentRound ||
       currentRound.mode !== 'wheel' ||
       currentRound.wheelPresentation !== 'dart' ||
-      pendingDraws < 1
+      currentRound.results.length >= currentRound.winnerGoal
     ) return;
 
     if (drawOptions.length === 0) {
-      setPendingDraws(0);
       showToast(currentRound.target === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
       return;
     }
 
+    const nextPresentation = buildPresentationPlan(
+      drawOptions,
+      1,
+      currentRound.target,
+      currentRound.recipient,
+      currentRound.target === 'prizes' || currentRound.removeAfterDraw,
+    )[0];
+    if (!nextPresentation) return;
+
     setToolsOpen(false);
-    launchPresentation(drawOptions, currentRound.target);
-    setPendingDraws((value) => Math.max(0, value - 1));
+    launchPresentation(nextPresentation);
   };
 
   const reshufflePool = () => {
@@ -419,6 +628,16 @@ function App() {
     prepareNextRoundSettings();
   };
 
+  const updatePrizeWeight = (id: string, weight: number) => {
+    if (isStageLocked) return;
+    setPrizes((items) => items.map((prize) => (
+      prize.id === id
+        ? { ...prize, weight: Math.max(0, Math.min(99, Math.floor(weight) || 0)) }
+        : prize
+    )));
+    prepareNextRoundSettings();
+  };
+
   const addPrize = () => {
     if (isStageLocked) return;
     setPrizes((items) => [...items, { id: createId('prize'), name: '새 선물', quantity: 1, weight: 1 }]);
@@ -448,16 +667,42 @@ function App() {
       showToast('저장할 당첨 기록이 없어요.');
       return;
     }
-    const header = ['시간', '모드', '추첨 대상', '결과', '수령자'];
+    const header = [
+      '선정 시각',
+      '공개 시각',
+      '모드',
+      '연출',
+      '추첨 대상',
+      '결과',
+      '수령자',
+      '상품 원본 ID',
+      '상품 재고 단위 ID',
+      '후보 수',
+      '후보 지문',
+      '추첨권 합계',
+      '가중치',
+      '중복 정책',
+    ];
     const rows = history.map((item) => [
       new Date(item.createdAt).toLocaleString('ko-KR'),
+      item.revealedAt ? new Date(item.revealedAt).toLocaleString('ko-KR') : '',
       item.mode === 'wheel' ? '룰렛' : '마블',
+      item.mode === 'wheel' ? item.presentation === 'dart' ? '양궁' : '자동' : '마블',
       item.target === 'people' ? '사람' : '상품',
       item.winner,
       item.recipient ?? '',
+      item.prizeId ?? '',
+      item.prizeUnitId ?? '',
+      String(item.candidateCount ?? ''),
+      item.candidateFingerprint ?? '',
+      String(item.candidateTotalWeight ?? ''),
+      typeof item.useWeights === 'boolean' ? item.useWeights ? '적용' : '동일 확률' : '',
+      item.target === 'people'
+        ? item.removeAfterDraw === false ? '중복 허용' : '중복 방지'
+        : '재고 단위',
     ]);
     const csv = [header, ...rows]
-      .map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(','))
+      .map((row) => row.map(csvField).join(','))
       .join('\n');
     const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
@@ -479,41 +724,95 @@ function App() {
   const roundTarget = currentRound?.target ?? drawTarget;
   const roundMode = currentRound?.mode ?? drawMode;
   const roundWheelPresentation = currentRound?.wheelPresentation ?? wheelPresentation;
-  const roundGoal = currentRound?.winnerGoal ?? winnerCount;
-  const roundCandidateCount = currentRound?.candidateCount ?? drawOptions.length;
+  const roundGoal = currentRound?.winnerGoal ?? effectiveWinnerCount;
+  const roundPoolLimit = currentRound?.poolLimit ?? poolLimit;
+  const roundPresentationOptions = activePresentation?.options ?? drawOptions;
+  const roundCandidateCount = roundPresentationOptions.length || currentRound?.candidateCount || 0;
+  const roundTotalWeight = totalEffectiveWeight(roundPresentationOptions);
+  const isWholeRoundPlan = roundMode === 'marble' || (roundMode === 'wheel' && roundWheelPresentation === 'spin');
+  const roundInitialCandidateCount = currentRound?.candidateCount ?? roundCandidateCount;
+  const roundInitialTotalWeight = currentRound?.candidateTotalWeight ?? roundTotalWeight;
   const roundRemovesWinners = currentRound?.removeAfterDraw ?? removeAfterDraw;
   const roundUsesWeights = currentRound?.useWeights ?? useWeights;
+  const roundRecipient = currentRound?.recipient ?? (recipient.trim() || undefined);
   const roundUnit = roundTarget === 'people' ? '명' : '개';
+  const roundUnitSubjectParticle = roundUnit === '명' ? '이' : '가';
   const targetLabel = roundTarget === 'people' ? '사람' : '상품';
   const resultTitle = roundTarget === 'people' ? '이번 추첨 당첨자' : '이번 추첨 상품';
+  const dynamicFairnessLabel = roundUsesWeights
+    ? `가중치 적용 · 총 ${roundTotalWeight} 추첨권 · ${roundMode === 'wheel' ? '조각 크기는 확률에 비례' : '결과 확률은 가중치에 비례'}`
+    : '동일 확률 · 후보마다 한 번씩 표시';
+  const fairnessLabel = isWholeRoundPlan && currentRound
+    ? roundUsesWeights
+      ? `첫 클릭에 시작 후보 ${roundInitialCandidateCount}${roundUnit}, 총 ${roundInitialTotalWeight} 추첨권으로 결과를 고정 · 현재 공개 후보 ${roundCandidateCount}${roundUnit}`
+      : `첫 클릭에 시작 후보 ${roundInitialCandidateCount}${roundUnit}을 기준으로 전체 결과를 고정 · 현재 공개 후보 ${roundCandidateCount}${roundUnit}`
+    : dynamicFairnessLabel;
   const ruleSummary = [
     roundMode === 'wheel'
-      ? roundWheelPresentation === 'dart' ? '룰렛 · 다트 피니시' : '룰렛 · 자동 회전'
+      ? roundWheelPresentation === 'dart' ? '룰렛 · 양궁 피니시' : '룰렛 · 자동 회전'
       : '마블',
     `${targetLabel} ${roundGoal}${roundUnit}`,
+    `${isWholeRoundPlan ? '시작 후보' : '후보'} ${isWholeRoundPlan ? roundInitialCandidateCount : roundCandidateCount}${roundUnit}`,
+    roundTarget === 'people' && roundPoolLimit > 0 ? '후보 풀 회차 고정' : null,
     roundTarget === 'people' && roundRemovesWinners ? '중복 당첨 방지' : null,
     roundUsesWeights ? '가중치 적용' : null,
   ].filter(Boolean).join(' · ');
   const resultRemovalMessage = roundTarget === 'people'
     ? roundRemovesWinners
       ? `중복 당첨 방지로 ${currentRoundResults.length}명은 이 회차 뒤 명단에서 제외되었습니다.`
-      : '중복 당첨이 허용되어 다음 추첨에도 명단에 남습니다.'
-    : '상품 수량이 이번 결과에 맞춰 반영되었습니다.';
+      : '중복 당첨 허용: 이번 회차와 다음 추첨에도 같은 사람이 다시 뽑힐 수 있습니다.'
+    : '상품은 재고 단위로 한 개씩 차감됩니다.';
   const stageTitle = roundTarget === 'people'
     ? '참여자 추첨'
-    : recipient.trim() ? `${recipient.trim()}님 상품 추첨` : '상품 추첨';
-  const isDartRound = roundMode === 'wheel' && roundWheelPresentation === 'dart';
-  const isDartWaiting = isDartRound && isRoundInProgress && !spinning;
-  const drawActionDisabled = spinning || (isRoundInProgress && !isDartWaiting);
+    : roundRecipient ? `${roundRecipient}님 상품 추첨` : '상품 추첨';
+  const isArrowRound = roundMode === 'wheel' && roundWheelPresentation === 'dart';
+  const isArrowWaiting = isArrowRound && isRoundInProgress && !spinning;
+  const drawActionDisabled = toolsOpen || spinning || (isRoundInProgress && !isArrowWaiting);
+  const upcomingDrawLabel = drawMode === 'wheel' && wheelPresentation === 'dart'
+    ? '화살 쏘기'
+    : drawTarget === 'people'
+      ? `${effectiveWinnerCount}명 추첨하기`
+      : `${effectiveWinnerCount}개 상품 뽑기`;
+  const noAvailableDrawOptions = drawOptions.length === 0;
+  const unavailableDrawLabel = drawTarget === 'people'
+    ? participants.length === 0
+      ? '참여자 명단을 준비해 주세요'
+      : eligibleParticipants.length === 0
+        ? '당첨 제외를 초기화해 주세요'
+        : useWeights && candidateParticipants.length > 0
+          ? '가중치를 조정해 주세요'
+          : '추첨 후보를 준비해 주세요'
+    : availablePrizeCount === 0
+      ? '상품 재고를 추가해 주세요'
+      : '가중치를 조정해 주세요';
+  const unavailableDrawHint = drawTarget === 'people' ? '추첨 가능한 참여자' : '상품 재고';
+  const unavailableDrawPrompt = drawTarget === 'people'
+    ? participants.length === 0
+      ? '참여자 명단을 준비하면 바로 추첨을 시작할 수 있습니다.'
+      : eligibleParticipants.length === 0
+        ? '진행 도구에서 당첨 제외를 초기화하면 새 회차를 시작할 수 있습니다.'
+        : useWeights && candidateParticipants.length > 0
+          ? '진행 도구에서 가중치를 조정하면 바로 추첨을 시작할 수 있습니다.'
+          : '진행 도구에서 추첨 후보를 준비하면 바로 추첨을 시작할 수 있습니다.'
+    : availablePrizeCount === 0
+      ? '상품 재고를 추가하면 바로 추첨을 시작할 수 있습니다.'
+      : '진행 도구에서 상품 가중치를 조정하면 바로 추첨을 시작할 수 있습니다.';
   const drawButtonLabel = spinning
     ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 추첨 중…`
-    : isDartWaiting
-      ? `다음 다트 던지기 (${currentRoundResults.length + 1}/${roundGoal})`
-      : drawMode === 'wheel' && wheelPresentation === 'dart'
-        ? '다트 던지기'
-    : drawTarget === 'people'
-      ? `${winnerCount}명 추첨하기`
-      : `${winnerCount}개 상품 뽑기`;
+    : isArrowWaiting
+      ? noAvailableDrawOptions
+        ? unavailableDrawLabel
+        : `다음 화살 쏘기 (${currentRoundResults.length + 1}/${roundGoal})`
+      : noAvailableDrawOptions
+        ? unavailableDrawLabel
+      : isCompletedRound
+        ? `새 회차 시작 · ${upcomingDrawLabel}`
+        : upcomingDrawLabel;
+  const broadcastVisualClassName = [
+    'broadcast-focus__visual',
+    isArrowRound && spinning ? 'is-arrow-throwing' : '',
+    roundMode === 'wheel' && roundWheelPresentation === 'spin' && spinning ? 'is-auto-spinning' : '',
+  ].filter(Boolean).join(' ');
 
   const renderDrawVisual = (variant: 'preview' | 'live') => {
     const preview = variant === 'preview';
@@ -523,10 +822,14 @@ function App() {
     const activeWinnerIndex = preview ? null : winnerIndex;
     const activeSpin = preview ? false : spinning;
     const presentation = preview ? wheelPresentation : roundWheelPresentation;
+    const sliceWeights = preview
+      ? drawOptions.map((option) => option.weight)
+      : displayOptions.map((option) => option.weight);
 
     return mode === 'wheel' ? (
       <RouletteWheel
         participants={names}
+        weights={sliceWeights}
         itemType={target === 'prizes' ? 'prize' : 'participant'}
         winnerIndex={activeWinnerIndex}
         spinning={activeSpin}
@@ -568,11 +871,11 @@ function App() {
           <input
             type="number"
             min="1"
-            max={Math.max(1, drawOptions.length)}
+            max={maximumWinnerCount}
             value={winnerCount}
             disabled={isStageLocked}
             onChange={(event) => {
-              setWinnerCount(clampInteger(Number(event.target.value), 1, Math.max(1, drawOptions.length)));
+              setWinnerCount(clampInteger(Number(event.target.value), 1, maximumWinnerCount));
               prepareNextRoundSettings();
             }}
           />
@@ -621,13 +924,15 @@ function App() {
           <fieldset className="settings-choice settings-choice--presentation">
             <legend>룰렛 연출</legend>
             <button type="button" aria-pressed={wheelPresentation === 'spin'} disabled={isStageLocked} onClick={() => changeWheelPresentation('spin')}>자동</button>
-            <button type="button" aria-pressed={wheelPresentation === 'dart'} disabled={isStageLocked} onClick={() => changeWheelPresentation('dart')}>다트</button>
+            <button type="button" aria-pressed={wheelPresentation === 'dart'} disabled={isStageLocked} onClick={() => changeWheelPresentation('dart')}>양궁</button>
           </fieldset>
         )}
       </div>
 
       <p className="broadcast-settings__status">
-        {drawTarget === 'people' && removeAfterDraw ? '중복 당첨 방지' : '중복 당첨 허용'}
+        {drawTarget === 'people'
+          ? removeAfterDraw ? '중복 당첨 방지' : '중복 당첨 허용'
+          : '상품은 재고 단위로 한 번씩'}
         {useWeights ? ' · 가중치 적용' : ' · 동일 확률'}
       </p>
 
@@ -659,21 +964,38 @@ function App() {
             중복 당첨 허용
           </label>
         )}
-        {useWeights && drawTarget === 'people' && (
+        {useWeights && (
           <div className="weight-editor">
-            {candidateParticipants.slice(0, 12).map((participant) => (
-              <label className="weight-editor__row" key={participant.id}>
-                <span>{participant.name}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={participant.weight}
-                  disabled={isStageLocked}
-                  onChange={(event) => updateParticipantWeight(participant.id, Number(event.target.value))}
-                />
-              </label>
-            ))}
+            <p className="weight-editor__note">
+              0은 추첨에서 제외됩니다. 숫자만큼 조각 크기와 당첨 확률이 함께 바뀝니다.
+            </p>
+            {drawTarget === 'people'
+              ? candidateParticipants.map((participant) => (
+                  <label className="weight-editor__row" key={participant.id}>
+                    <span>{participant.name}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={participant.weight}
+                      disabled={isStageLocked}
+                      onChange={(event) => updateParticipantWeight(participant.id, Number(event.target.value))}
+                    />
+                  </label>
+                ))
+              : prizes.filter((prize) => prize.quantity > 0).map((prize) => (
+                  <label className="weight-editor__row" key={prize.id}>
+                    <span>{prize.name} · 재고 {prize.quantity}개</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={prize.weight}
+                      disabled={isStageLocked}
+                      onChange={(event) => updatePrizeWeight(prize.id, Number(event.target.value))}
+                    />
+                  </label>
+                ))}
           </div>
         )}
       </details>
@@ -681,13 +1003,21 @@ function App() {
   );
 
   const renderProgressTools = () => (
-    <aside className="broadcast-tools-drawer" aria-label="진행 도구">
+    <aside
+      ref={toolsDrawerRef}
+      id="broadcast-tools-drawer"
+      className="broadcast-tools-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="broadcast-tools-title"
+      tabIndex={-1}
+    >
       <div className="broadcast-tools-drawer__header">
         <div>
           <p>방송 진행</p>
-          <h2>필요할 때만 열어 보세요</h2>
+          <h2 id="broadcast-tools-title">필요할 때만 열어 보세요</h2>
         </div>
-        <button type="button" aria-label="진행 도구 닫기" onClick={() => setToolsOpen(false)}>×</button>
+        <button ref={toolsCloseRef} type="button" aria-label="진행 도구 닫기" onClick={() => closeTools(true)}>×</button>
       </div>
 
       {renderRoundSettings('drawer')}
@@ -779,13 +1109,25 @@ function App() {
             <ol className="live-history-list">
               {history.slice(0, 12).map((item) => (
                 <li key={item.id}>
-                  <small>{formatTime(item.createdAt)} · {item.target === 'people' ? '사람' : '상품'}</small>
+                  <small>
+                    선정 {formatTime(item.createdAt, true)}
+                    {item.revealedAt ? ` · 공개 ${formatTime(item.revealedAt, true)}` : ''}
+                    {' · '}{item.target === 'people' ? '사람' : '상품'}
+                  </small>
                   <strong>{item.winner}</strong>
-                  <span>{item.target === 'prizes' && item.recipient
-                    ? `${item.recipient}님에게 전달`
-                    : item.mode === 'wheel'
-                      ? item.presentation === 'dart' ? '다트 룰렛' : '자동 룰렛'
-                      : '마블'}</span>
+                  <span>
+                    {item.target === 'prizes' && item.recipient
+                      ? `${item.recipient}님에게 전달`
+                      : item.mode === 'wheel'
+                        ? item.presentation === 'dart' ? '양궁 룰렛' : '자동 룰렛'
+                        : '마블'}
+                    {item.candidateCount ? ` · 후보 ${item.candidateCount}${item.target === 'people' ? '명' : '개'}` : ''}
+                    {item.candidateTotalWeight ? ` · 총 ${item.candidateTotalWeight}추첨권` : ''}
+                    {item.candidateFingerprint ? ` · 검증 ${item.candidateFingerprint}` : ''}
+                    {typeof item.useWeights === 'boolean'
+                      ? item.useWeights ? ' · 가중치 적용' : ' · 동일 확률'
+                      : ''}
+                  </span>
                 </li>
               ))}
             </ol>
@@ -803,7 +1145,7 @@ function App() {
             <span className="brand__mark" aria-hidden="true">🍸 💝</span>
             <strong>Retto Roulette</strong>
           </a>
-          <span className="header-pill">v0.4.0</span>
+          <span className="header-pill">v0.5.0</span>
         </header>
         <ParticipantSetup
           key={setupSession}
@@ -857,9 +1199,9 @@ function App() {
             <div className="preflight-preview__heading">
               <div>
                 <p>방송 화면 미리보기</p>
-                <h2>{drawMode === 'wheel' ? wheelPresentation === 'dart' ? '다트 피니시 룰렛' : '자동 룰렛으로 진행' : '마블 레이스로 진행'}</h2>
+                <h2>{drawMode === 'wheel' ? wheelPresentation === 'dart' ? '양궁 피니시 룰렛' : '자동 룰렛으로 진행' : '마블 레이스로 진행'}</h2>
               </div>
-              <span>{drawTarget === 'people' ? `사람 ${winnerCount}명` : `상품 ${winnerCount}개`}</span>
+              <span>{drawTarget === 'people' ? `사람 ${effectiveWinnerCount}명` : `상품 ${effectiveWinnerCount}개`}</span>
             </div>
             <div className="preflight-preview__visual">{renderDrawVisual('preview')}</div>
             <p className="preflight-preview__note">방송을 시작하면 준비 화면은 접히고, 룰렛과 당첨자 목록만 크게 남습니다.</p>
@@ -873,42 +1215,77 @@ function App() {
 
   return (
     <main className="app-shell app-shell--live">
-      <header className="brand-header broadcast-header">
+      <header className="brand-header broadcast-header" inert={toolsOpen} aria-hidden={toolsOpen || undefined}>
         <a className="brand" href="./" aria-label="Retto Roulette 홈">
           <span className="brand__mark" aria-hidden="true">🍸 💝</span>
           <strong>Retto Roulette</strong>
         </a>
         <div className="broadcast-header__actions">
           <span className="broadcast-rule-strip">{ruleSummary}</span>
-          <button className="compact-button" type="button" disabled={spinning} aria-expanded={toolsOpen} onClick={() => setToolsOpen((open) => !open)}>진행 도구</button>
+          <button
+            ref={toolsTriggerRef}
+            className="compact-button"
+            type="button"
+            disabled={isDrawing}
+            aria-expanded={toolsOpen}
+            aria-controls="broadcast-tools-drawer"
+            onClick={() => {
+              if (toolsOpen) closeTools(true);
+              else setToolsOpen(true);
+            }}
+          >진행 도구</button>
         </div>
       </header>
 
-      {toolsOpen && renderProgressTools()}
+      {toolsOpen && (
+        <>
+          <button
+            className="broadcast-tools-scrim"
+            type="button"
+            tabIndex={-1}
+            aria-label="진행 도구 닫기"
+            onClick={() => closeTools(true)}
+          />
+          {renderProgressTools()}
+        </>
+      )}
 
-      <section className="broadcast-focus" aria-label="방송 집중 화면">
+      <section className="broadcast-focus" aria-label="방송 집중 화면" inert={toolsOpen} aria-hidden={toolsOpen || undefined}>
         <section className="broadcast-focus__stage" aria-labelledby="stage-title">
           <div className="broadcast-focus__heading">
             <div>
-              <p>{isDrawing ? '이번 추첨 진행 중' : isDartWaiting ? '다음 다트 대기' : currentRoundResults.length > 0 ? '이번 추첨 결과' : '추첨 준비'}</p>
+              <p>{isDrawing ? '이번 추첨 진행 중' : isArrowWaiting ? '다음 화살 대기' : isCompletedRound ? '직전 추첨 결과' : currentRoundResults.length > 0 ? '이번 추첨 결과' : '추첨 준비'}</p>
               <h1 id="stage-title">{isRoundInProgress ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 확정` : currentRoundResults.length > 0 ? `${resultTitle} ${currentRoundResults.length}${roundUnit}` : stageTitle}</h1>
             </div>
-            <span>{roundMode === 'wheel' ? roundWheelPresentation === 'dart' ? '룰렛 · 다트' : '룰렛 · 자동' : '마블'} · 후보 {roundCandidateCount}{roundUnit}</span>
+            <span>
+              {roundMode === 'wheel' ? roundWheelPresentation === 'dart' ? '룰렛 · 양궁' : '룰렛 · 자동' : '마블'}
+              {' · '}{isWholeRoundPlan ? '시작 후보' : '후보'} {isWholeRoundPlan ? roundInitialCandidateCount : roundCandidateCount}{roundUnit}
+            </span>
           </div>
 
-          <div className={`broadcast-focus__visual${isDartRound && spinning ? ' is-dart-throwing' : ''}`}>
+          <p className="broadcast-focus__fairness">{fairnessLabel}</p>
+
+          <div className={broadcastVisualClassName}>
             <div className="broadcast-focus__camera">{renderDrawVisual('live')}</div>
           </div>
 
           <p className="broadcast-focus__prompt">
-            {isDartWaiting
-              ? `${currentRoundResults.length + 1}번째 다트는 버튼을 누르는 순간 시작됩니다.`
+            {isArrowWaiting
+              ? noAvailableDrawOptions
+                  ? `${unavailableDrawHint}가 없어 다음 화살을 시작할 수 없습니다. 진행 도구에서 조정해 주세요.`
+                : `${currentRoundResults.length + 1}번째 화살은 버튼을 누르는 순간 그 한 결과가 확정되고, 바로 화살 연출이 시작됩니다.`
               : isDrawing
-              ? `${roundGoal}${roundUnit} 가운데 ${currentRoundResults.length}${roundUnit}이 확정됐어요.`
+              ? isArrowRound
+                ? `${currentRoundResults.length + 1}번째 화살의 결과와 후보 규칙은 발사 버튼을 누른 순간 고정되었습니다. 지금은 화살 연출 중이에요.`
+                : `첫 버튼을 누른 순간 이번 회차 ${roundGoal}${roundUnit}의 결과와 후보 규칙이 고정되었습니다. 지금은 ${currentRoundResults.length}${roundUnit} 공개 중이에요.`
+              : isCompletedRound
+                ? '오른쪽 보드는 직전 회차의 전체 당첨자입니다. 진행 도구에서 정한 다음 설정은 아래 새 회차 시작 버튼을 누를 때 적용됩니다.'
+              : noAvailableDrawOptions
+                ? unavailableDrawPrompt
               : currentRoundResults.length > 0
                 ? '당첨자 목록은 다음 추첨을 시작할 때까지 이 자리에 남습니다.'
-                : roundTarget === 'prizes' && recipient.trim()
-                  ? `${recipient.trim()}님에게 드릴 상품을 뽑아 주세요.`
+                : roundTarget === 'prizes' && roundRecipient
+                  ? `${roundRecipient}님에게 드릴 상품을 뽑아 주세요.`
                   : '추첨 버튼을 누르면 당첨자 보드에 한 명씩 기록됩니다.'}
           </p>
 
@@ -916,11 +1293,11 @@ function App() {
             <button
               className="primary-button"
               type="button"
-              onClick={isDartWaiting ? startNextDart : startDraw}
+              onClick={isArrowWaiting ? startNextArrow : startDraw}
               disabled={drawActionDisabled || drawOptions.length === 0}
             >{drawButtonLabel}</button>
             {drawTarget === 'people' && poolLimit > 0 && (
-              <button className="stage-link" type="button" disabled={isStageLocked} onClick={reshufflePool}>후보 다시 섞기</button>
+              <button className="stage-link" type="button" disabled={isStageLocked || toolsOpen} onClick={reshufflePool}>후보 다시 섞기</button>
             )}
           </div>
         </section>
@@ -933,12 +1310,13 @@ function App() {
               detail: result.target === 'prizes' && result.recipient ? `${result.recipient}님에게 전달` : undefined,
             }))}
             drawCount={roundGoal}
+            unit={roundUnit}
             latestWinnerId={latestRoundResult?.id}
             title={resultTitle}
             announcement={currentRoundResults.length > 0
               ? spinning
-                ? `${resultTitle} ${currentRoundResults.length}명이 확정되었습니다.`
-                : `${resultTitle} ${currentRoundResults.length}명이 발표되었습니다.`
+                ? `${resultTitle} ${currentRoundResults.length}${roundUnit}${roundUnitSubjectParticle} 확정되었습니다.`
+                : `${resultTitle} ${currentRoundResults.length}${roundUnit}${roundUnitSubjectParticle} 발표되었습니다.`
               : undefined}
             removalMessage={currentRoundResults.length > 0 ? resultRemovalMessage : undefined}
           />

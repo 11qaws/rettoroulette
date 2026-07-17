@@ -1,14 +1,55 @@
 .dart-finish {
-  /* -42deg at 71% of the fixed roulette rim: roughly one o'clock. */
+  /* Fixed one-o'clock impact point. The roulette disc rotates below it. */
   --dart-impact-x: 73%;
   --dart-impact-y: 30%;
-  --dart-angle: -38deg;
+  --arrow-angle: -38deg;
   position: absolute;
   z-index: 20;
   inset: 0;
   overflow: visible;
   pointer-events: none;
   isolation: isolate;
+}
+
+.dart-finish__pov {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dart-finish__vignette,
+.dart-finish__pov-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.dart-finish__vignette {
+  background:
+    radial-gradient(
+      circle at var(--dart-impact-x) var(--dart-impact-y),
+      transparent 0 15%,
+      color-mix(in srgb, var(--cream, #fff9e7) 9%, transparent) 29%,
+      color-mix(in srgb, var(--ink, #251c32) 20%, transparent) 72%,
+      color-mix(in srgb, var(--ink, #251c32) 50%, transparent) 100%
+    );
+  opacity: 0;
+}
+
+.dart-finish__pov-glow {
+  background:
+    radial-gradient(
+      ellipse 19% 16% at var(--dart-impact-x) var(--dart-impact-y),
+      color-mix(in srgb, var(--cream, #fff9e7) 70%, transparent),
+      color-mix(in srgb, var(--lemon, #ffe45c) 22%, transparent) 35%,
+      transparent 72%
+    );
+  opacity: 0;
+  transform: scale(0.72);
 }
 
 .dart-finish__focus,
@@ -22,32 +63,36 @@
 }
 
 .dart-finish__focus {
-  z-index: 0;
-  width: clamp(7rem, 28vw, 14rem);
+  z-index: 1;
+  width: clamp(8rem, 32vw, 16rem);
   aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--cream, #fff9e7) 5%, transparent) 0 21%,
-    color-mix(in srgb, var(--cream, #fff9e7) 42%, transparent) 47%,
-    transparent 72%
-  );
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--cream, #fff9e7) 5%, transparent) 0 19%,
+      color-mix(in srgb, var(--cream, #fff9e7) 36%, transparent) 44%,
+      transparent 71%
+    );
   opacity: 0;
-  transform: translate(-50%, -50%) scale(0.58);
+  transform: translate(-50%, -50%) scale(0.56);
 }
 
 .dart-finish__target {
-  z-index: 1;
-  width: clamp(0.72rem, 2.1vw, 1.08rem);
+  z-index: 7;
+  width: clamp(0.95rem, 2.7vw, 1.4rem);
   aspect-ratio: 1;
-  border: 2px solid color-mix(in srgb, var(--ink, #251c32) 76%, transparent);
+  display: grid;
+  place-items: center;
+  border: clamp(0.13rem, 0.38vw, 0.2rem) solid var(--ink, #251c32);
   border-radius: 50%;
-  background: var(--hot-pink, #ff4f87);
+  background: var(--cream, #fff9e7);
   box-shadow:
-    0 0 0 0.2rem color-mix(in srgb, var(--cream, #fff9e7) 78%, transparent),
-    0 0 0 0.35rem color-mix(in srgb, var(--ink, #251c32) 17%, transparent);
-  opacity: 0.64;
-  transform: translate(-50%, -50%) scale(0.74);
+    0 0 0 0.17rem color-mix(in srgb, var(--cream, #fff9e7) 78%, transparent),
+    0 0 0 0.34rem color-mix(in srgb, var(--ink, #251c32) 16%, transparent),
+    0 0 1.5rem color-mix(in srgb, var(--lemon, #ffe45c) 72%, transparent);
+  opacity: 0.7;
+  transform: translate(-50%, -50%) scale(0.72);
 }
 
 .dart-finish__target::before,
@@ -55,10 +100,11 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 190%;
-  height: 1px;
+  width: 205%;
+  height: 2px;
   content: '';
-  background: color-mix(in srgb, var(--cream, #fff9e7) 82%, transparent);
+  background: color-mix(in srgb, var(--cream, #fff9e7) 88%, transparent);
+  box-shadow: 0 0 0.28rem color-mix(in srgb, var(--ink, #251c32) 26%, transparent);
   transform: translate(-50%, -50%);
 }
 
@@ -66,124 +112,266 @@
   transform: translate(-50%, -50%) rotate(90deg);
 }
 
-.dart-finish__dart {
+.dart-finish__target-core {
+  width: 30%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--hot-pink, #ff4f87);
+  box-shadow: 0 0 0.34rem var(--hot-pink, #ff4f87);
+}
+
+.dart-finish__corridor-ring {
   position: absolute;
-  z-index: 5;
+  z-index: 2;
   left: var(--dart-impact-x);
   top: var(--dart-impact-y);
-  width: clamp(8.5rem, 29vw, 14rem);
-  height: clamp(0.9rem, 2.2vw, 1.2rem);
+  width: clamp(4.75rem, 22vw, 11rem);
+  aspect-ratio: 1;
+  border: clamp(0.1rem, 0.34vw, 0.18rem) solid color-mix(in srgb, var(--cream, #fff9e7) 82%, transparent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0.7rem color-mix(in srgb, var(--sky, #83c9ff) 46%, transparent),
+    inset 0 0 1.15rem color-mix(in srgb, var(--lemon, #ffe45c) 26%, transparent);
   opacity: 0;
-  transform: translate(clamp(10rem, 32vw, 16rem), clamp(-10rem, -22vw, -6rem)) rotate(var(--dart-angle)) scale(0.86);
+  transform: translate(-50%, -50%) scale(0.07);
+}
+
+.dart-finish__corridor-ring--two {
+  border-color: color-mix(in srgb, var(--sky, #83c9ff) 82%, transparent);
+}
+
+.dart-finish__corridor-ring--three {
+  border-color: color-mix(in srgb, var(--lemon, #ffe45c) 80%, transparent);
+}
+
+.dart-finish__corridor-lane {
+  position: absolute;
+  z-index: 1;
+  left: var(--dart-impact-x);
+  top: var(--dart-impact-y);
+  width: clamp(12rem, 72vw, 35rem);
+  height: clamp(0.08rem, 0.3vw, 0.15rem);
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--cream, #fff9e7) 92%, transparent),
+    color-mix(in srgb, var(--sky, #83c9ff) 62%, transparent) 38%,
+    transparent 100%
+  );
+  opacity: 0;
+  transform: translateY(-50%) rotate(var(--lane-angle)) scaleX(0.02);
   transform-origin: 0 50%;
-  filter: drop-shadow(0.16rem 0.22rem 0 color-mix(in srgb, var(--ink, #251c32) 30%, transparent));
+}
+
+.dart-finish__corridor-lane--one { --lane-angle: -166deg; }
+.dart-finish__corridor-lane--two { --lane-angle: -127deg; }
+.dart-finish__corridor-lane--three { --lane-angle: -88deg; }
+.dart-finish__corridor-lane--four { --lane-angle: -44deg; }
+.dart-finish__corridor-lane--five { --lane-angle: 13deg; }
+.dart-finish__corridor-lane--six { --lane-angle: 59deg; }
+.dart-finish__corridor-lane--seven { --lane-angle: 107deg; }
+.dart-finish__corridor-lane--eight { --lane-angle: 151deg; }
+
+.dart-finish__pov-arrowhead {
+  position: absolute;
+  z-index: 3;
+  left: var(--dart-impact-x);
+  top: var(--dart-impact-y);
+  width: clamp(4rem, 18vw, 8.5rem);
+  height: clamp(2.3rem, 10vw, 4.8rem);
+  opacity: 0;
+  transform: translate(-6%, -50%) rotate(var(--arrow-angle)) scale(0.66);
+  transform-origin: 0 50%;
+}
+
+.dart-finish__pov-arrowhead::before,
+.dart-finish__pov-arrowhead::after {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 44%;
+  content: '';
+  border: clamp(0.11rem, 0.33vw, 0.18rem) solid color-mix(in srgb, var(--cream, #fff9e7) 90%, transparent);
+  border-radius: 0 80% 0 0;
+  box-shadow: 0 0 0.6rem color-mix(in srgb, var(--sky, #83c9ff) 55%, transparent);
+}
+
+.dart-finish__pov-arrowhead::before {
+  top: 8%;
+  border-bottom: 0;
+  transform: skewX(-26deg);
+}
+
+.dart-finish__pov-arrowhead::after {
+  bottom: 8%;
+  border-top: 0;
+  transform: skewX(26deg);
+}
+
+/* A soft, oversized copy keeps the viewer just behind the arrow in flight. */
+.dart-finish__camera-arrow {
+  position: absolute;
+  z-index: 4;
+  left: var(--dart-impact-x);
+  top: var(--dart-impact-y);
+  width: clamp(15rem, 62vw, 30rem);
+  height: clamp(2.2rem, 8vw, 4.2rem);
+  opacity: 0;
+  transform: translate(clamp(14rem, 42vw, 21rem), clamp(-12rem, -30vw, -6rem)) rotate(var(--arrow-angle)) scale(1.08);
+  transform-origin: 0 50%;
+  filter: blur(clamp(0.14rem, 0.48vw, 0.34rem));
   will-change: transform, opacity;
 }
 
-.dart-finish__tip {
+.dart-finish__camera-shaft {
   position: absolute;
-  z-index: 2;
   top: 50%;
-  left: clamp(-0.58rem, -1.6vw, -0.38rem);
-  width: 0;
-  height: 0;
-  border-top: clamp(0.26rem, 0.75vw, 0.4rem) solid transparent;
-  border-right: clamp(0.65rem, 1.85vw, 0.96rem) solid var(--ink, #251c32);
-  border-bottom: clamp(0.26rem, 0.75vw, 0.4rem) solid transparent;
+  left: 0;
+  width: 78%;
+  height: clamp(0.36rem, 1vw, 0.56rem);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--cream, #fff9e7) 95%, transparent) 0 30%,
+    color-mix(in srgb, var(--sky, #83c9ff) 92%, transparent) 31% 68%,
+    color-mix(in srgb, var(--ink, #251c32) 90%, transparent) 69% 100%
+  );
+  transform: translateY(-50%);
+}
+
+.dart-finish__camera-feathers {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 29%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(0.08rem, 0.3vw, 0.18rem);
+  transform: translateY(-50%);
+}
+
+.dart-finish__camera-feathers span {
+  border: clamp(0.08rem, 0.26vw, 0.14rem) solid color-mix(in srgb, var(--ink, #251c32) 72%, transparent);
+  background: color-mix(in srgb, var(--hot-pink, #ff4f87) 84%, transparent);
+}
+
+.dart-finish__camera-feathers span:first-child {
+  clip-path: polygon(0 50%, 100% 0, 100% 48%, 18% 50%, 100% 52%, 100% 100%);
+}
+
+.dart-finish__camera-feathers span:last-child {
+  background: color-mix(in srgb, var(--mint, #8ee3c2) 84%, transparent);
+  clip-path: polygon(0 0, 100% 50%, 0 100%, 0 52%, 82% 50%, 0 48%);
+}
+
+/* The sharp arrow is what remains in the board after the camera rush. */
+.dart-finish__arrow {
+  position: absolute;
+  z-index: 9;
+  left: var(--dart-impact-x);
+  top: var(--dart-impact-y);
+  width: clamp(10rem, 34vw, 16.5rem);
+  height: clamp(1.35rem, 3.6vw, 2rem);
+  opacity: 0;
+  transform: translate(clamp(12rem, 38vw, 19rem), clamp(-10rem, -27vw, -5rem)) rotate(var(--arrow-angle)) scale(0.7);
+  transform-origin: 0 50%;
+  filter: drop-shadow(0.16rem 0.24rem 0 color-mix(in srgb, var(--ink, #251c32) 28%, transparent));
+  will-change: transform, opacity;
+}
+
+.dart-finish__arrowhead {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 0;
+  width: clamp(1.15rem, 3.8vw, 1.8rem);
+  height: clamp(0.75rem, 2.4vw, 1.16rem);
+  background: linear-gradient(135deg, var(--cream, #fff9e7) 0 38%, var(--sky, #83c9ff) 39% 61%, var(--ink, #251c32) 62% 100%);
+  clip-path: polygon(0 50%, 82% 0, 100% 50%, 82% 100%);
   transform: translateY(-50%);
 }
 
 .dart-finish__shaft {
   position: absolute;
   top: 50%;
-  left: 0;
-  width: 72%;
-  height: clamp(0.22rem, 0.62vw, 0.34rem);
-  border: 1px solid color-mix(in srgb, var(--ink, #251c32) 56%, transparent);
+  left: clamp(0.88rem, 3vw, 1.38rem);
+  width: 68%;
+  height: clamp(0.22rem, 0.72vw, 0.38rem);
+  border: 1px solid color-mix(in srgb, var(--ink, #251c32) 58%, transparent);
   border-radius: 999px;
   background: linear-gradient(
     180deg,
-    var(--cream, #fff9e7) 0 25%,
-    var(--sky, #83c9ff) 26% 55%,
-    var(--ink, #251c32) 56% 100%
+    var(--cream, #fff9e7) 0 24%,
+    var(--sky, #83c9ff) 25% 58%,
+    color-mix(in srgb, var(--ink, #251c32) 76%, var(--sky, #83c9ff)) 59% 100%
   );
   transform: translateY(-50%);
 }
 
-.dart-finish__grip {
+.dart-finish__binding {
   position: absolute;
   top: 50%;
-  left: 51%;
-  width: 15%;
-  height: clamp(0.48rem, 1.3vw, 0.7rem);
-  border: 1px solid color-mix(in srgb, var(--ink, #251c32) 64%, transparent);
+  left: 52%;
+  width: 12%;
+  height: clamp(0.52rem, 1.5vw, 0.8rem);
+  border: 1px solid color-mix(in srgb, var(--ink, #251c32) 68%, transparent);
   border-radius: 999px;
   background: repeating-linear-gradient(
     90deg,
-    var(--orange, #ff9d54) 0 3px,
-    var(--lemon, #ffe45c) 3px 5px
+    var(--lemon, #ffe45c) 0 3px,
+    var(--orange, #ff9d54) 3px 5px
   );
   transform: translateY(-50%);
 }
 
-.dart-finish__flight {
+.dart-finish__fletching {
   position: absolute;
   top: 50%;
-  right: 0;
-  width: 29%;
-  height: clamp(1.45rem, 4.2vw, 2.35rem);
+  right: 1.6%;
+  width: 26%;
+  height: clamp(1.48rem, 4.5vw, 2.45rem);
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
+  gap: clamp(0.08rem, 0.28vw, 0.17rem);
   transform: translateY(-50%);
 }
 
-.dart-finish__flight span {
+.dart-finish__fletching span {
   display: block;
-  border: 2px solid var(--ink, #251c32);
+  border: clamp(0.1rem, 0.32vw, 0.17rem) solid var(--ink, #251c32);
   background: var(--hot-pink, #ff4f87);
 }
 
-.dart-finish__flight span:first-child {
+.dart-finish__fletching span:first-child {
   clip-path: polygon(0 50%, 100% 0, 100% 47%, 18% 50%, 100% 53%, 100% 100%);
 }
 
-.dart-finish__flight span:last-child {
+.dart-finish__fletching span:last-child {
   background: var(--mint, #8ee3c2);
   clip-path: polygon(0 0, 100% 50%, 0 100%, 0 53%, 82% 50%, 0 47%);
 }
 
-.dart-finish__trail {
+.dart-finish__nock {
   position: absolute;
-  z-index: 2;
-  left: var(--dart-impact-x);
-  top: var(--dart-impact-y);
-  height: clamp(0.28rem, 0.8vw, 0.44rem);
-  border-radius: 999px;
-  opacity: 0;
-  transform-origin: right center;
-  transform: translate(clamp(2rem, 8vw, 4rem), clamp(-2rem, -6vw, -1rem)) rotate(var(--dart-angle));
-}
-
-.dart-finish__trail--long {
-  width: clamp(8rem, 25vw, 13rem);
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--cream, #fff9e7) 76%, transparent));
-}
-
-.dart-finish__trail--short {
-  width: clamp(4rem, 14vw, 7rem);
-  margin-top: clamp(0.72rem, 1.8vw, 1rem);
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--lemon, #ffe45c) 88%, transparent));
+  top: 50%;
+  right: -1.8%;
+  width: clamp(0.42rem, 1.25vw, 0.66rem);
+  height: clamp(0.58rem, 1.75vw, 0.94rem);
+  border: 1px solid var(--ink, #251c32);
+  border-radius: 0.16rem;
+  background: var(--lemon, #ffe45c);
+  transform: translateY(-50%);
 }
 
 .dart-finish__impact-ring {
-  z-index: 6;
-  width: clamp(1.35rem, 4vw, 2.1rem);
+  z-index: 11;
+  width: clamp(1.5rem, 4.6vw, 2.35rem);
   aspect-ratio: 1;
   border: clamp(0.12rem, 0.36vw, 0.2rem) solid var(--cream, #fff9e7);
   border-radius: 50%;
   opacity: 0;
-  transform: translate(-50%, -50%) scale(0.28);
+  transform: translate(-50%, -50%) scale(0.26);
 }
 
 .dart-finish__impact-ring--two {
@@ -191,245 +379,395 @@
 }
 
 .dart-finish__impact-spark {
-  z-index: 7;
-  width: clamp(0.36rem, 1vw, 0.52rem);
-  height: clamp(0.36rem, 1vw, 0.52rem);
+  z-index: 12;
+  width: clamp(0.36rem, 1vw, 0.54rem);
+  height: clamp(0.36rem, 1vw, 0.54rem);
   border-radius: 50%;
   background: var(--cream, #fff9e7);
-  box-shadow: 0 0 0.5rem var(--lemon, #ffe45c);
+  box-shadow: 0 0 0.56rem var(--lemon, #ffe45c);
   opacity: 0;
 }
 
-.dart-finish__impact-spark--one {
-  margin: -1.9rem 0 0 -1.4rem;
-}
-
-.dart-finish__impact-spark--two {
-  margin: 1.2rem 0 0 1.8rem;
-  background: var(--lemon, #ffe45c);
-}
-
-.dart-finish__impact-spark--three {
-  margin: -1.25rem 0 0 2rem;
-  background: var(--hot-pink, #ff4f87);
-}
+.dart-finish__impact-spark--one { margin: -2rem 0 0 -1.5rem; }
+.dart-finish__impact-spark--two { margin: 1.3rem 0 0 1.8rem; background: var(--lemon, #ffe45c); }
+.dart-finish__impact-spark--three { margin: -1.35rem 0 0 2.05rem; background: var(--hot-pink, #ff4f87); }
 
 .dart-finish--idle .dart-finish__target,
 .dart-finish--settled .dart-finish__target {
   opacity: 0.64;
-  transform: translate(-50%, -50%) scale(0.74);
+  transform: translate(-50%, -50%) scale(0.72);
+}
+
+.dart-finish--launch .dart-finish__pov {
+  animation: arrow-pov-enter 720ms ease-out both;
+}
+
+.dart-finish--launch .dart-finish__vignette {
+  animation: arrow-vignette-enter 720ms ease-out both;
+}
+
+.dart-finish--launch .dart-finish__pov-glow {
+  animation: arrow-glow-launch 720ms cubic-bezier(0.12, 0.78, 0.18, 1) both;
 }
 
 .dart-finish--launch .dart-finish__target {
-  animation: dart-target-await 620ms ease-out both;
+  animation: arrow-target-acquire 720ms cubic-bezier(0.14, 0.74, 0.22, 1) both;
 }
 
-.dart-finish--launch .dart-finish__dart {
-  animation: dart-launch 720ms cubic-bezier(0.14, 0.72, 0.22, 1) both;
+.dart-finish--launch .dart-finish__corridor-ring--one {
+  animation: arrow-corridor-ring 620ms 20ms cubic-bezier(0.16, 0.72, 0.2, 1) both;
 }
 
-.dart-finish--launch .dart-finish__trail {
-  animation: dart-trail-launch 680ms ease-out both;
+.dart-finish--launch .dart-finish__corridor-ring--two {
+  animation: arrow-corridor-ring 620ms 130ms cubic-bezier(0.16, 0.72, 0.2, 1) both;
+}
+
+.dart-finish--launch .dart-finish__corridor-ring--three {
+  animation: arrow-corridor-ring 620ms 245ms cubic-bezier(0.16, 0.72, 0.2, 1) both;
+}
+
+.dart-finish--launch .dart-finish__corridor-lane {
+  animation: arrow-corridor-lane 680ms cubic-bezier(0.14, 0.76, 0.2, 1) both;
+}
+
+.dart-finish--launch .dart-finish__corridor-lane--two,
+.dart-finish--launch .dart-finish__corridor-lane--five {
+  animation-delay: 75ms;
+}
+
+.dart-finish--launch .dart-finish__corridor-lane--three,
+.dart-finish--launch .dart-finish__corridor-lane--six {
+  animation-delay: 145ms;
+}
+
+.dart-finish--launch .dart-finish__corridor-lane--four,
+.dart-finish--launch .dart-finish__corridor-lane--seven {
+  animation-delay: 205ms;
+}
+
+.dart-finish--launch .dart-finish__corridor-lane--eight {
+  animation-delay: 265ms;
+}
+
+.dart-finish--launch .dart-finish__pov-arrowhead {
+  animation: arrow-pov-arrowhead-launch 720ms cubic-bezier(0.14, 0.76, 0.2, 1) both;
+}
+
+.dart-finish--launch .dart-finish__camera-arrow {
+  animation: arrow-camera-launch 720ms cubic-bezier(0.12, 0.74, 0.2, 1) both;
+}
+
+.dart-finish--launch .dart-finish__arrow {
+  animation: arrow-launch 720ms cubic-bezier(0.12, 0.76, 0.22, 1) both;
+}
+
+.dart-finish--approach .dart-finish__pov {
+  opacity: 1;
+  animation: arrow-pov-approach 660ms cubic-bezier(0.18, 0.82, 0.2, 1) both;
+}
+
+.dart-finish--approach .dart-finish__vignette {
+  opacity: 0.78;
+}
+
+.dart-finish--approach .dart-finish__pov-glow {
+  animation: arrow-glow-approach 660ms cubic-bezier(0.16, 0.8, 0.18, 1) both;
 }
 
 .dart-finish--approach .dart-finish__focus {
-  animation: dart-focus-in 660ms cubic-bezier(0.2, 0.82, 0.18, 1) both;
+  animation: arrow-focus-approach 660ms cubic-bezier(0.18, 0.82, 0.2, 1) both;
 }
 
 .dart-finish--approach .dart-finish__target {
-  animation: dart-target-lock 660ms cubic-bezier(0.2, 0.82, 0.18, 1) both;
+  animation: arrow-target-lock 660ms cubic-bezier(0.18, 0.82, 0.2, 1) both;
 }
 
-.dart-finish--approach .dart-finish__dart {
-  animation: dart-approach 660ms cubic-bezier(0.18, 0.88, 0.2, 1) both;
+.dart-finish--approach .dart-finish__corridor-ring--one {
+  animation: arrow-corridor-ring-slow 660ms 0ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
 }
 
-.dart-finish--approach .dart-finish__trail {
-  animation: dart-trail-approach 660ms ease-out both;
+.dart-finish--approach .dart-finish__corridor-ring--two {
+  animation: arrow-corridor-ring-slow 660ms 105ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+}
+
+.dart-finish--approach .dart-finish__corridor-ring--three {
+  animation: arrow-corridor-ring-slow 660ms 205ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+}
+
+.dart-finish--approach .dart-finish__corridor-lane {
+  animation: arrow-corridor-lane-slow 660ms cubic-bezier(0.18, 0.8, 0.2, 1) both;
+}
+
+.dart-finish--approach .dart-finish__corridor-lane--two,
+.dart-finish--approach .dart-finish__corridor-lane--six {
+  animation-delay: 70ms;
+}
+
+.dart-finish--approach .dart-finish__corridor-lane--four,
+.dart-finish--approach .dart-finish__corridor-lane--seven {
+  animation-delay: 135ms;
+}
+
+.dart-finish--approach .dart-finish__pov-arrowhead {
+  animation: arrow-pov-arrowhead-approach 660ms cubic-bezier(0.18, 0.82, 0.2, 1) both;
+}
+
+.dart-finish--approach .dart-finish__camera-arrow {
+  animation: arrow-camera-approach 660ms cubic-bezier(0.18, 0.84, 0.2, 1) both;
+}
+
+.dart-finish--approach .dart-finish__arrow {
+  animation: arrow-approach 660ms cubic-bezier(0.16, 0.86, 0.2, 1) both;
+}
+
+.dart-finish--impact .dart-finish__pov {
+  animation: arrow-pov-impact 360ms ease-out both;
+}
+
+.dart-finish--impact .dart-finish__vignette {
+  opacity: 0.24;
+}
+
+.dart-finish--impact .dart-finish__pov-glow {
+  animation: arrow-glow-impact 360ms ease-out both;
 }
 
 .dart-finish--impact .dart-finish__focus {
-  animation: dart-focus-impact 360ms cubic-bezier(0.14, 0.7, 0.2, 1) both;
+  animation: arrow-focus-impact 360ms cubic-bezier(0.14, 0.7, 0.2, 1) both;
 }
 
 .dart-finish--impact .dart-finish__target {
   opacity: 0;
 }
 
-.dart-finish--impact .dart-finish__dart {
-  animation: dart-impact 360ms cubic-bezier(0.15, 0.76, 0.22, 1) both;
+.dart-finish--impact .dart-finish__camera-arrow {
+  animation: arrow-camera-impact 360ms ease-out both;
+}
+
+.dart-finish--impact .dart-finish__arrow {
+  animation: arrow-impact 360ms cubic-bezier(0.15, 0.76, 0.22, 1) both;
 }
 
 .dart-finish--impact .dart-finish__impact-ring--one {
-  animation: dart-impact-ring 500ms cubic-bezier(0.12, 0.72, 0.2, 1) both;
+  animation: arrow-impact-ring 500ms cubic-bezier(0.12, 0.72, 0.2, 1) both;
 }
 
 .dart-finish--impact .dart-finish__impact-ring--two {
-  animation: dart-impact-ring 500ms 70ms cubic-bezier(0.12, 0.72, 0.2, 1) both;
+  animation: arrow-impact-ring 500ms 70ms cubic-bezier(0.12, 0.72, 0.2, 1) both;
 }
 
 .dart-finish--impact .dart-finish__impact-spark {
-  animation: dart-impact-spark 410ms cubic-bezier(0.18, 0.86, 0.24, 1) both;
+  animation: arrow-impact-spark 410ms cubic-bezier(0.18, 0.86, 0.24, 1) both;
 }
 
-.dart-finish--impact .dart-finish__impact-spark--two {
-  animation-delay: 45ms;
-}
-
-.dart-finish--impact .dart-finish__impact-spark--three {
-  animation-delay: 85ms;
-}
+.dart-finish--impact .dart-finish__impact-spark--two { animation-delay: 45ms; }
+.dart-finish--impact .dart-finish__impact-spark--three { animation-delay: 85ms; }
 
 .dart-finish--settled .dart-finish__focus {
-  opacity: 0.44;
-  transform: translate(-50%, -50%) scale(0.88);
+  opacity: 0.34;
+  transform: translate(-50%, -50%) scale(0.9);
 }
 
-.dart-finish--settled .dart-finish__dart {
+.dart-finish--settled .dart-finish__target {
+  opacity: 0;
+}
+
+.dart-finish--settled .dart-finish__arrow {
   opacity: 1;
-  transform: translate(-0.22rem, 0.12rem) rotate(var(--dart-angle)) scale(1);
+  transform: translate(-0.24rem, 0.14rem) rotate(var(--arrow-angle)) scale(1);
 }
 
-@keyframes dart-launch {
+@keyframes arrow-pov-enter {
+  from { opacity: 0; }
+  16% { opacity: 0.88; }
+  to { opacity: 1; }
+}
+
+@keyframes arrow-vignette-enter {
+  from { opacity: 0; }
+  30% { opacity: 0.48; }
+  to { opacity: 0.76; }
+}
+
+@keyframes arrow-glow-launch {
+  from { opacity: 0; transform: scale(0.46); }
+  36% { opacity: 0.92; }
+  to { opacity: 0.52; transform: scale(1.4); }
+}
+
+@keyframes arrow-target-acquire {
+  from { opacity: 0.96; transform: translate(-50%, -50%) scale(0.66); }
+  54% { opacity: 1; transform: translate(-50%, -50%) scale(1.22); }
+  to { opacity: 0.88; transform: translate(-50%, -50%) scale(0.9); }
+}
+
+@keyframes arrow-corridor-ring {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.06); }
+  15% { opacity: 0.88; }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(3.4); }
+}
+
+@keyframes arrow-corridor-lane {
+  from { opacity: 0; transform: translateY(-50%) rotate(var(--lane-angle)) scaleX(0.02); }
+  19% { opacity: 0.72; }
+  67% { opacity: 0.54; }
+  to { opacity: 0; transform: translateY(-50%) rotate(var(--lane-angle)) scaleX(1.45); }
+}
+
+@keyframes arrow-pov-arrowhead-launch {
+  from { opacity: 0; transform: translate(-6%, -50%) rotate(var(--arrow-angle)) scale(0.4); }
+  28% { opacity: 0.82; }
+  to { opacity: 0.12; transform: translate(-6%, -50%) rotate(var(--arrow-angle)) scale(1.75); }
+}
+
+@keyframes arrow-camera-launch {
   from {
     opacity: 0;
-    transform: translate(clamp(14rem, 43vw, 21rem), clamp(-14rem, -31vw, -8rem)) rotate(var(--dart-angle)) scale(0.72);
+    transform: translate(clamp(17rem, 48vw, 24rem), clamp(-14rem, -35vw, -7rem)) rotate(var(--arrow-angle)) scale(1.16);
   }
-  12% {
-    opacity: 1;
-  }
+  13% { opacity: 0.92; }
   to {
-    opacity: 1;
-    transform: translate(clamp(7rem, 22vw, 10rem), clamp(-6.8rem, -15vw, -3.8rem)) rotate(var(--dart-angle)) scale(0.9);
+    opacity: 0.56;
+    transform: translate(clamp(5rem, 17vw, 8rem), clamp(-4.3rem, -9vw, -2.2rem)) rotate(var(--arrow-angle)) scale(1.02);
   }
 }
 
-@keyframes dart-approach {
-  from {
-    opacity: 1;
-    transform: translate(clamp(7rem, 22vw, 10rem), clamp(-6.8rem, -15vw, -3.8rem)) rotate(var(--dart-angle)) scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: translate(0.65rem, -0.34rem) rotate(var(--dart-angle)) scale(1.04);
-  }
-}
-
-@keyframes dart-impact {
-  from {
-    opacity: 1;
-    transform: translate(0.65rem, -0.34rem) rotate(var(--dart-angle)) scale(1.04);
-  }
-  68% {
-    opacity: 1;
-    transform: translate(-0.37rem, 0.2rem) rotate(var(--dart-angle)) scale(1.06);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-0.22rem, 0.12rem) rotate(var(--dart-angle)) scale(1);
-  }
-}
-
-@keyframes dart-trail-launch {
+@keyframes arrow-launch {
   from {
     opacity: 0;
+    transform: translate(clamp(16rem, 46vw, 22rem), clamp(-13rem, -33vw, -6rem)) rotate(var(--arrow-angle)) scale(0.72);
   }
-  16%, 76% {
-    opacity: 0.9;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes dart-trail-approach {
-  from {
-    opacity: 0.76;
-    transform: translate(clamp(5rem, 17vw, 8rem), clamp(-4.6rem, -10vw, -2.8rem)) rotate(var(--dart-angle));
-  }
-  to {
-    opacity: 0;
-    transform: translate(0.8rem, -0.45rem) rotate(var(--dart-angle));
-  }
-}
-
-@keyframes dart-target-await {
-  0% {
-    opacity: 0.94;
-    transform: translate(-50%, -50%) scale(0.7);
-  }
-  52% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.16);
-  }
-  100% {
-    opacity: 0.9;
-    transform: translate(-50%, -50%) scale(0.82);
-  }
-}
-
-@keyframes dart-target-lock {
-  from {
-    opacity: 0.9;
-    transform: translate(-50%, -50%) scale(0.82);
-  }
+  10% { opacity: 1; }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1.18);
+    transform: translate(clamp(4.8rem, 15vw, 7.5rem), clamp(-4rem, -8vw, -1.8rem)) rotate(var(--arrow-angle)) scale(0.92);
   }
 }
 
-@keyframes dart-focus-in {
+@keyframes arrow-pov-approach {
+  from { opacity: 0.98; }
+  to { opacity: 1; }
+}
+
+@keyframes arrow-glow-approach {
+  from { opacity: 0.48; transform: scale(0.9); }
+  to { opacity: 0.92; transform: scale(2.35); }
+}
+
+@keyframes arrow-focus-approach {
+  from { opacity: 0.16; transform: translate(-50%, -50%) scale(0.62); }
+  to { opacity: 0.84; transform: translate(-50%, -50%) scale(1.35); }
+}
+
+@keyframes arrow-target-lock {
+  from { opacity: 0.88; transform: translate(-50%, -50%) scale(0.88); }
+  74% { opacity: 1; transform: translate(-50%, -50%) scale(1.54); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1.38); }
+}
+
+@keyframes arrow-corridor-ring-slow {
+  from { opacity: 0.78; transform: translate(-50%, -50%) scale(0.18); }
+  68% { opacity: 0.52; }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(2.6); }
+}
+
+@keyframes arrow-corridor-lane-slow {
+  from { opacity: 0.58; transform: translateY(-50%) rotate(var(--lane-angle)) scaleX(0.18); }
+  70% { opacity: 0.38; }
+  to { opacity: 0; transform: translateY(-50%) rotate(var(--lane-angle)) scaleX(1.12); }
+}
+
+@keyframes arrow-pov-arrowhead-approach {
+  from { opacity: 0.32; transform: translate(-6%, -50%) rotate(var(--arrow-angle)) scale(0.78); }
+  to { opacity: 0.04; transform: translate(-6%, -50%) rotate(var(--arrow-angle)) scale(2.6); }
+}
+
+@keyframes arrow-camera-approach {
   from {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.56);
+    opacity: 0.54;
+    transform: translate(clamp(5rem, 17vw, 8rem), clamp(-4.3rem, -9vw, -2.2rem)) rotate(var(--arrow-angle)) scale(1.02);
   }
   to {
-    opacity: 0.72;
-    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.12;
+    transform: translate(clamp(1.4rem, 5vw, 2.8rem), clamp(-1.15rem, -3vw, -0.5rem)) rotate(var(--arrow-angle)) scale(1.32);
   }
 }
 
-@keyframes dart-focus-impact {
+@keyframes arrow-approach {
   from {
-    opacity: 0.72;
-    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+    transform: translate(clamp(4.8rem, 15vw, 7.5rem), clamp(-4rem, -8vw, -1.8rem)) rotate(var(--arrow-angle)) scale(0.92);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(0.78rem, -0.4rem) rotate(var(--arrow-angle)) scale(1.19);
   }
   to {
-    opacity: 0.15;
-    transform: translate(-50%, -50%) scale(1.35);
+    opacity: 1;
+    transform: translate(0.36rem, -0.18rem) rotate(var(--arrow-angle)) scale(1.13);
   }
 }
 
-@keyframes dart-impact-ring {
+@keyframes arrow-pov-impact {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes arrow-glow-impact {
+  from { opacity: 0.84; transform: scale(2.18); }
+  to { opacity: 0; transform: scale(3.6); }
+}
+
+@keyframes arrow-focus-impact {
+  from { opacity: 0.84; transform: translate(-50%, -50%) scale(1.35); }
+  to { opacity: 0.12; transform: translate(-50%, -50%) scale(1.88); }
+}
+
+@keyframes arrow-camera-impact {
   from {
-    opacity: 0.94;
-    transform: translate(-50%, -50%) scale(0.32);
+    opacity: 0.12;
+    transform: translate(clamp(1.4rem, 5vw, 2.8rem), clamp(-1.15rem, -3vw, -0.5rem)) rotate(var(--arrow-angle)) scale(1.32);
   }
   to {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(3.3);
+    transform: translate(-0.1rem, 0.08rem) rotate(var(--arrow-angle)) scale(1.52);
   }
 }
 
-@keyframes dart-impact-spark {
+@keyframes arrow-impact {
   from {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.4);
-  }
-  42% {
     opacity: 1;
+    transform: translate(0.36rem, -0.18rem) rotate(var(--arrow-angle)) scale(1.13);
+  }
+  62% {
+    opacity: 1;
+    transform: translate(-0.43rem, 0.26rem) rotate(var(--arrow-angle)) scale(1.07);
   }
   to {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.7);
+    opacity: 1;
+    transform: translate(-0.24rem, 0.14rem) rotate(var(--arrow-angle)) scale(1);
   }
+}
+
+@keyframes arrow-impact-ring {
+  from { opacity: 0.94; transform: translate(-50%, -50%) scale(0.3); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(3.3); }
+}
+
+@keyframes arrow-impact-spark {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  42% { opacity: 1; }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(1.7); }
 }
 
 @media (max-width: 420px) {
   .dart-finish {
     --dart-impact-x: 73%;
     --dart-impact-y: 30%;
+  }
+
+  .dart-finish__camera-arrow {
+    width: clamp(13rem, 68vw, 18rem);
   }
 }
 
@@ -438,7 +776,23 @@
   .dart-finish *::before,
   .dart-finish *::after {
     animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
+  }
+
+  .dart-finish--launch .dart-finish__arrow,
+  .dart-finish--approach .dart-finish__arrow,
+  .dart-finish--impact .dart-finish__arrow,
+  .dart-finish--settled .dart-finish__arrow {
+    opacity: 1;
+    transform: translate(-0.24rem, 0.14rem) rotate(var(--arrow-angle)) scale(1);
+  }
+
+  .dart-finish--launch .dart-finish__target,
+  .dart-finish--approach .dart-finish__target,
+  .dart-finish--impact .dart-finish__target,
+  .dart-finish--settled .dart-finish__target {
+    opacity: 0;
   }
 }
