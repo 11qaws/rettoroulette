@@ -18,6 +18,12 @@
   gap: 12px;
 }
 
+.setup-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .participant-setup__eyebrow {
   margin: 0 0 4px;
   color: var(--magenta);
@@ -41,6 +47,22 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+}
+
+.setup-clear {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #f1b4be;
+  border-radius: 10px;
+  background: #fff7f8;
+  color: #ad3d56;
+  font: 13px/1 'Jua', sans-serif;
+  cursor: pointer;
+}
+
+.setup-clear:hover {
+  border-color: #d95b75;
+  background: #fff0f3;
 }
 
 .setup-close {

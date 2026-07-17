@@ -17,6 +17,8 @@ export interface ParticipantSetupProps {
   initialParticipants: Participant[];
   initialStep?: SetupStep;
   onCancel?: () => void;
+  /** Clears the saved roster after the parent has confirmed the destructive action. */
+  onClear?: () => void;
   onStart: (participants: Participant[]) => void;
 }
 
@@ -57,6 +59,7 @@ export default function ParticipantSetup({
   initialParticipants,
   initialStep = 'paste',
   onCancel,
+  onClear,
   onStart,
 }: ParticipantSetupProps) {
   const [step, setStep] = useState<SetupStep>(initialStep);
@@ -174,10 +177,15 @@ export default function ParticipantSetup({
             {step === 'edit' && '명단 다듬기'}
           </h1>
         </div>
-        {onCancel && (
-          <button className="setup-close" type="button" onClick={onCancel} aria-label="명단 편집 닫기">
-            ×
-          </button>
+        {(onClear || onCancel) && (
+          <div className="setup-header-actions">
+            {onClear && <button className="setup-clear" type="button" onClick={onClear}>명단 비우기</button>}
+            {onCancel && (
+              <button className="setup-close" type="button" onClick={onCancel} aria-label="명단 편집 닫기">
+                ×
+              </button>
+            )}
+          </div>
         )}
       </header>
 
@@ -225,7 +233,7 @@ export default function ParticipantSetup({
           </ol>
           {draft.length > 80 && <p className="setup-list-note">처음 80명만 표시했어요. 필요하면 다음 화면에서 전체 명단을 다듬을 수 있어요.</p>}
           <div className="setup-actions">
-            <button className="setup-primary" type="button" onClick={finishSetup}>이 명단으로 방송 시작</button>
+            <button className="setup-primary" type="button" onClick={finishSetup}>이 명단으로 추첨 설정하기</button>
             <button className="setup-secondary" type="button" onClick={() => setStep('edit')}>명단 다듬기</button>
             <button className="setup-link-button" type="button" onClick={() => setStep('paste')}>다시 붙여넣기</button>
           </div>
@@ -278,7 +286,7 @@ export default function ParticipantSetup({
           {editorNotice && <p className="setup-message" role="status">{editorNotice}</p>}
           <div className="setup-actions setup-actions--finish">
             <button className="setup-primary" type="button" onClick={finishSetup}>
-              {onCancel ? '명단 저장' : '이 명단으로 방송 시작'}
+              {onCancel ? '명단 저장' : '이 명단으로 추첨 설정하기'}
             </button>
             {onCancel && <button className="setup-secondary" type="button" onClick={onCancel}>취소</button>}
           </div>

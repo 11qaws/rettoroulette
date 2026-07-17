@@ -29,12 +29,91 @@
   min-width: 0;
 }
 
+.header-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.raffle-status-path {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.raffle-status-path li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #b69ba2;
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.raffle-status-path li:not(:last-child)::after {
+  content: '›';
+  margin-left: 1px;
+  color: #d9c4c9;
+}
+
+.raffle-status-path li > span {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 1px solid #e3cbd0;
+  border-radius: 999px;
+  background: #fff;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+}
+
+.raffle-status-path .is-complete,
+.raffle-status-path .is-current {
+  color: var(--ink);
+}
+
+.raffle-status-path .is-complete > span {
+  border-color: #e7a8b2;
+  background: #fff1f4;
+  color: var(--magenta);
+}
+
+.raffle-status-path .is-current > span {
+  border-color: var(--hot-pink);
+  background: var(--hot-pink);
+  color: #fff;
+}
+
 .broadcast-rule-strip {
   overflow-wrap: anywhere;
   color: #d7ccc8;
   font-family: 'Fredoka', 'Jua', sans-serif;
   font-size: 12px;
   text-align: right;
+}
+
+.broadcast-phase-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -8px 0 12px;
+  padding: 9px 12px;
+  border: 1px solid rgb(255 182 193 / 48%);
+  border-radius: 12px;
+  background: rgb(255 250 252 / 80%);
+}
+
+.broadcast-phase-bar > span {
+  color: var(--magenta);
+  font-family: 'Jua', sans-serif;
+  font-size: 13px;
 }
 
 .preflight-layout {
@@ -449,6 +528,8 @@
   display: grid;
   min-width: 0;
   width: 100%;
+  align-content: center;
+  gap: 8px;
   place-items: center;
 }
 
@@ -485,6 +566,13 @@
 
 .broadcast-focus__visual .roulette-wheel {
   --wheel-size: min(50vw, 38rem, 49vh);
+}
+
+/* The archery camera needs room for its target and arrow, but should never
+   push the host's next-shot controls below a 720p broadcast capture. */
+.broadcast-focus__visual .roulette-wheel.is-dart {
+  --wheel-size: min(52vw, 38rem, 48vh);
+  --wheel-stage-padding: clamp(1.5rem, 3.4vw, 2.7rem);
 }
 
 .broadcast-focus__camera {
@@ -549,6 +637,33 @@
   min-height: 50px;
 }
 
+.round-ready-actions,
+.round-complete-actions {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+}
+
+.round-ready-actions > div,
+.round-complete-actions {
+  justify-items: center;
+}
+
+.round-ready-actions > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+
+.round-complete-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.round-complete-actions .primary-button {
+  grid-column: 1 / -1;
+}
+
 .stage-link {
   justify-self: center;
   border: 0;
@@ -558,6 +673,21 @@
   font-size: 12px;
   text-decoration: underline;
   cursor: pointer;
+}
+
+.stage-link--button {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--magenta);
+  text-decoration: none;
+}
+
+.stage-link--button:hover {
+  border-color: var(--hot-pink);
+  background: #fff6f8;
 }
 
 .broadcast-focus__results {
@@ -640,6 +770,50 @@
   color: var(--muted);
   font-size: 20px;
   cursor: pointer;
+}
+
+.live-session-status {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 13px;
+  border: 1px solid rgb(255 182 193 / 72%);
+  border-radius: 12px;
+  background: var(--cream);
+}
+
+.live-session-status > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.live-session-status p,
+.live-session-status h3 {
+  margin: 0;
+}
+
+.live-session-status > div > p,
+.live-session-status > p {
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.live-session-status h3 {
+  color: var(--ink);
+  font-family: 'Jua', sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.live-session-status > span {
+  color: var(--magenta);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .broadcast-tools-drawer .broadcast-settings {
@@ -850,13 +1024,27 @@
 
 .live-prize-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 67px 28px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 7px;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: var(--cream);
+}
+
+.live-prize-row strong {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.live-prize-row > span {
+  color: var(--magenta);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
 }
 
 .live-prize-row > input,
@@ -963,8 +1151,17 @@
 /* Keep the broadcast control visible on a 720p capture without shrinking the
    1080p+ showcase wheel. */
 @media (min-width: 901px) and (max-height: 780px) {
+  .broadcast-header {
+    margin-bottom: 12px;
+  }
+
+  .broadcast-phase-bar {
+    margin: -7px 0 8px;
+    padding: 6px 10px;
+  }
+
   .broadcast-focus {
-    min-height: calc(100vh - 126px);
+    min-height: calc(100vh - 220px);
     padding-block: 10px 12px;
   }
 
@@ -973,12 +1170,25 @@
   }
 
   .broadcast-focus__visual {
-    min-height: min(400px, 48vh);
+    min-height: min(310px, 37vh);
   }
 
   .broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
-    --wheel-size: min(46vw, 31rem, 48vh);
+    --wheel-size: min(42vw, 29rem, 37vh);
     --wheel-stage-padding: 1rem;
+  }
+
+  .broadcast-focus__visual .roulette-wheel.is-dart {
+    --wheel-size: min(40vw, 28rem, 34vh);
+    --wheel-stage-padding: clamp(1.1rem, 2.6vw, 1.7rem);
+  }
+
+  .broadcast-focus__visual.is-round-complete {
+    min-height: min(200px, 23vh);
+  }
+
+  .broadcast-focus__visual.is-round-complete .roulette-wheel.roulette-wheel:not(.is-dart) {
+    --wheel-size: min(32vw, 20rem, 23vh);
   }
 
   .broadcast-focus__prompt {
@@ -987,11 +1197,52 @@
   }
 
   .broadcast-focus__action {
-    margin-top: 6px;
+    margin-top: 4px;
+  }
+
+  .broadcast-focus__action .primary-button {
+    min-height: 44px;
+  }
+
+  .round-complete-actions {
+    grid-template-columns: 1.45fr 1fr 1fr;
+    gap: 6px;
+  }
+
+  .round-complete-actions .primary-button {
+    grid-column: auto;
+    min-height: 40px;
+  }
+
+  .round-complete-actions .stage-link--button {
+    min-height: 40px;
+    padding-inline: 7px;
+    font-size: 11px;
   }
 }
 
 @media (max-width: 620px) {
+  .header-status {
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 5px;
+  }
+
+  .raffle-status-path {
+    gap: 3px;
+  }
+
+  .raffle-status-path li {
+    font-size: 10px;
+  }
+
+  .broadcast-phase-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: -10px;
+  }
+
   .broadcast-header {
     align-items: flex-start;
   }
@@ -1050,6 +1301,14 @@
 
   .broadcast-focus__action {
     width: 100%;
+  }
+
+  .round-complete-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .round-complete-actions .primary-button {
+    grid-column: auto;
   }
 
   .app-shell.app-shell--live > .broadcast-tools-drawer {

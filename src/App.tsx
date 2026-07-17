@@ -10,6 +10,13 @@ import {
   buildWeightedDrawPlanWithoutReplacement,
   sampleWithoutReplacement,
 } from './lib/draw';
+import {
+  getRaffleTransition,
+  isRaffleActive,
+  RAFFLE_STATUS_META,
+  type RaffleEvent,
+  type RaffleStatus,
+} from './lib/raffleLifecycle';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize, WheelPresentation } from './types';
 
 import './App.css';
@@ -24,8 +31,7 @@ type DrawOption = {
 
 type SideTab = 'participants' | 'prizes' | 'history';
 type SetupStartStep = 'paste' | 'edit';
-type BroadcastPhase = 'roster' | 'preflight' | 'live';
-type SetupReturnPhase = Exclude<BroadcastPhase, 'roster'>;
+type SetupReturnStatus = Extract<RaffleStatus, 'configuring' | 'ready' | 'completed'>;
 
 type CurrentRound = {
   id: string;
@@ -41,6 +47,8 @@ type CurrentRound = {
   useWeights: boolean;
   recipient?: string;
   results: DrawRecord[];
+  /** The host ended an unfinished multi-shot archery round deliberately. */
+  endedEarly?: boolean;
 };
 
 type PlannedPresentation = {
@@ -51,6 +59,11 @@ type PlannedPresentation = {
   candidateFingerprint: string;
   candidateTotalWeight: number;
   recipient?: string;
+};
+
+type ActivePresentation = PlannedPresentation & {
+  /** Rejects an animation callback from an older result or abandoned round. */
+  revealId: number;
 };
 
 function createId(prefix: string) {
@@ -110,12 +123,12 @@ function App() {
   const [winnerIndex, setWinnerIndex] = useState<number | null>(null);
   const [spinKey, setSpinKey] = useState(0);
   const [presentedOptions, setPresentedOptions] = useState<DrawOption[]>([]);
-  const [activePresentation, setActivePresentation] = useState<PlannedPresentation | null>(null);
+  const [activePresentation, setActivePresentation] = useState<ActivePresentation | null>(null);
   const [currentRound, setCurrentRound] = useState<CurrentRound | null>(null);
   const [history, setHistory] = useState<DrawRecord[]>([]);
   const [sideTab, setSideTab] = useState<SideTab>('participants');
-  const [broadcastPhase, setBroadcastPhase] = useState<BroadcastPhase>('roster');
-  const [setupReturnPhase, setSetupReturnPhase] = useState<SetupReturnPhase>('preflight');
+  const [raffleStatus, setRaffleStatus] = useState<RaffleStatus>('roster');
+  const [setupReturnStatus, setSetupReturnStatus] = useState<SetupReturnStatus>('configuring');
   const [setupSession, setSetupSession] = useState(0);
   const [setupStartStep, setSetupStartStep] = useState<SetupStartStep>('paste');
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -123,6 +136,16 @@ function App() {
   const toolsTriggerRef = useRef<HTMLButtonElement>(null);
   const toolsCloseRef = useRef<HTMLButtonElement>(null);
   const toolsDrawerRef = useRef<HTMLElement>(null);
+  const raffleStatusRef = useRef<RaffleStatus>('roster');
+  const presentationRunRef = useRef(0);
+
+  const transitionRaffle = useCallback((event: RaffleEvent) => {
+    const nextStatus = getRaffleTransition(raffleStatusRef.current, event);
+    if (!nextStatus) return false;
+    raffleStatusRef.current = nextStatus;
+    setRaffleStatus(nextStatus);
+    return true;
+  }, []);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -212,8 +235,13 @@ function App() {
   }, [showToast]);
 
   useEffect(() => {
-    if (broadcastPhase === 'live') window.scrollTo(0, 0);
-  }, [broadcastPhase]);
+    if (raffleStatus !== 'roster' && raffleStatus !== 'configuring') window.scrollTo(0, 0);
+  }, [raffleStatus]);
+
+  useEffect(() => () => {
+    // Ignore a late browser animation callback after this app has gone away.
+    presentationRunRef.current += 1;
+  }, []);
 
   const eligibleParticipants = useMemo(
     () => participants.filter((participant) => !excludedParticipantIds.includes(participant.id)),
@@ -221,9 +249,9 @@ function App() {
   );
 
   useEffect(() => {
-    // A limited candidate pool must not silently refill between arrow shots.
-    // Once the round is complete, the usual pool maintenance can resume.
-    if (currentRound && currentRound.results.length < currentRound.winnerGoal) return;
+    // A limited candidate pool must not silently refill while a round owns its
+    // snapshot. An early-ended archery round is complete for this purpose.
+    if (currentRound && isRaffleActive(raffleStatus)) return;
 
     if (poolLimit === 0) {
       if (poolIds.length > 0) setPoolIds([]);
@@ -241,7 +269,7 @@ function App() {
     const remaining = eligibleParticipants.filter((participant) => !retained.includes(participant.id));
     const fill = sampleWithoutReplacement(remaining, limit - retained.length).map((participant) => participant.id);
     setPoolIds([...retained, ...fill]);
-  }, [currentRound, eligibleParticipants, poolIds, poolLimit]);
+  }, [currentRound, eligibleParticipants, poolIds, poolLimit, raffleStatus]);
 
   const candidateParticipants = useMemo(() => {
     if (poolLimit === 0) return eligibleParticipants;
@@ -286,14 +314,8 @@ function App() {
   const displayNames = displayOptions.map((option) => option.name);
   const availablePrizeCount = prizeTotal(prizes);
   const isAutoPresentation = currentRound?.mode === 'marble' || currentRound?.wheelPresentation === 'spin';
-  const isDrawing = spinning || (queuedPresentations.length > 0 && isAutoPresentation);
-  const isRoundInProgress = Boolean(
-    currentRound && currentRound.results.length < currentRound.winnerGoal,
-  );
-  const isCompletedRound = Boolean(
-    currentRound && currentRound.results.length >= currentRound.winnerGoal && currentRound.results.length > 0,
-  );
-  const isStageLocked = isDrawing || isRoundInProgress;
+  const isStageLocked = isRaffleActive(raffleStatus);
+  const isConfigurationEditable = raffleStatus === 'configuring';
 
   const buildPresentationPlan = useCallback((
     snapshot: readonly DrawOption[],
@@ -341,27 +363,47 @@ function App() {
     });
   }, []);
 
-  /** Starts a previously committed reveal. It never chooses a result itself. */
-  const launchPresentation = useCallback((presentation: PlannedPresentation) => {
-    setActivePresentation(presentation);
-    setPresentedOptions(presentation.options);
-    setWinnerIndex(presentation.winnerIndex);
-    setSpinning(true);
-    setSpinKey((value) => value + 1);
-  }, []);
+  /**
+   * Starts an already-committed reveal. Selection happened before this call;
+   * the short locking beat makes that boundary visible on the broadcast.
+   */
+  const launchCommittedPresentation = useCallback((presentation: PlannedPresentation) => {
+    if (!transitionRaffle('lock-result')) return false;
+
+    const revealId = presentationRunRef.current + 1;
+    presentationRunRef.current = revealId;
+    window.setTimeout(() => {
+      if (presentationRunRef.current !== revealId) return;
+
+      setActivePresentation({ ...presentation, revealId });
+      setPresentedOptions(presentation.options);
+      setWinnerIndex(presentation.winnerIndex);
+      setSpinning(true);
+      setSpinKey((value) => value + 1);
+      transitionRaffle('start-presentation');
+    }, 150);
+
+    return true;
+  }, [transitionRaffle]);
 
   useEffect(() => {
     const activeRound = currentRound;
     const nextPresentation = queuedPresentations[0];
-    if (!activeRound || !isAutoPresentation || !nextPresentation || spinning) return undefined;
+    if (
+      raffleStatus !== 'presenting' ||
+      !activeRound ||
+      !isAutoPresentation ||
+      !nextPresentation ||
+      spinning
+    ) return undefined;
 
     const revealTimer = window.setTimeout(() => {
-      launchPresentation(nextPresentation);
       setQueuedPresentations((presentations) => presentations.slice(1));
+      launchCommittedPresentation(nextPresentation);
     }, 720);
 
     return () => window.clearTimeout(revealTimer);
-  }, [currentRound, isAutoPresentation, launchPresentation, queuedPresentations, spinning]);
+  }, [currentRound, isAutoPresentation, launchCommittedPresentation, queuedPresentations, raffleStatus, spinning]);
 
   const clearStagePresentation = () => {
     setWinnerIndex(null);
@@ -370,6 +412,7 @@ function App() {
   };
 
   const clearCurrentRound = () => {
+    presentationRunRef.current += 1;
     clearStagePresentation();
     setQueuedPresentations([]);
     setSpinning(false);
@@ -377,32 +420,38 @@ function App() {
   };
 
   const prepareNextRoundSettings = () => {
-    if (!currentRound) clearStagePresentation();
+    if (raffleStatus === 'configuring') clearStagePresentation();
   };
 
   const changeTarget = (target: DrawTarget) => {
-    if (isStageLocked) return;
+    if (!isConfigurationEditable) return;
     setDrawTarget(target);
     prepareNextRoundSettings();
   };
 
   const changeMode = (mode: DrawMode) => {
-    if (isStageLocked) return;
+    if (!isConfigurationEditable) return;
     setDrawMode(mode);
     prepareNextRoundSettings();
   };
 
   const changeWheelPresentation = (presentation: WheelPresentation) => {
-    if (isStageLocked || drawMode !== 'wheel') return;
+    if (!isConfigurationEditable || drawMode !== 'wheel') return;
     setWheelPresentation(presentation);
     prepareNextRoundSettings();
   };
 
-  const completeDraw = () => {
+  const completeDraw = (revealId?: number) => {
     const presentation = activePresentation;
     const activeRound = currentRound;
-    if (!spinning || !presentation || !activeRound) {
-      setSpinning(false);
+    if (
+      raffleStatus !== 'presenting' ||
+      !spinning ||
+      !presentation ||
+      !activeRound ||
+      revealId !== presentation.revealId ||
+      revealId !== presentationRunRef.current
+    ) {
       return;
     }
 
@@ -461,11 +510,19 @@ function App() {
     setSpinning(false);
     // A following arrow uses a new click-time snapshot. Clear the previous
     // wheel now so the audience sees the exact next-shot candidate pool.
-    if (hasAnotherArrowShot) clearStagePresentation();
+    if (hasAnotherArrowShot) {
+      clearStagePresentation();
+      transitionRaffle('await-next-arrow');
+      return;
+    }
+
+    if (activeRound.results.length + 1 >= activeRound.winnerGoal) {
+      transitionRaffle('complete-round');
+    }
   };
 
   const startDraw = () => {
-    if (isStageLocked) return;
+    if (raffleStatus !== 'ready') return;
     const possibleCount = effectiveWinnerCount;
     if (possibleCount < 1) {
       showToast(drawTarget === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
@@ -507,13 +564,13 @@ function App() {
     setCurrentRound(nextRound);
     setToolsOpen(false);
     // Automatic multi-draws freeze the whole reveal plan on this one click.
-    launchPresentation(firstPresentation);
     setQueuedPresentations(freezeWholeRound ? presentations.slice(1) : []);
+    launchCommittedPresentation(firstPresentation);
   };
 
   const startNextArrow = () => {
     if (
-      isDrawing ||
+      raffleStatus !== 'awaiting-arrow' ||
       !currentRound ||
       currentRound.mode !== 'wheel' ||
       currentRound.wheelPresentation !== 'dart' ||
@@ -535,24 +592,55 @@ function App() {
     if (!nextPresentation) return;
 
     setToolsOpen(false);
-    launchPresentation(nextPresentation);
+    launchCommittedPresentation(nextPresentation);
+  };
+
+  const endArrowRound = () => {
+    if (raffleStatus !== 'awaiting-arrow' || !currentRound) return;
+    if (!window.confirm(`현재까지 뽑힌 ${currentRound.results.length}${currentRound.target === 'people' ? '명' : '개'}으로 이번 회차를 마칠까요? 이미 공개한 결과와 기록은 유지됩니다.`)) return;
+
+    setCurrentRound((round) => round ? { ...round, endedEarly: true } : round);
+    transitionRaffle('end-round-early');
+    showToast('이번 양궁 회차를 여기서 마쳤어요. 공개된 결과와 기록은 그대로예요.');
   };
 
   const reshufflePool = () => {
-    if (isStageLocked || poolLimit === 0) return;
+    if (raffleStatus !== 'ready' || poolLimit === 0) return;
     const count = Math.min(poolLimit, eligibleParticipants.length);
     setPoolIds(sampleWithoutReplacement(eligibleParticipants, count).map((participant) => participant.id));
-    prepareNextRoundSettings();
     showToast(`후보 ${count}명을 새로 골랐어요.`);
   };
 
-  const openParticipantEditor = (returnPhase: SetupReturnPhase = 'live') => {
-    if (isStageLocked) return;
-    setSetupStartStep('edit');
-    setSetupReturnPhase(returnPhase);
+  const openParticipantEditor = (returnStatus: SetupReturnStatus, startStep: SetupStartStep = 'edit') => {
+    if (!transitionRaffle('open-roster')) return;
+    setSetupStartStep(startStep);
+    setSetupReturnStatus(returnStatus);
     setSetupSession((value) => value + 1);
     setToolsOpen(false);
-    setBroadcastPhase('roster');
+  };
+
+  const clearParticipantRoster = () => {
+    if (raffleStatus !== 'roster' || participants.length === 0) return;
+    if (!window.confirm(`현재 명단 ${participants.length}명을 비울까요? 당첨 기록과 상품 설정은 유지됩니다.`)) return;
+
+    setParticipants([]);
+    setExcludedParticipantIds([]);
+    setPoolIds([]);
+    setPoolLimit(0);
+    setRecipient('');
+    clearCurrentRound();
+    setSetupStartStep('paste');
+    setSetupSession((value) => value + 1);
+    showToast('명단을 비웠어요. 새 명단을 붙여넣거나 직접 입력해 주세요.');
+  };
+
+  const cancelParticipantEditor = () => {
+    const event = setupReturnStatus === 'configuring'
+      ? 'cancel-roster-configuring'
+      : setupReturnStatus === 'completed'
+        ? 'cancel-roster-completed'
+        : 'cancel-roster-ready';
+    transitionRaffle(event);
   };
 
   const saveParticipants = (nextParticipants: Participant[]) => {
@@ -560,19 +648,34 @@ function App() {
     setParticipants(nextParticipants);
     setExcludedParticipantIds((ids) => ids.filter((id) => nextIds.has(id)));
     setPoolIds([]);
+    setPoolLimit((limit) => Math.min(limit, nextParticipants.length));
     clearCurrentRound();
     setToolsOpen(false);
-    setBroadcastPhase('preflight');
+    transitionRaffle('save-roster');
     showToast(`${nextParticipants.length}명의 참여자 명단을 준비했어요.`);
   };
 
   const startBroadcast = () => {
+    if (raffleStatus !== 'configuring') return;
     if (drawOptions.length === 0) {
       showToast(drawTarget === 'people' ? '먼저 참여자 명단을 준비해 주세요.' : '먼저 상품을 추가해 주세요.');
       return;
     }
     setToolsOpen(false);
-    setBroadcastPhase('live');
+    clearCurrentRound();
+    transitionRaffle('open-stage');
+  };
+
+  const openConfiguration = () => {
+    if (!transitionRaffle('open-configuration')) return false;
+    setToolsOpen(false);
+    return true;
+  };
+
+  const beginNextRound = () => {
+    if (!transitionRaffle('start-next-round')) return;
+    clearCurrentRound();
+    setToolsOpen(false);
   };
 
   const restoreParticipant = (id: string, name: string) => {
@@ -591,29 +694,22 @@ function App() {
     if (!window.confirm(`당첨 제외 ${excludedParticipantIds.length}명을 다시 명단에 넣을까요? 당첨 기록은 유지됩니다.`)) return;
     setExcludedParticipantIds([]);
     setPoolIds([]);
-    clearCurrentRound();
-    showToast('당첨 제외 상태를 초기화했어요. 기록은 그대로예요.');
+    showToast('당첨 제외를 초기화했어요. 이전 결과와 당첨 기록은 그대로예요.');
   };
 
   const startPrizeForWinner = (winner: string) => {
-    if (isStageLocked) return;
-    if (availablePrizeCount === 0) {
-      setSideTab('prizes');
-      setToolsOpen(true);
-      showToast('먼저 상품을 추가해 주세요.');
-      return;
-    }
+    if (!openConfiguration()) return;
     setRecipient(winner);
     setWinnerCount(1);
     setDrawTarget('prizes');
     setSideTab('prizes');
-    prepareNextRoundSettings();
-    setToolsOpen(false);
-    showToast(`${winner}님에게 드릴 상품을 뽑아 주세요.`);
+    showToast(availablePrizeCount === 0
+      ? '상품을 추가한 뒤 이 당첨자에게 드릴 선물을 뽑아 주세요.'
+      : `${winner}님에게 드릴 상품을 뽑아 주세요.`);
   };
 
   const updateParticipantWeight = (id: string, weight: number) => {
-    if (isStageLocked) return;
+    if (!isConfigurationEditable) return;
     setParticipants((items) => items.map((participant) => (
       participant.id === id
         ? { ...participant, weight: Math.max(0, Math.min(99, Math.floor(weight) || 0)) }
@@ -623,13 +719,13 @@ function App() {
   };
 
   const updatePrize = (id: string, patch: Partial<Prize>) => {
-    if (isStageLocked) return;
+    if (!isConfigurationEditable) return;
     setPrizes((items) => items.map((prize) => (prize.id === id ? { ...prize, ...patch } : prize)));
     prepareNextRoundSettings();
   };
 
   const updatePrizeWeight = (id: string, weight: number) => {
-    if (isStageLocked) return;
+    if (!isConfigurationEditable) return;
     setPrizes((items) => items.map((prize) => (
       prize.id === id
         ? { ...prize, weight: Math.max(0, Math.min(99, Math.floor(weight) || 0)) }
@@ -639,13 +735,13 @@ function App() {
   };
 
   const addPrize = () => {
-    if (isStageLocked) return;
+    if (!isConfigurationEditable) return;
     setPrizes((items) => [...items, { id: createId('prize'), name: '새 선물', quantity: 1, weight: 1 }]);
     prepareNextRoundSettings();
   };
 
   const removePrize = (id: string, name: string) => {
-    if (isStageLocked) return;
+    if (!isConfigurationEditable) return;
     if (!window.confirm(`${name} 상품을 목록에서 지울까요?`)) return;
     setPrizes((items) => items.filter((prize) => prize.id !== id));
     prepareNextRoundSettings();
@@ -766,8 +862,8 @@ function App() {
     ? '참여자 추첨'
     : roundRecipient ? `${roundRecipient}님 상품 추첨` : '상품 추첨';
   const isArrowRound = roundMode === 'wheel' && roundWheelPresentation === 'dart';
-  const isArrowWaiting = isArrowRound && isRoundInProgress && !spinning;
-  const drawActionDisabled = toolsOpen || spinning || (isRoundInProgress && !isArrowWaiting);
+  const isArrowWaiting = raffleStatus === 'awaiting-arrow';
+  const statusMeta = RAFFLE_STATUS_META[raffleStatus];
   const upcomingDrawLabel = drawMode === 'wheel' && wheelPresentation === 'dart'
     ? '화살 쏘기'
     : drawTarget === 'people'
@@ -790,29 +886,58 @@ function App() {
     ? participants.length === 0
       ? '참여자 명단을 준비하면 바로 추첨을 시작할 수 있습니다.'
       : eligibleParticipants.length === 0
-        ? '진행 도구에서 당첨 제외를 초기화하면 새 회차를 시작할 수 있습니다.'
-        : useWeights && candidateParticipants.length > 0
-          ? '진행 도구에서 가중치를 조정하면 바로 추첨을 시작할 수 있습니다.'
-          : '진행 도구에서 추첨 후보를 준비하면 바로 추첨을 시작할 수 있습니다.'
+        ? '명단 도구에서 당첨 제외를 초기화하면 새 회차를 시작할 수 있습니다.'
+      : useWeights && candidateParticipants.length > 0
+          ? '설정 바꾸기에서 가중치를 조정하면 바로 추첨을 시작할 수 있습니다.'
+          : '설정 바꾸기에서 추첨 후보를 준비하면 바로 추첨을 시작할 수 있습니다.'
     : availablePrizeCount === 0
       ? '상품 재고를 추가하면 바로 추첨을 시작할 수 있습니다.'
-      : '진행 도구에서 상품 가중치를 조정하면 바로 추첨을 시작할 수 있습니다.';
-  const drawButtonLabel = spinning
-    ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 추첨 중…`
+      : '설정 바꾸기에서 상품 가중치를 조정하면 바로 추첨을 시작할 수 있습니다.';
+  const drawButtonLabel = raffleStatus === 'locking'
+    ? '결과 고정 중…'
+    : raffleStatus === 'presenting'
+      ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 결과 공개 중…`
     : isArrowWaiting
       ? noAvailableDrawOptions
         ? unavailableDrawLabel
         : `다음 화살 쏘기 (${currentRoundResults.length + 1}/${roundGoal})`
-      : noAvailableDrawOptions
-        ? unavailableDrawLabel
-      : isCompletedRound
-        ? `새 회차 시작 · ${upcomingDrawLabel}`
-        : upcomingDrawLabel;
+    : noAvailableDrawOptions
+      ? unavailableDrawLabel
+      : upcomingDrawLabel;
   const broadcastVisualClassName = [
     'broadcast-focus__visual',
     isArrowRound && spinning ? 'is-arrow-throwing' : '',
     roundMode === 'wheel' && roundWheelPresentation === 'spin' && spinning ? 'is-auto-spinning' : '',
+    raffleStatus === 'completed' ? 'is-round-complete' : '',
   ].filter(Boolean).join(' ');
+  const stageHeading = raffleStatus === 'completed'
+    ? currentRound?.endedEarly
+      ? `이번 회차 ${currentRoundResults.length}${roundUnit} 확정 · 여기서 종료`
+      : `${resultTitle} ${currentRoundResults.length}${roundUnit}`
+    : raffleStatus === 'awaiting-arrow'
+      ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 확정`
+      : raffleStatus === 'locking' || raffleStatus === 'presenting'
+        ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 공개 중`
+        : stageTitle;
+  const stagePrompt = raffleStatus === 'locking'
+    ? '방금 누른 버튼의 후보와 결과를 고정했습니다. 곧 방송 연출을 시작합니다.'
+    : raffleStatus === 'presenting'
+      ? isArrowRound
+        ? `${currentRoundResults.length + 1}번째 화살의 결과는 발사 버튼을 누른 순간 고정되었습니다. 지금은 화살 연출 중이에요.`
+        : `첫 버튼을 누른 순간 이번 회차 ${roundGoal}${roundUnit}의 결과와 후보 규칙이 고정되었습니다. 지금은 ${currentRoundResults.length}${roundUnit} 공개 중이에요.`
+      : raffleStatus === 'awaiting-arrow'
+        ? noAvailableDrawOptions
+          ? `${unavailableDrawHint}가 없어 다음 화살을 시작할 수 없어요. 이번 회차를 여기서 마치거나, 결과 뒤에 다음 회차 설정을 바꿔 주세요.`
+          : `${currentRoundResults.length + 1}번째 화살은 발사 버튼을 누르는 순간 그 한 결과가 확정되고, 바로 화살 연출이 시작됩니다.`
+        : raffleStatus === 'completed'
+          ? currentRound?.endedEarly
+            ? '공개된 결과와 기록은 유지됩니다. 다음 회차를 같은 조건으로 이어가거나, 명단·규칙을 새로 정할 수 있어요.'
+            : '오른쪽 보드에 이번 회차의 전체 당첨자가 남아 있습니다. 아래에서 다음 행동을 고르세요.'
+          : noAvailableDrawOptions
+            ? unavailableDrawPrompt
+            : roundTarget === 'prizes' && roundRecipient
+              ? `${roundRecipient}님에게 드릴 상품을 뽑아 주세요.`
+              : '추첨 시작을 누르는 순간 후보와 결과가 고정되고, 그 다음에 방송 연출이 시작됩니다.';
 
   const renderDrawVisual = (variant: 'preview' | 'live') => {
     const preview = variant === 'preview';
@@ -835,7 +960,7 @@ function App() {
         spinning={activeSpin}
         spinKey={spinKey}
         presentation={presentation}
-        onSpinEnd={preview ? () => undefined : completeDraw}
+        onSpinEnd={preview ? () => undefined : () => completeDraw(activePresentation?.revealId)}
       />
     ) : (
       <MarbleRace
@@ -844,16 +969,16 @@ function App() {
         winnerIndex={activeWinnerIndex}
         racing={activeSpin}
         raceKey={spinKey}
-        onRaceEnd={preview ? () => undefined : completeDraw}
+        onRaceEnd={preview ? () => undefined : () => completeDraw(activePresentation?.revealId)}
       />
     );
   };
 
-  const renderRoundSettings = (location: 'preflight' | 'drawer') => (
-    <section className={`broadcast-settings broadcast-settings--${location}`} aria-label={location === 'preflight' ? '방송 시작 설정' : '다음 추첨 설정'}>
+  const renderRoundSettings = () => (
+    <section className="broadcast-settings broadcast-settings--preflight" aria-label="이번 회차 설정">
       <div className="broadcast-settings__heading">
         <div>
-          <p>{location === 'preflight' ? '이번 방송 규칙' : '다음 추첨 설정'}</p>
+          <p>이번 회차 규칙</p>
           <h2>{drawTarget === 'people' ? '사람을 뽑을게요' : '상품을 뽑을게요'}</h2>
         </div>
         <span>{drawOptions.length}{drawTarget === 'people' ? '명 후보' : '개 준비'}</span>
@@ -862,8 +987,8 @@ function App() {
       <div className="broadcast-settings__grid">
         <fieldset className="settings-choice">
           <legend>무엇을 뽑을까요?</legend>
-          <button type="button" aria-pressed={drawTarget === 'people'} disabled={isStageLocked} onClick={() => changeTarget('people')}>사람</button>
-          <button type="button" aria-pressed={drawTarget === 'prizes'} disabled={isStageLocked} onClick={() => changeTarget('prizes')}>상품</button>
+          <button type="button" aria-pressed={drawTarget === 'people'} disabled={!isConfigurationEditable} onClick={() => changeTarget('people')}>사람</button>
+          <button type="button" aria-pressed={drawTarget === 'prizes'} disabled={!isConfigurationEditable} onClick={() => changeTarget('prizes')}>상품</button>
         </fieldset>
 
         <label className="settings-number">
@@ -873,7 +998,7 @@ function App() {
             min="1"
             max={maximumWinnerCount}
             value={winnerCount}
-            disabled={isStageLocked}
+            disabled={!isConfigurationEditable}
             onChange={(event) => {
               setWinnerCount(clampInteger(Number(event.target.value), 1, maximumWinnerCount));
               prepareNextRoundSettings();
@@ -890,7 +1015,7 @@ function App() {
               min="0"
               max={eligibleParticipants.length}
               value={poolLimit}
-              disabled={isStageLocked}
+              disabled={!isConfigurationEditable}
               onChange={(event) => {
                 setPoolLimit(Math.max(0, Math.min(eligibleParticipants.length, Number(event.target.value) || 0)));
                 setPoolIds([]);
@@ -904,7 +1029,7 @@ function App() {
             <span>받을 사람</span>
             <input
               value={recipient}
-              disabled={isStageLocked}
+              disabled={!isConfigurationEditable}
               onChange={(event) => {
                 setRecipient(event.target.value);
                 prepareNextRoundSettings();
@@ -916,15 +1041,15 @@ function App() {
 
         <fieldset className="settings-choice">
           <legend>어떻게 보여줄까요?</legend>
-          <button type="button" aria-pressed={drawMode === 'wheel'} disabled={isStageLocked} onClick={() => changeMode('wheel')}>룰렛</button>
-          <button type="button" aria-pressed={drawMode === 'marble'} disabled={isStageLocked} onClick={() => changeMode('marble')}>마블</button>
+          <button type="button" aria-pressed={drawMode === 'wheel'} disabled={!isConfigurationEditable} onClick={() => changeMode('wheel')}>룰렛</button>
+          <button type="button" aria-pressed={drawMode === 'marble'} disabled={!isConfigurationEditable} onClick={() => changeMode('marble')}>마블</button>
         </fieldset>
 
         {drawMode === 'wheel' && (
           <fieldset className="settings-choice settings-choice--presentation">
             <legend>룰렛 연출</legend>
-            <button type="button" aria-pressed={wheelPresentation === 'spin'} disabled={isStageLocked} onClick={() => changeWheelPresentation('spin')}>자동</button>
-            <button type="button" aria-pressed={wheelPresentation === 'dart'} disabled={isStageLocked} onClick={() => changeWheelPresentation('dart')}>양궁</button>
+            <button type="button" aria-pressed={wheelPresentation === 'spin'} disabled={!isConfigurationEditable} onClick={() => changeWheelPresentation('spin')}>자동</button>
+            <button type="button" aria-pressed={wheelPresentation === 'dart'} disabled={!isConfigurationEditable} onClick={() => changeWheelPresentation('dart')}>양궁</button>
           </fieldset>
         )}
       </div>
@@ -942,7 +1067,7 @@ function App() {
           <input
             type="checkbox"
             checked={useWeights}
-            disabled={isStageLocked}
+            disabled={!isConfigurationEditable}
             onChange={(event) => {
               setUseWeights(event.target.checked);
               prepareNextRoundSettings();
@@ -955,7 +1080,7 @@ function App() {
             <input
               type="checkbox"
               checked={!removeAfterDraw}
-              disabled={isStageLocked}
+              disabled={!isConfigurationEditable}
               onChange={(event) => {
                 setRemoveAfterDraw(!event.target.checked);
                 prepareNextRoundSettings();
@@ -978,7 +1103,7 @@ function App() {
                       min="0"
                       max="99"
                       value={participant.weight}
-                      disabled={isStageLocked}
+                      disabled={!isConfigurationEditable}
                       onChange={(event) => updateParticipantWeight(participant.id, Number(event.target.value))}
                     />
                   </label>
@@ -991,7 +1116,7 @@ function App() {
                       min="0"
                       max="99"
                       value={prize.weight}
-                      disabled={isStageLocked}
+                      disabled={!isConfigurationEditable}
                       onChange={(event) => updatePrizeWeight(prize.id, Number(event.target.value))}
                     />
                   </label>
@@ -1001,6 +1126,31 @@ function App() {
       </details>
     </section>
   );
+
+  const renderStatusPath = () => (
+    <ol className="raffle-status-path" aria-label="추첨 진행 단계">
+      {[
+        { step: 1, label: '명단' },
+        { step: 2, label: '설정' },
+        { step: 3, label: '추첨' },
+        { step: 4, label: '결과' },
+      ].map((item) => (
+        <li
+          key={item.step}
+          className={item.step === statusMeta.step ? 'is-current' : item.step < statusMeta.step ? 'is-complete' : ''}
+          aria-current={item.step === statusMeta.step ? 'step' : undefined}
+        >
+          <span>{item.step}</span>{item.label}
+        </li>
+      ))}
+    </ol>
+  );
+
+  const liveStatusDescription = raffleStatus === 'ready'
+    ? '현재 명단과 규칙으로 바로 추첨할 수 있어요.'
+    : raffleStatus === 'completed'
+      ? '이번 회차 결과는 유지한 채, 다음 행동을 고르세요.'
+      : '결과와 규칙이 고정되어 있어 방송 연출이 끝날 때까지 바꿀 수 없어요.';
 
   const renderProgressTools = () => (
     <aside
@@ -1020,7 +1170,14 @@ function App() {
         <button ref={toolsCloseRef} type="button" aria-label="진행 도구 닫기" onClick={() => closeTools(true)}>×</button>
       </div>
 
-      {renderRoundSettings('drawer')}
+      <section className="live-session-status" aria-label="현재 추첨 상태">
+        <div>
+          <p>현재 상태</p>
+          <h3>{statusMeta.liveLabel}</h3>
+        </div>
+        <span>{ruleSummary}</span>
+        <p>{liveStatusDescription}</p>
+      </section>
 
       <nav className="live-tabs" aria-label="방송 진행 패널">
         <button type="button" aria-pressed={sideTab === 'participants'} onClick={() => setSideTab('participants')}>참여자 <span>{participants.length}</span></button>
@@ -1035,7 +1192,7 @@ function App() {
               <h2 id="participant-panel-title">현재 참여자</h2>
               <p>추첨 가능 {eligibleParticipants.length}명 · 당첨 제외 {excludedParticipantIds.length}명</p>
             </div>
-            <button className="compact-button" type="button" disabled={isStageLocked} onClick={() => openParticipantEditor('live')}>편집</button>
+            <button className="compact-button" type="button" disabled={isStageLocked} onClick={() => openParticipantEditor(raffleStatus === 'completed' ? 'completed' : 'ready')}>편집</button>
           </div>
           <ol className="live-participant-list">
             {participants.slice(0, 18).map((participant, index) => {
@@ -1052,6 +1209,7 @@ function App() {
           {participants.length > 18 && <p className="live-panel__note">+{participants.length - 18}명은 명단 조정에서 확인할 수 있어요.</p>}
           <button className="panel-wide-button" type="button" onClick={copyParticipantList}>번호가 붙은 명단 복사</button>
           <button className="panel-wide-button panel-wide-button--soft" type="button" disabled={isStageLocked} onClick={resetWinnerState}>당첨 제외 상태 초기화</button>
+          <button className="panel-wide-button panel-wide-button--soft" type="button" disabled={isStageLocked} onClick={() => openParticipantEditor(raffleStatus === 'completed' ? 'completed' : 'ready', 'paste')}>명단 교체 · 비우기</button>
         </section>
       )}
 
@@ -1073,18 +1231,14 @@ function App() {
               <h2 id="prize-panel-title">상품 수량</h2>
               <p>남은 상품 {availablePrizeCount}개</p>
             </div>
-            <button className="compact-button" type="button" disabled={isStageLocked} onClick={addPrize}>+ 상품</button>
+            <button className="compact-button" type="button" disabled={isStageLocked} onClick={openConfiguration}>상품 설정</button>
           </div>
           <div className="live-prize-list">
             {prizes.length === 0 && <p className="live-panel__empty">아직 상품이 없어요. 선물을 추가해 주세요.</p>}
             {prizes.map((prize) => (
               <div className="live-prize-row" key={prize.id}>
-                <input value={prize.name} disabled={isStageLocked} onChange={(event) => updatePrize(prize.id, { name: event.target.value })} aria-label={`${prize.name} 상품 이름`} />
-                <label>
-                  <span>수량</span>
-                  <input type="number" min="0" disabled={isStageLocked} value={prize.quantity} onChange={(event) => updatePrize(prize.id, { quantity: Math.max(0, Number(event.target.value) || 0) })} aria-label={`${prize.name} 수량`} />
-                </label>
-                <button type="button" disabled={isStageLocked} onClick={() => removePrize(prize.id, prize.name)} aria-label={`${prize.name} 삭제`}>×</button>
+                <strong>{prize.name}</strong>
+                <span>남은 {prize.quantity}개</span>
               </div>
             ))}
           </div>
@@ -1137,7 +1291,7 @@ function App() {
     </aside>
   );
 
-  if (broadcastPhase === 'roster') {
+  if (raffleStatus === 'roster') {
     return (
       <main className="app-shell app-shell--setup">
         <header className="brand-header">
@@ -1145,13 +1299,17 @@ function App() {
             <span className="brand__mark" aria-hidden="true">🍸 💝</span>
             <strong>Retto Roulette</strong>
           </a>
-          <span className="header-pill">v0.5.1</span>
+          <div className="header-status">
+            {renderStatusPath()}
+            <span className="header-pill">{statusMeta.label}</span>
+          </div>
         </header>
         <ParticipantSetup
           key={setupSession}
           initialParticipants={participants}
           initialStep={setupStartStep}
-          onCancel={participants.length > 0 ? () => setBroadcastPhase(setupReturnPhase) : undefined}
+          onClear={participants.length > 0 ? clearParticipantRoster : undefined}
+          onCancel={participants.length > 0 ? cancelParticipantEditor : undefined}
           onStart={saveParticipants}
         />
         {toast && <div className="toast" role="status">{toast}</div>}
@@ -1159,7 +1317,7 @@ function App() {
     );
   }
 
-  if (broadcastPhase === 'preflight') {
+  if (raffleStatus === 'configuring') {
     return (
       <main className="app-shell app-shell--preflight">
         <header className="brand-header">
@@ -1167,21 +1325,24 @@ function App() {
             <span className="brand__mark" aria-hidden="true">🍸 💝</span>
             <strong>Retto Roulette</strong>
           </a>
-          <span className="header-pill">방송 준비</span>
+          <div className="header-status">
+            {renderStatusPath()}
+            <span className="header-pill">{statusMeta.label}</span>
+          </div>
         </header>
 
-        <section className="preflight-layout" aria-label="방송 준비">
+        <section className="preflight-layout" aria-label="추첨 설정">
           <section className="preflight-setup">
-            <p className="preflight-setup__eyebrow">방송 준비</p>
-            <h1>명단과 방식만 정하면 끝</h1>
-            <p className="preflight-setup__copy">명단을 확인하면서 오른쪽에서 실제 방송 화면을 바로 볼 수 있어요.</p>
+            <p className="preflight-setup__eyebrow">다음 회차 설정</p>
+            <h1>명단은 준비됐어요. 이번 방식만 정해 주세요.</h1>
+            <p className="preflight-setup__copy">결과는 실제 추첨을 시작하기 전까지 확정되지 않아요. 오른쪽에서 방송 화면도 바로 확인할 수 있어요.</p>
 
             <section className="preflight-roster" aria-labelledby="preflight-roster-title">
               <div>
                 <p>참여자</p>
                 <h2 id="preflight-roster-title">{participants.length}명 준비됨</h2>
               </div>
-              <button className="compact-button" type="button" onClick={() => openParticipantEditor('preflight')}>명단 다듬기</button>
+              <button className="compact-button" type="button" onClick={() => openParticipantEditor('configuring')}>명단 다듬기</button>
               <ol>
                 {participants.slice(0, 5).map((participant, index) => (
                   <li key={participant.id}><span>{index + 1}</span><strong>{participant.name}</strong></li>
@@ -1190,9 +1351,9 @@ function App() {
               </ol>
             </section>
 
-            {renderRoundSettings('preflight')}
+            {renderRoundSettings()}
 
-            <button className="primary-button preflight-setup__start" type="button" disabled={drawOptions.length === 0} onClick={startBroadcast}>이 설정으로 방송 시작</button>
+            <button className="primary-button preflight-setup__start" type="button" disabled={drawOptions.length === 0} onClick={startBroadcast}>이 설정으로 추첨 화면 열기</button>
           </section>
 
           <aside className="preflight-preview" aria-label="방송 화면 미리보기">
@@ -1204,7 +1365,7 @@ function App() {
               <span>{drawTarget === 'people' ? `사람 ${effectiveWinnerCount}명` : `상품 ${effectiveWinnerCount}개`}</span>
             </div>
             <div className="preflight-preview__visual">{renderDrawVisual('preview')}</div>
-            <p className="preflight-preview__note">방송을 시작하면 준비 화면은 접히고, 룰렛과 당첨자 목록만 크게 남습니다.</p>
+            <p className="preflight-preview__note">추첨 화면에서는 설정을 접고 룰렛과 당첨자 목록만 크게 보여 줍니다.</p>
           </aside>
         </section>
 
@@ -1226,16 +1387,21 @@ function App() {
             ref={toolsTriggerRef}
             className="compact-button"
             type="button"
-            disabled={isDrawing}
+            disabled={isRaffleActive(raffleStatus)}
             aria-expanded={toolsOpen}
             aria-controls="broadcast-tools-drawer"
             onClick={() => {
               if (toolsOpen) closeTools(true);
               else setToolsOpen(true);
             }}
-          >진행 도구</button>
+          >명단 · 기록</button>
         </div>
       </header>
+
+      <div className="broadcast-phase-bar" inert={toolsOpen} aria-hidden={toolsOpen || undefined}>
+        {renderStatusPath()}
+        <span>{statusMeta.liveLabel}</span>
+      </div>
 
       {toolsOpen && (
         <>
@@ -1254,8 +1420,8 @@ function App() {
         <section className="broadcast-focus__stage" aria-labelledby="stage-title">
           <div className="broadcast-focus__heading">
             <div>
-              <p>{isDrawing ? '이번 추첨 진행 중' : isArrowWaiting ? '다음 화살 대기' : isCompletedRound ? '직전 추첨 결과' : currentRoundResults.length > 0 ? '이번 추첨 결과' : '추첨 준비'}</p>
-              <h1 id="stage-title">{isRoundInProgress ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 확정` : currentRoundResults.length > 0 ? `${resultTitle} ${currentRoundResults.length}${roundUnit}` : stageTitle}</h1>
+              <p>{statusMeta.liveLabel}</p>
+              <h1 id="stage-title">{stageHeading}</h1>
             </div>
             <span>
               {roundMode === 'wheel' ? roundWheelPresentation === 'dart' ? '룰렛 · 양궁' : '룰렛 · 자동' : '마블'}
@@ -1269,35 +1435,33 @@ function App() {
             <div className="broadcast-focus__camera">{renderDrawVisual('live')}</div>
           </div>
 
-          <p className="broadcast-focus__prompt">
-            {isArrowWaiting
-              ? noAvailableDrawOptions
-                  ? `${unavailableDrawHint}가 없어 다음 화살을 시작할 수 없습니다. 진행 도구에서 조정해 주세요.`
-                : `${currentRoundResults.length + 1}번째 화살은 버튼을 누르는 순간 그 한 결과가 확정되고, 바로 화살 연출이 시작됩니다.`
-              : isDrawing
-              ? isArrowRound
-                ? `${currentRoundResults.length + 1}번째 화살의 결과와 후보 규칙은 발사 버튼을 누른 순간 고정되었습니다. 지금은 화살 연출 중이에요.`
-                : `첫 버튼을 누른 순간 이번 회차 ${roundGoal}${roundUnit}의 결과와 후보 규칙이 고정되었습니다. 지금은 ${currentRoundResults.length}${roundUnit} 공개 중이에요.`
-              : isCompletedRound
-                ? '오른쪽 보드는 직전 회차의 전체 당첨자입니다. 진행 도구에서 정한 다음 설정은 아래 새 회차 시작 버튼을 누를 때 적용됩니다.'
-              : noAvailableDrawOptions
-                ? unavailableDrawPrompt
-              : currentRoundResults.length > 0
-                ? '당첨자 목록은 다음 추첨을 시작할 때까지 이 자리에 남습니다.'
-                : roundTarget === 'prizes' && roundRecipient
-                  ? `${roundRecipient}님에게 드릴 상품을 뽑아 주세요.`
-                  : '추첨 버튼을 누르면 당첨자 보드에 한 명씩 기록됩니다.'}
-          </p>
+          <p className="broadcast-focus__prompt">{stagePrompt}</p>
 
           <div className="broadcast-focus__action">
-            <button
-              className="primary-button"
-              type="button"
-              onClick={isArrowWaiting ? startNextArrow : startDraw}
-              disabled={drawActionDisabled || drawOptions.length === 0}
-            >{drawButtonLabel}</button>
-            {drawTarget === 'people' && poolLimit > 0 && (
-              <button className="stage-link" type="button" disabled={isStageLocked || toolsOpen} onClick={reshufflePool}>후보 다시 섞기</button>
+            {raffleStatus === 'completed' ? (
+              <div className="round-complete-actions">
+                <button className="primary-button" type="button" onClick={beginNextRound}>같은 조건으로 다음 회차</button>
+                <button className="stage-link stage-link--button" type="button" onClick={openConfiguration}>설정 바꾸고 다음 회차</button>
+                <button className="stage-link stage-link--button" type="button" onClick={() => openParticipantEditor('completed', 'paste')}>명단 바꾸기</button>
+              </div>
+            ) : raffleStatus === 'awaiting-arrow' ? (
+              <div className="round-complete-actions">
+                <button className="primary-button" type="button" onClick={startNextArrow} disabled={noAvailableDrawOptions || toolsOpen}>{drawButtonLabel}</button>
+                <button className="stage-link stage-link--button" type="button" onClick={endArrowRound}>이번 회차 여기서 마치기</button>
+              </div>
+            ) : raffleStatus === 'ready' ? (
+              <div className="round-ready-actions">
+                <button className="primary-button" type="button" onClick={startDraw} disabled={drawOptions.length === 0 || toolsOpen}>{drawButtonLabel}</button>
+                <div>
+                  <button className="stage-link stage-link--button" type="button" onClick={openConfiguration}>설정 바꾸기</button>
+                  <button className="stage-link stage-link--button" type="button" onClick={() => openParticipantEditor('ready', 'paste')}>명단 바꾸기</button>
+                  {drawTarget === 'people' && poolLimit > 0 && (
+                    <button className="stage-link stage-link--button" type="button" onClick={reshufflePool}>후보 다시 섞기</button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <button className="primary-button" type="button" disabled>{drawButtonLabel}</button>
             )}
           </div>
         </section>
@@ -1309,12 +1473,12 @@ function App() {
               name: result.winner,
               detail: result.target === 'prizes' && result.recipient ? `${result.recipient}님에게 전달` : undefined,
             }))}
-            drawCount={roundGoal}
+            drawCount={currentRound?.endedEarly ? currentRoundResults.length : roundGoal}
             unit={roundUnit}
             latestWinnerId={latestRoundResult?.id}
             title={resultTitle}
             announcement={currentRoundResults.length > 0
-              ? spinning
+              ? raffleStatus === 'locking' || raffleStatus === 'presenting'
                 ? `${resultTitle} ${currentRoundResults.length}${roundUnit}${roundUnitSubjectParticle} 확정되었습니다.`
                 : `${resultTitle} ${currentRoundResults.length}${roundUnit}${roundUnitSubjectParticle} 발표되었습니다.`
               : undefined}
@@ -1324,7 +1488,7 @@ function App() {
             <button className="broadcast-focus__prize-link" type="button" disabled={isStageLocked} onClick={() => {
               setSideTab('prizes');
               setToolsOpen(true);
-            }}>당첨자별 상품 뽑기</button>
+            }}>당첨자별 상품 설정</button>
           )}
         </aside>
       </section>
