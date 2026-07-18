@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 
 import './CurrentRoundWinners.css';
 
@@ -56,15 +56,64 @@ export default function CurrentRoundWinners({
   className,
 }: CurrentRoundWinnersProps) {
   const headingId = useId();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const scrollTargetRef = useRef<HTMLLIElement>(null);
+  const previousWinnerCountRef = useRef(0);
   const requestedCount = normalizedCount(drawCount, winners.length);
   const count = Math.max(requestedCount, winners.length);
   const pendingCount = count - winners.length;
   const latestIndex = latestWinnerId
     ? winners.findIndex((winner) => winner.id === latestWinnerId)
     : -1;
-  const boardClassName = ['current-round-winners', className].filter(Boolean).join(' ');
+  const scrollTargetIndex = latestIndex >= 0 ? latestIndex : winners.length - 1;
+  const isComplete = winners.length > 0 && pendingCount === 0;
+  const useTwoColumns = winners.length >= 6 && winners.length <= 10;
+  const boardClassName = [
+    'current-round-winners',
+    winners.length === 0 ? 'is-empty' : undefined,
+    isComplete ? 'is-complete' : undefined,
+    className,
+  ].filter(Boolean).join(' ');
   const unitSubjectParticle = unit === '명' ? '이' : '가';
   const announcementText = announcement ?? (winners.length > 0 ? `이번 추첨 당첨자 ${winners.length}${unit}${unitSubjectParticle} 발표되었습니다.` : undefined);
+  const eyebrow = winners.length === 0
+    ? '🍸 추첨 준비'
+    : isComplete
+      ? '🎉 추첨 완료'
+      : `🎉 ${winners.length}${unit} 발표`;
+
+  useEffect(() => {
+    const didAppend = winners.length > previousWinnerCountRef.current;
+    previousWinnerCountRef.current = winners.length;
+    if (!didAppend) return;
+
+    const body = bodyRef.current;
+    const target = scrollTargetRef.current;
+    if (!body || !target) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const bodyBounds = body.getBoundingClientRect();
+      const targetBounds = target.getBoundingClientRect();
+      let nextScrollTop: number | undefined;
+
+      if (targetBounds.bottom > bodyBounds.bottom) {
+        nextScrollTop = body.scrollTop + targetBounds.bottom - bodyBounds.bottom + 6;
+      } else if (targetBounds.top < bodyBounds.top) {
+        nextScrollTop = body.scrollTop - (bodyBounds.top - targetBounds.top) - 6;
+      }
+
+      if (nextScrollTop === undefined) return;
+      const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+
+      if (typeof body.scrollTo === 'function') {
+        body.scrollTo({ top: Math.max(0, nextScrollTop), behavior });
+      } else {
+        body.scrollTop = Math.max(0, nextScrollTop);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [latestWinnerId, winners.length]);
 
   return (
     <section className={boardClassName} aria-labelledby={headingId}>
@@ -76,38 +125,62 @@ export default function CurrentRoundWinners({
 
       <header className="current-round-winners__header">
         <div>
-          <p className="current-round-winners__eyebrow" aria-hidden="true">🎉 이번 추첨</p>
+          <p className="current-round-winners__eyebrow" aria-hidden="true">{eyebrow}</p>
           <h2 id={headingId}>{title}</h2>
         </div>
-        <span className="current-round-winners__count" aria-label={`당첨 ${winners.length}${unit} 중 ${count}${unit}`}>
+        <span
+          className="current-round-winners__count"
+          aria-label={winners.length > 0
+            ? `전체 ${count}${unit} 중 ${winners.length}${unit} 발표`
+            : `전체 ${count}${unit} 중 아직 발표된 당첨자 없음`}
+        >
           {winners.length}/{count}
         </span>
       </header>
 
-      <div className="current-round-winners__body">
-        <ol className="current-round-winners__list" aria-label={`${title} · 발표된 당첨 ${winners.length}${unit}`}>
-          {winners.map((winner, index) => {
-            const isLatest = index === latestIndex;
-            const name = winner.name.trim() || '이름 없음';
+      <div className="current-round-winners__body" ref={bodyRef}>
+        {winners.length === 0 ? (
+          <div className="current-round-winners__empty">
+            <span className="current-round-winners__empty-mark" aria-hidden="true">🍸</span>
+            <strong>아직 당첨자가 없습니다</strong>
+            <small>
+              {count > 0
+                ? `추첨을 시작하면 ${count}${unit}의 결과가 순서대로 표시됩니다.`
+                : '추첨을 시작하면 결과가 순서대로 표시됩니다.'}
+            </small>
+          </div>
+        ) : (
+          <ol
+            className={`current-round-winners__list${useTwoColumns ? ' current-round-winners__list--two-column' : ''}`}
+            aria-label={`${title} · 전체 ${count}${unit} 중 ${winners.length}${unit} 발표`}
+          >
+            {winners.map((winner, index) => {
+              const isLatest = index === latestIndex;
+              const isScrollTarget = index === scrollTargetIndex;
+              const name = winner.name.trim() || '이름 없음';
 
-            return (
-              <li
-                key={itemKey(winner, index)}
-                className={isLatest ? 'is-latest' : undefined}
-                aria-current={isLatest ? 'true' : undefined}
-              >
-                <span className="current-round-winners__number" aria-hidden="true">{index + 1}</span>
-                <span className="current-round-winners__identity">
-                  <strong>{name}</strong>
-                  {winner.detail && <small>{winner.detail}</small>}
-                </span>
-                <span className="current-round-winners__state">{isLatest ? '방금 당첨' : '당첨'}</span>
-              </li>
-            );
-          })}
-        </ol>
+              return (
+                <li
+                  key={itemKey(winner, index)}
+                  ref={isScrollTarget ? scrollTargetRef : undefined}
+                  className={isLatest ? 'is-latest' : undefined}
+                  aria-current={isLatest ? 'true' : undefined}
+                >
+                  <span className="current-round-winners__number" aria-hidden="true">{index + 1}</span>
+                  <span className="current-round-winners__identity">
+                    <strong>{name}</strong>
+                    {winner.detail && <small>{winner.detail}</small>}
+                  </span>
+                  <span className="current-round-winners__state">
+                    {isLatest ? (isComplete ? '마지막 당첨' : '방금 당첨') : '당첨'}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
 
-        {pendingCount > 0 ? (
+        {winners.length > 0 && pendingCount > 0 ? (
           <p
             className="current-round-winners__pending-summary"
             aria-label={`아직 추첨되지 않은 ${pendingCount}${unit}`}
@@ -119,8 +192,6 @@ export default function CurrentRoundWinners({
             </span>
             <b aria-hidden="true">+{pendingCount}</b>
           </p>
-        ) : winners.length === 0 ? (
-          <p className="current-round-winners__empty">추첨을 시작하면 이곳에 순서대로 기록됩니다.</p>
         ) : null}
       </div>
 

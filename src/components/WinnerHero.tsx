@@ -83,7 +83,11 @@ export default function WinnerHero({
     recipient,
     product,
   });
-  const rootClassName = ['winner-hero', className].filter(Boolean).join(' ');
+  const rootClassName = [
+    'winner-hero',
+    name.length > 24 ? 'is-very-long-name' : name.length > 14 ? 'is-long-name' : undefined,
+    className,
+  ].filter(Boolean).join(' ');
 
   useEffect(() => {
     setLiveMessage('');

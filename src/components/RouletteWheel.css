@@ -40,12 +40,6 @@
   padding: var(--wheel-stage-padding);
 }
 
-/* Let the on-air standard wheel use the broadcast canvas, not preview sizing. */
-.broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
-  --wheel-size: min(50vw, 36rem, 56vh);
-  --wheel-stage-padding: clamp(1.5rem, 3.4vw, 2.7rem);
-}
-
 .roulette-wheel__stage::before,
 .roulette-wheel__stage::after {
   position: absolute;
@@ -495,19 +489,6 @@
 
   .roulette-wheel__pointer {
     top: 1.1rem;
-  }
-}
-
-@media (max-width: 900px) {
-  .broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
-    --wheel-size: min(84vw, 32rem, 53vh);
-  }
-}
-
-@media (max-width: 640px) {
-  .broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
-    --wheel-size: min(88vw, 27rem, 44vh);
-    --wheel-stage-padding: clamp(1.1rem, 3.8vw, 1.65rem);
   }
 }
 

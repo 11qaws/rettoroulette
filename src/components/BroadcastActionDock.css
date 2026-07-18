@@ -1,0 +1,173 @@
+.broadcast-action-dock {
+  display: grid;
+  width: min(100%, 760px);
+  gap: 9px;
+}
+
+.broadcast-action-dock__note {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.broadcast-action-dock__note > span:first-child {
+  flex: 0 0 auto;
+  color: var(--hot-pink-strong);
+  font-size: 8px;
+}
+
+.broadcast-action-dock__controls,
+.broadcast-action-dock__secondary {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.broadcast-action-dock__button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 9px 13px;
+  border-radius: 12px;
+  font-family: 'Jua', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.broadcast-action-dock__button--primary {
+  border: 0;
+  background: var(--hot-pink);
+  box-shadow: 0 4px 0 var(--hot-pink-strong);
+  color: #fff;
+  font-size: 17px;
+}
+
+.broadcast-action-dock__button--primary:hover:not(:disabled) {
+  box-shadow: 0 2px 0 var(--hot-pink-strong);
+  transform: translateY(2px);
+}
+
+.broadcast-action-dock__button--primary:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(4px);
+}
+
+.broadcast-action-dock__button--secondary {
+  border: 2px solid var(--hot-pink);
+  background: #fff;
+  box-shadow: 0 3px 0 var(--hot-pink);
+  color: var(--muted);
+}
+
+.broadcast-action-dock__button--secondary:hover:not(:disabled) {
+  background: #fff8f9;
+  box-shadow: 0 2px 0 var(--hot-pink);
+  transform: translateY(1px);
+}
+
+.broadcast-action-dock__button--secondary:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(3px);
+}
+
+.broadcast-action-dock__button--quiet {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--cream) 56%, white);
+  box-shadow: 0 2px 0 var(--line);
+}
+
+.broadcast-action-dock__button--quiet:hover:not(:disabled) {
+  border-color: var(--hot-pink);
+  box-shadow: 0 1px 0 var(--hot-pink);
+  color: var(--magenta);
+}
+
+.broadcast-action-dock__button--danger {
+  border-color: #e6a4a4;
+  background: #fffafa;
+  box-shadow: 0 2px 0 #e6a4a4;
+  color: #a73c3c;
+}
+
+.broadcast-action-dock__button--danger:hover:not(:disabled) {
+  border-color: #d67878;
+  background: #fff3f3;
+  box-shadow: 0 1px 0 #d67878;
+  color: #8f2929;
+}
+
+.broadcast-action-dock__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Ready: one unmistakable commitment, then compact setup controls. */
+.broadcast-action-dock--ready .broadcast-action-dock__secondary {
+  grid-template-columns: repeat(auto-fit, minmax(136px, max-content));
+  justify-content: center;
+}
+
+/* Awaiting: launch remains twice as prominent as the early-finish choice. */
+.broadcast-action-dock--awaiting .broadcast-action-dock__controls {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.broadcast-action-dock--awaiting .broadcast-action-dock__secondary {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.broadcast-action-dock--awaiting .broadcast-action-dock__button--primary {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+/* Completed: continue first, then two equal ways to revise the next round. */
+.broadcast-action-dock--completed .broadcast-action-dock__secondary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 560px) {
+  .broadcast-action-dock__note {
+    align-items: flex-start;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .broadcast-action-dock--ready .broadcast-action-dock__secondary,
+  .broadcast-action-dock--completed .broadcast-action-dock__secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .broadcast-action-dock--awaiting .broadcast-action-dock__controls {
+    grid-template-columns: minmax(0, 2fr) minmax(112px, 1fr);
+  }
+
+  .broadcast-action-dock__button {
+    padding-inline: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .broadcast-action-dock__button {
+    transition: none;
+  }
+}

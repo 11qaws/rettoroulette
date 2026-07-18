@@ -5,7 +5,7 @@
   min-height: 0;
   block-size: 100%;
   max-block-size: 670px;
-  padding: clamp(18px, 2.6vw, 26px);
+  padding: clamp(14px, 1.8vw, 20px);
   border: 3px solid var(--hot-pink);
   border-radius: 18px;
   background: linear-gradient(120deg, var(--card, #fff), var(--cream));
@@ -32,7 +32,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
 }
 
 .current-round-winners__body {
@@ -55,7 +55,7 @@
   margin: 0;
   color: var(--ink);
   font-family: 'Jua', sans-serif;
-  font-size: clamp(25px, 3vw, 34px);
+  font-size: clamp(22px, 2.4vw, 30px);
   font-weight: 400;
   line-height: 1.1;
 }
@@ -78,7 +78,7 @@
 
 .current-round-winners__list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -90,8 +90,8 @@
   grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
-  min-height: 54px;
-  padding: 9px 11px;
+  min-height: 46px;
+  padding: 7px 9px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fff;
@@ -108,9 +108,9 @@
   grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
-  min-height: 54px;
-  margin: 8px 0 0;
-  padding: 9px 11px;
+  min-height: 46px;
+  margin: 6px 0 0;
+  padding: 7px 9px;
   border: 1px dashed var(--line);
   border-radius: 12px;
   background: color-mix(in srgb, var(--cream) 72%, white);
@@ -156,12 +156,35 @@
 }
 
 .current-round-winners__empty {
+  display: grid;
+  min-height: 132px;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
   margin: 0;
-  padding: 12px 2px;
+  padding: 16px;
   color: var(--muted);
   font-family: 'Fredoka', 'Jua', sans-serif;
   font-size: 13px;
   line-height: 1.5;
+  text-align: center;
+}
+
+.current-round-winners__empty-mark {
+  font-size: 24px;
+}
+
+.current-round-winners__empty strong {
+  color: var(--ink);
+  font-family: 'Jua', sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.current-round-winners__empty small {
+  max-width: 250px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .current-round-winners__number {
@@ -181,7 +204,7 @@
   overflow-wrap: anywhere;
   color: var(--ink);
   font-family: 'Jua', sans-serif;
-  font-size: clamp(20px, 2.25vw, 28px);
+  font-size: clamp(18px, 1.9vw, 24px);
   font-weight: 400;
   line-height: 1.1;
 }
@@ -212,16 +235,29 @@
 }
 
 .current-round-winners__removal {
-  margin: 13px 0 0;
+  margin: 9px 0 0;
   color: var(--muted);
   font-family: 'Fredoka', 'Jua', sans-serif;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.45;
+}
+
+.current-round-winners__list--two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.current-round-winners__list--two-column li {
+  grid-template-columns: 24px minmax(0, 1fr);
+}
+
+.current-round-winners__list--two-column .current-round-winners__state {
+  display: none;
 }
 
 @media (max-width: 520px) {
   .current-round-winners {
-    block-size: min(440px, 58dvh);
+    block-size: auto;
+    max-block-size: min(440px, 58dvh);
     padding: 16px;
     border-width: 2px;
     border-radius: 16px;
@@ -259,5 +295,9 @@
 
   .current-round-winners__identity strong {
     font-size: 21px;
+  }
+
+  .current-round-winners__list--two-column {
+    grid-template-columns: 1fr;
   }
 }

@@ -176,6 +176,15 @@
   animation: winner-hero-name 720ms 130ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
+.winner-hero.is-long-name .winner-hero__name {
+  font-size: clamp(2.35rem, 6.1vw, 5.2rem);
+}
+
+.winner-hero.is-very-long-name .winner-hero__name {
+  font-size: clamp(1.9rem, 4.7vw, 4rem);
+  line-height: 1.05;
+}
+
 .winner-hero__details {
   display: flex;
   max-width: 100%;

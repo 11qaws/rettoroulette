@@ -25,6 +25,8 @@ export interface DrawRecord {
   revealedAt?: string;
   /** Groups individual animation results from one multi-winner draw. */
   roundId?: string;
+  /** Optional on-air context, for example "버거 3명 추첨". */
+  roundLabel?: string;
   /** One-based order within a multi-winner draw. */
   roundOrder?: number;
   mode: DrawMode;
