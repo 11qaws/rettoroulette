@@ -77,10 +77,10 @@ export default function CurrentRoundWinners({
   const unitSubjectParticle = unit === '명' ? '이' : '가';
   const announcementText = announcement ?? (winners.length > 0 ? `이번 추첨 당첨자 ${winners.length}${unit}${unitSubjectParticle} 발표되었습니다.` : undefined);
   const eyebrow = winners.length === 0
-    ? '🍸 추첨 준비'
+    ? `🍸 ${unit === '명' ? '전체 당첨자' : '뽑힌 상품'} 준비`
     : isComplete
-      ? '🎉 추첨 완료'
-      : `🎉 ${winners.length}${unit} 발표`;
+      ? `🎉 ${unit === '명' ? '전체 당첨자' : '뽑힌 상품'}`
+      : `🎉 ${unit === '명' ? '전체 당첨자' : '뽑힌 상품'} · ${winners.length}${unit} 발표`;
 
   useEffect(() => {
     const didAppend = winners.length > previousWinnerCountRef.current;

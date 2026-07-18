@@ -166,6 +166,45 @@
   }
 }
 
+@media (min-width: 901px) and (max-height: 780px) {
+  .broadcast-action-dock {
+    gap: 6px;
+  }
+
+  .broadcast-action-dock__note {
+    font-size: 11px;
+  }
+
+  .broadcast-action-dock--ready .broadcast-action-dock__controls,
+  .broadcast-action-dock--completed .broadcast-action-dock__controls {
+    grid-template-columns: minmax(220px, 1.45fr) minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .broadcast-action-dock--ready .broadcast-action-dock__button--primary,
+  .broadcast-action-dock--completed .broadcast-action-dock__button--primary {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .broadcast-action-dock--ready .broadcast-action-dock__secondary,
+  .broadcast-action-dock--completed .broadcast-action-dock__secondary {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  .broadcast-action-dock__button {
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .broadcast-action-dock__button--primary {
+    font-size: 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .broadcast-action-dock__button {
     transition: none;

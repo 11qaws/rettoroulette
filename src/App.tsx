@@ -999,9 +999,7 @@ function App() {
     : roundRecipient ? `${roundRecipient}님 상품 추첨` : '상품 추첨';
   const roundLabel = currentRound?.label ?? (drawLabel.trim() || undefined);
   const stageTitle = roundLabel ?? defaultStageTitle;
-  const resultTitle = roundLabel
-    ? `${roundLabel} · ${roundTarget === 'people' ? '전체 당첨자' : '뽑힌 상품'}`
-    : roundTarget === 'people' ? '전체 당첨자' : '뽑힌 상품';
+  const resultTitle = roundLabel ?? (roundTarget === 'people' ? '전체 당첨자' : '뽑힌 상품');
   const dynamicFairnessLabel = roundUsesWeights
     ? `가중치 적용 · 총 ${roundTotalWeight} 추첨권 · ${roundMode === 'wheel' ? '조각 크기는 확률에 비례' : '결과 확률은 가중치에 비례'}`
     : '동일 확률 · 후보마다 한 번씩 표시';

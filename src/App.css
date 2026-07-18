@@ -808,8 +808,8 @@
 }
 
 .broadcast-focus__results.is-empty .current-round-winners {
-  height: min(220px, 100%);
-  max-height: 220px;
+  height: min(250px, 100%);
+  max-height: 250px;
 }
 
 .broadcast-settings > .prize-editor {
@@ -1328,7 +1328,7 @@
   .broadcast-focus__stage {
     height: 100%;
     min-height: 0;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     align-content: stretch;
     overflow: hidden;
   }
@@ -1347,7 +1347,11 @@
   }
 
   .broadcast-focus__heading {
-    position: static;
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    left: 0;
+    width: min(320px, 42%);
     max-width: none;
     padding: 7px 9px;
     border: 1px solid rgb(255 182 193 / 38%);
@@ -1356,13 +1360,12 @@
     backdrop-filter: blur(7px);
   }
 
+  .broadcast-focus__heading > span {
+    display: none;
+  }
+
   .broadcast-focus__fairness {
-    position: static;
-    max-width: none;
-    margin: 2px 0 0;
-    padding: 5px 8px;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 82%);
+    display: none;
   }
 
   .broadcast-focus h1 {
@@ -1372,7 +1375,7 @@
   .broadcast-focus__visual {
     height: 100%;
     min-height: 0;
-    grid-row: 3;
+    grid-row: 1;
   }
 
   .broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
