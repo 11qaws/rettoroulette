@@ -1647,7 +1647,7 @@
   }
 
   .raffle-status-path {
-    gap: 3px;
+    gap: 1px;
   }
 
   .raffle-status-path li {
@@ -1656,12 +1656,14 @@
   }
 
   .raffle-status-path li > span {
-    font-size: 9px;
+    width: 15px;
+    height: 15px;
+    font-size: 8px;
   }
 
   .raffle-status-path li:not(:last-child)::after {
-    margin-left: 3px;
-    font-size: 10px;
+    margin-left: 1px;
+    font-size: 8px;
   }
 
   .broadcast-phase-bar {
