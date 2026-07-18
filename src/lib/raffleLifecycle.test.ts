@@ -12,12 +12,12 @@ describe('raffle lifecycle', () => {
     expect(getRaffleTransition('completed', 'start-next-round')).toBe('ready');
   });
 
-  it('keeps a multi-shot archery round locked until it is completed or ended', () => {
-    expect(getRaffleTransition('presenting', 'await-next-arrow')).toBe('awaiting-arrow');
-    expect(getRaffleTransition('awaiting-arrow', 'lock-result')).toBe('locking');
-    expect(getRaffleTransition('awaiting-arrow', 'end-round-early')).toBe('completed');
-    expect(getRaffleTransition('awaiting-arrow', 'open-configuration')).toBeNull();
-    expect(isRaffleActive('awaiting-arrow')).toBe(true);
+  it('keeps a multi-shot dart round locked until it is completed or ended', () => {
+    expect(getRaffleTransition('presenting', 'await-next-dart')).toBe('awaiting-dart');
+    expect(getRaffleTransition('awaiting-dart', 'lock-result')).toBe('locking');
+    expect(getRaffleTransition('awaiting-dart', 'end-round-early')).toBe('completed');
+    expect(getRaffleTransition('awaiting-dart', 'open-configuration')).toBeNull();
+    expect(isRaffleActive('awaiting-dart')).toBe(true);
     expect(isRaffleActive('completed')).toBe(false);
   });
 

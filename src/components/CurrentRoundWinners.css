@@ -3,7 +3,8 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
-  block-size: clamp(300px, calc(100dvh - 182px), 670px);
+  block-size: 100%;
+  max-block-size: 670px;
   padding: clamp(18px, 2.6vw, 26px);
   border: 3px solid var(--hot-pink);
   border-radius: 18px;

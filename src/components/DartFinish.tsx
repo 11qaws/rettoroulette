@@ -2,23 +2,24 @@ import './DartFinish.css';
 
 /**
  * The broadcast canvas owns the timing. This layer only presents an already
- * selected result as an archery shot and never affects draw state.
+ * selected result as a lottery-dart shot and never affects draw state.
  */
-export type DartFinishPhase = 'idle' | 'launch' | 'approach' | 'impact' | 'settled';
+export type DartFinishPhase = 'idle' | 'launch' | 'approach' | 'impact' | 'coast' | 'settled';
 
 export interface DartFinishProps {
-  /** The current visual beat of one arrow shot. */
+  /** The current visual beat of one dart shot. */
   phase: DartFinishPhase;
   /** Lets the host add a layout-specific class without coupling this overlay to a stage. */
   className?: string;
 }
 
 /**
- * Archery-style finish for a relative roulette stage.
+ * Lottery-dart finish for a relative roulette stage.
  *
- * The impact point stays fixed near one o'clock. The wheel moves beneath the
- * point while this overlay turns the shot into a short arrow-follow camera
- * moment, then leaves the physical arrow embedded in place.
+ * The impact point stays fixed at twelve o'clock. The wheel moves beneath the
+ * point while this overlay turns the shot into a short dart-follow camera
+ * moment, briefly clears the impact flash while the board coasts, then leaves
+ * the physical dart embedded as the result pointer.
  */
 export default function DartFinish({ phase, className }: DartFinishProps) {
   const rootClassName = [

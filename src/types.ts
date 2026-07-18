@@ -21,7 +21,7 @@ export interface DrawRecord {
   id: string;
   /** Selection time, fixed at the button press that committed this result. */
   createdAt: string;
-  /** Optional on-air reveal time after the wheel or arrow animation finishes. */
+  /** Optional on-air reveal time after the wheel or dart animation finishes. */
   revealedAt?: string;
   /** Groups individual animation results from one multi-winner draw. */
   roundId?: string;

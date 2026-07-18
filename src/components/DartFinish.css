@@ -1,8 +1,8 @@
 .dart-finish {
-  /* Fixed one-o'clock impact point. The roulette disc rotates below it. */
-  --dart-impact-x: 73%;
-  --dart-impact-y: 30%;
-  --arrow-angle: -38deg;
+  /* Fixed twelve-o'clock impact point. The roulette disc rotates below it. */
+  --dart-impact-x: 50%;
+  --dart-impact-y: 14%;
+  --arrow-angle: -34deg;
   position: absolute;
   z-index: 20;
   inset: 0;
@@ -214,7 +214,7 @@
   z-index: 4;
   left: var(--dart-impact-x);
   top: var(--dart-impact-y);
-  width: clamp(15rem, 62vw, 30rem);
+  width: clamp(12rem, 54vw, 24rem);
   height: clamp(2.2rem, 8vw, 4.2rem);
   opacity: 0;
   transform: translate(clamp(14rem, 42vw, 21rem), clamp(-12rem, -30vw, -6rem)) rotate(var(--arrow-angle)) scale(1.08);
@@ -271,7 +271,7 @@
   z-index: 9;
   left: var(--dart-impact-x);
   top: var(--dart-impact-y);
-  width: clamp(10rem, 34vw, 16.5rem);
+  width: clamp(4.8rem, 15vw, 6.75rem);
   height: clamp(1.35rem, 3.6vw, 2rem);
   opacity: 0;
   transform: translate(clamp(12rem, 38vw, 19rem), clamp(-10rem, -27vw, -5rem)) rotate(var(--arrow-angle)) scale(0.7);
@@ -568,10 +568,12 @@
   transform: translate(-50%, -50%) scale(0.9);
 }
 
+.dart-finish--coast .dart-finish__target,
 .dart-finish--settled .dart-finish__target {
   opacity: 0;
 }
 
+.dart-finish--coast .dart-finish__arrow,
 .dart-finish--settled .dart-finish__arrow {
   opacity: 1;
   transform: translate(-0.24rem, 0.14rem) rotate(var(--arrow-angle)) scale(1);
@@ -762,8 +764,8 @@
 
 @media (max-width: 420px) {
   .dart-finish {
-    --dart-impact-x: 73%;
-    --dart-impact-y: 30%;
+    --dart-impact-x: 50%;
+    --dart-impact-y: 14%;
   }
 
   .dart-finish__camera-arrow {
@@ -784,6 +786,7 @@
   .dart-finish--launch .dart-finish__arrow,
   .dart-finish--approach .dart-finish__arrow,
   .dart-finish--impact .dart-finish__arrow,
+  .dart-finish--coast .dart-finish__arrow,
   .dart-finish--settled .dart-finish__arrow {
     opacity: 1;
     transform: translate(-0.24rem, 0.14rem) rotate(var(--arrow-angle)) scale(1);
@@ -792,6 +795,7 @@
   .dart-finish--launch .dart-finish__target,
   .dart-finish--approach .dart-finish__target,
   .dart-finish--impact .dart-finish__target,
+  .dart-finish--coast .dart-finish__target,
   .dart-finish--settled .dart-finish__target {
     opacity: 0;
   }

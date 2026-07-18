@@ -4,6 +4,7 @@ import CurrentRoundWinners from './components/CurrentRoundWinners';
 import MarbleRace from './components/MarbleRace';
 import ParticipantSetup from './components/ParticipantSetup';
 import RouletteWheel from './components/RouletteWheel';
+import WinnerHero from './components/WinnerHero';
 import { csvField } from './lib/csv';
 import {
   buildWeightedDrawPlanWithReplacement,
@@ -17,6 +18,7 @@ import {
   type RaffleEvent,
   type RaffleStatus,
 } from './lib/raffleLifecycle';
+import type { RouletteFinishLanding } from './lib/roulette';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize, WheelPresentation } from './types';
 
 import './App.css';
@@ -47,7 +49,7 @@ type CurrentRound = {
   useWeights: boolean;
   recipient?: string;
   results: DrawRecord[];
-  /** The host ended an unfinished multi-shot archery round deliberately. */
+  /** The host ended an unfinished multi-shot dart round deliberately. */
   endedEarly?: boolean;
 };
 
@@ -58,12 +60,24 @@ type PlannedPresentation = {
   selectedAt: string;
   candidateFingerprint: string;
   candidateTotalWeight: number;
+  /** Changes only where the committed result stops inside its slice. */
+  landing: RouletteFinishLanding;
   recipient?: string;
 };
 
 type ActivePresentation = PlannedPresentation & {
   /** Rejects an animation callback from an older result or abandoned round. */
   revealId: number;
+};
+
+type PresentationBeat = 'idle' | 'motion' | 'hero' | 'dock';
+type RevealContinuation = 'continue-auto' | 'await-next-dart' | 'complete-round';
+
+type WinnerHeroState = {
+  revealId: number;
+  result: DrawRecord;
+  total: number;
+  continuation: RevealContinuation;
 };
 
 function createId(prefix: string) {
@@ -88,6 +102,20 @@ function prizeTotal(prizes: Prize[]) {
 
 function totalEffectiveWeight(options: readonly DrawOption[]) {
   return options.reduce((sum, option) => sum + Math.max(0, option.weight), 0);
+}
+
+/** Result-neutral visual variation created only after a winner is selected. */
+function createFinishLanding(): RouletteFinishLanding {
+  const photoFinish = Math.random() < 0.24;
+  return photoFinish
+    ? {
+        entryGapDegrees: 1.5 + Math.random() * 1.8,
+        leadDegrees: 1.4 + Math.random() * 1.7,
+      }
+    : {
+        entryGapDegrees: 8 + Math.random() * 10,
+        leadDegrees: 7 + Math.random() * 9,
+      };
 }
 
 /** A compact audit marker without persisting an unbounded copy of a large roster. */
@@ -124,6 +152,8 @@ function App() {
   const [spinKey, setSpinKey] = useState(0);
   const [presentedOptions, setPresentedOptions] = useState<DrawOption[]>([]);
   const [activePresentation, setActivePresentation] = useState<ActivePresentation | null>(null);
+  const [presentationBeat, setPresentationBeat] = useState<PresentationBeat>('idle');
+  const [winnerHero, setWinnerHero] = useState<WinnerHeroState | null>(null);
   const [currentRound, setCurrentRound] = useState<CurrentRound | null>(null);
   const [history, setHistory] = useState<DrawRecord[]>([]);
   const [sideTab, setSideTab] = useState<SideTab>('participants');
@@ -138,6 +168,8 @@ function App() {
   const toolsDrawerRef = useRef<HTMLElement>(null);
   const raffleStatusRef = useRef<RaffleStatus>('roster');
   const presentationRunRef = useRef(0);
+  const winnerHeroTimerRef = useRef<number | null>(null);
+  const winnerDockTimerRef = useRef<number | null>(null);
 
   const transitionRaffle = useCallback((event: RaffleEvent) => {
     const nextStatus = getRaffleTransition(raffleStatusRef.current, event);
@@ -150,6 +182,17 @@ function App() {
   const showToast = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 3200);
+  }, []);
+
+  const cancelWinnerRevealTimers = useCallback(() => {
+    if (winnerHeroTimerRef.current !== null) {
+      window.clearTimeout(winnerHeroTimerRef.current);
+      winnerHeroTimerRef.current = null;
+    }
+    if (winnerDockTimerRef.current !== null) {
+      window.clearTimeout(winnerDockTimerRef.current);
+      winnerDockTimerRef.current = null;
+    }
   }, []);
 
   const closeTools = useCallback((restoreFocus = false) => {
@@ -241,7 +284,8 @@ function App() {
   useEffect(() => () => {
     // Ignore a late browser animation callback after this app has gone away.
     presentationRunRef.current += 1;
-  }, []);
+    cancelWinnerRevealTimers();
+  }, [cancelWinnerRevealTimers]);
 
   const eligibleParticipants = useMemo(
     () => participants.filter((participant) => !excludedParticipantIds.includes(participant.id)),
@@ -250,7 +294,7 @@ function App() {
 
   useEffect(() => {
     // A limited candidate pool must not silently refill while a round owns its
-    // snapshot. An early-ended archery round is complete for this purpose.
+    // snapshot. An early-ended dart round is complete for this purpose.
     if (currentRound && isRaffleActive(raffleStatus)) return;
 
     if (poolLimit === 0) {
@@ -339,6 +383,7 @@ function App() {
         recipient: recipientSnapshot,
         candidateFingerprint: fingerprintOptions(options),
         candidateTotalWeight: totalEffectiveWeight(options),
+        landing: createFinishLanding(),
       }));
     }
 
@@ -357,6 +402,7 @@ function App() {
         recipient: recipientSnapshot,
         candidateFingerprint: fingerprintOptions(candidateSnapshot),
         candidateTotalWeight: totalEffectiveWeight(candidateSnapshot),
+        landing: createFinishLanding(),
       };
       remaining.splice(winnerIndex, 1);
       return [presentation];
@@ -370,6 +416,8 @@ function App() {
   const launchCommittedPresentation = useCallback((presentation: PlannedPresentation) => {
     if (!transitionRaffle('lock-result')) return false;
 
+    cancelWinnerRevealTimers();
+    setWinnerHero(null);
     const revealId = presentationRunRef.current + 1;
     presentationRunRef.current = revealId;
     window.setTimeout(() => {
@@ -379,12 +427,13 @@ function App() {
       setPresentedOptions(presentation.options);
       setWinnerIndex(presentation.winnerIndex);
       setSpinning(true);
+      setPresentationBeat('motion');
       setSpinKey((value) => value + 1);
       transitionRaffle('start-presentation');
     }, 150);
 
     return true;
-  }, [transitionRaffle]);
+  }, [cancelWinnerRevealTimers, transitionRaffle]);
 
   useEffect(() => {
     const activeRound = currentRound;
@@ -394,7 +443,9 @@ function App() {
       !activeRound ||
       !isAutoPresentation ||
       !nextPresentation ||
-      spinning
+      spinning ||
+      presentationBeat !== 'idle' ||
+      winnerHero !== null
     ) return undefined;
 
     const revealTimer = window.setTimeout(() => {
@@ -403,12 +454,15 @@ function App() {
     }, 720);
 
     return () => window.clearTimeout(revealTimer);
-  }, [currentRound, isAutoPresentation, launchCommittedPresentation, queuedPresentations, raffleStatus, spinning]);
+  }, [currentRound, isAutoPresentation, launchCommittedPresentation, presentationBeat, queuedPresentations, raffleStatus, spinning, winnerHero]);
 
   const clearStagePresentation = () => {
+    cancelWinnerRevealTimers();
     setWinnerIndex(null);
     setPresentedOptions([]);
     setActivePresentation(null);
+    setWinnerHero(null);
+    setPresentationBeat('idle');
   };
 
   const clearCurrentRound = () => {
@@ -461,17 +515,23 @@ function App() {
       return;
     }
 
-    const hasAnotherArrowShot =
+    const nextResultOrder = activeRound.results.length + 1;
+    const hasAnotherDartShot =
       activeRound.mode === 'wheel' &&
       activeRound.wheelPresentation === 'dart' &&
-      activeRound.results.length + 1 < activeRound.winnerGoal;
+      nextResultOrder < activeRound.winnerGoal;
+    const continuation: RevealContinuation = hasAnotherDartShot
+      ? 'await-next-dart'
+      : nextResultOrder >= activeRound.winnerGoal
+        ? 'complete-round'
+        : 'continue-auto';
 
     const result: DrawRecord = {
       id: createId('result'),
       createdAt: presentation.selectedAt,
       revealedAt: new Date().toISOString(),
       roundId: activeRound.id,
-      roundOrder: activeRound.results.length + 1,
+      roundOrder: nextResultOrder,
       mode: activeRound.mode,
       presentation: activeRound.mode === 'wheel' ? activeRound.wheelPresentation : undefined,
       candidateCount: presentation.options.length,
@@ -508,17 +568,37 @@ function App() {
     }
 
     setSpinning(false);
-    // A following arrow uses a new click-time snapshot. Clear the previous
-    // wheel now so the audience sees the exact next-shot candidate pool.
-    if (hasAnotherArrowShot) {
-      clearStagePresentation();
-      transitionRaffle('await-next-arrow');
-      return;
-    }
+    cancelWinnerRevealTimers();
+    setPresentationBeat('hero');
+    setWinnerHero({
+      revealId: presentation.revealId,
+      result,
+      total: activeRound.winnerGoal,
+      continuation,
+    });
 
-    if (activeRound.results.length + 1 >= activeRound.winnerGoal) {
-      transitionRaffle('complete-round');
-    }
+    winnerHeroTimerRef.current = window.setTimeout(() => {
+      if (presentationRunRef.current !== presentation.revealId) return;
+
+      winnerHeroTimerRef.current = null;
+      setWinnerHero(null);
+      setPresentationBeat('dock');
+      winnerDockTimerRef.current = window.setTimeout(() => {
+        if (presentationRunRef.current !== presentation.revealId) return;
+
+        winnerDockTimerRef.current = null;
+        setPresentationBeat('idle');
+        if (continuation === 'complete-round') {
+          transitionRaffle('complete-round');
+          return;
+        }
+
+        // The next dart gets a fresh click-time candidate snapshot. Automatic
+        // multi-draws instead continue through their already committed queue.
+        clearStagePresentation();
+        if (continuation === 'await-next-dart') transitionRaffle('await-next-dart');
+      }, 620);
+    }, 2_200);
   };
 
   const startDraw = () => {
@@ -568,9 +648,9 @@ function App() {
     launchCommittedPresentation(firstPresentation);
   };
 
-  const startNextArrow = () => {
+  const startNextDart = () => {
     if (
-      raffleStatus !== 'awaiting-arrow' ||
+      raffleStatus !== 'awaiting-dart' ||
       !currentRound ||
       currentRound.mode !== 'wheel' ||
       currentRound.wheelPresentation !== 'dart' ||
@@ -595,13 +675,13 @@ function App() {
     launchCommittedPresentation(nextPresentation);
   };
 
-  const endArrowRound = () => {
-    if (raffleStatus !== 'awaiting-arrow' || !currentRound) return;
+  const endDartRound = () => {
+    if (raffleStatus !== 'awaiting-dart' || !currentRound) return;
     if (!window.confirm(`현재까지 뽑힌 ${currentRound.results.length}${currentRound.target === 'people' ? '명' : '개'}으로 이번 회차를 마칠까요? 이미 공개한 결과와 기록은 유지됩니다.`)) return;
 
     setCurrentRound((round) => round ? { ...round, endedEarly: true } : round);
     transitionRaffle('end-round-early');
-    showToast('이번 양궁 회차를 여기서 마쳤어요. 공개된 결과와 기록은 그대로예요.');
+    showToast('이번 다트 복권 회차를 여기서 마쳤어요. 공개된 결과와 기록은 그대로예요.');
   };
 
   const reshufflePool = () => {
@@ -783,7 +863,7 @@ function App() {
       new Date(item.createdAt).toLocaleString('ko-KR'),
       item.revealedAt ? new Date(item.revealedAt).toLocaleString('ko-KR') : '',
       item.mode === 'wheel' ? '룰렛' : '마블',
-      item.mode === 'wheel' ? item.presentation === 'dart' ? '양궁' : '자동' : '마블',
+      item.mode === 'wheel' ? item.presentation === 'dart' ? '다트 복권' : '자동' : '마블',
       item.target === 'people' ? '사람' : '상품',
       item.winner,
       item.recipient ?? '',
@@ -845,7 +925,7 @@ function App() {
     : dynamicFairnessLabel;
   const ruleSummary = [
     roundMode === 'wheel'
-      ? roundWheelPresentation === 'dart' ? '룰렛 · 양궁 피니시' : '룰렛 · 자동 회전'
+      ? roundWheelPresentation === 'dart' ? '룰렛 · 다트 복권' : '룰렛 · 자동 회전'
       : '마블',
     `${targetLabel} ${roundGoal}${roundUnit}`,
     `${isWholeRoundPlan ? '시작 후보' : '후보'} ${isWholeRoundPlan ? roundInitialCandidateCount : roundCandidateCount}${roundUnit}`,
@@ -861,11 +941,11 @@ function App() {
   const stageTitle = roundTarget === 'people'
     ? '참여자 추첨'
     : roundRecipient ? `${roundRecipient}님 상품 추첨` : '상품 추첨';
-  const isArrowRound = roundMode === 'wheel' && roundWheelPresentation === 'dart';
-  const isArrowWaiting = raffleStatus === 'awaiting-arrow';
+  const isDartRound = roundMode === 'wheel' && roundWheelPresentation === 'dart';
+  const isDartWaiting = raffleStatus === 'awaiting-dart';
   const statusMeta = RAFFLE_STATUS_META[raffleStatus];
   const upcomingDrawLabel = drawMode === 'wheel' && wheelPresentation === 'dart'
-    ? '화살 쏘기'
+    ? '다트 발사'
     : drawTarget === 'people'
       ? `${effectiveWinnerCount}명 추첨하기`
       : `${effectiveWinnerCount}개 상품 뽑기`;
@@ -897,24 +977,36 @@ function App() {
     ? '결과 고정 중…'
     : raffleStatus === 'presenting'
       ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 결과 공개 중…`
-    : isArrowWaiting
+    : isDartWaiting
       ? noAvailableDrawOptions
         ? unavailableDrawLabel
-        : `다음 화살 쏘기 (${currentRoundResults.length + 1}/${roundGoal})`
+        : `다음 다트 발사 (${currentRoundResults.length + 1}/${roundGoal})`
     : noAvailableDrawOptions
       ? unavailableDrawLabel
       : upcomingDrawLabel;
   const broadcastVisualClassName = [
     'broadcast-focus__visual',
-    isArrowRound && spinning ? 'is-arrow-throwing' : '',
+    isDartRound && spinning ? 'is-dart-flying' : '',
     roundMode === 'wheel' && roundWheelPresentation === 'spin' && spinning ? 'is-auto-spinning' : '',
+    presentationBeat === 'hero' ? 'is-winner-hero' : '',
+    presentationBeat === 'dock' ? 'is-result-docking' : '',
     raffleStatus === 'completed' ? 'is-round-complete' : '',
+  ].filter(Boolean).join(' ');
+  const isStageOnly =
+    raffleStatus === 'locking' || presentationBeat === 'motion' || presentationBeat === 'hero';
+  const showResultsPanel = !isStageOnly;
+  const broadcastFocusClassName = [
+    'broadcast-focus',
+    isStageOnly ? 'is-stage-only' : '',
+    presentationBeat === 'hero' ? 'is-winner-hero' : '',
+    presentationBeat === 'dock' ? 'is-result-docking' : '',
+    raffleStatus === 'completed' ? 'is-completed' : '',
   ].filter(Boolean).join(' ');
   const stageHeading = raffleStatus === 'completed'
     ? currentRound?.endedEarly
       ? `이번 회차 ${currentRoundResults.length}${roundUnit} 확정 · 여기서 종료`
       : `${resultTitle} ${currentRoundResults.length}${roundUnit}`
-    : raffleStatus === 'awaiting-arrow'
+    : raffleStatus === 'awaiting-dart'
       ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 확정`
       : raffleStatus === 'locking' || raffleStatus === 'presenting'
         ? `${currentRoundResults.length} / ${roundGoal}${roundUnit} 공개 중`
@@ -922,13 +1014,13 @@ function App() {
   const stagePrompt = raffleStatus === 'locking'
     ? '방금 누른 버튼의 후보와 결과를 고정했습니다. 곧 방송 연출을 시작합니다.'
     : raffleStatus === 'presenting'
-      ? isArrowRound
-        ? `${currentRoundResults.length + 1}번째 화살의 결과는 발사 버튼을 누른 순간 고정되었습니다. 지금은 화살 연출 중이에요.`
+      ? isDartRound
+        ? `${currentRoundResults.length + 1}번째 다트의 결과는 발사 버튼을 누른 순간 고정되었습니다. 지금은 다트 복권 연출 중이에요.`
         : `첫 버튼을 누른 순간 이번 회차 ${roundGoal}${roundUnit}의 결과와 후보 규칙이 고정되었습니다. 지금은 ${currentRoundResults.length}${roundUnit} 공개 중이에요.`
-      : raffleStatus === 'awaiting-arrow'
+      : raffleStatus === 'awaiting-dart'
         ? noAvailableDrawOptions
-          ? `${unavailableDrawHint}가 없어 다음 화살을 시작할 수 없어요. 이번 회차를 여기서 마치거나, 결과 뒤에 다음 회차 설정을 바꿔 주세요.`
-          : `${currentRoundResults.length + 1}번째 화살은 발사 버튼을 누르는 순간 그 한 결과가 확정되고, 바로 화살 연출이 시작됩니다.`
+          ? `${unavailableDrawHint}가 없어 다음 다트를 시작할 수 없어요. 이번 회차를 여기서 마치거나, 결과 뒤에 다음 회차 설정을 바꿔 주세요.`
+          : `${currentRoundResults.length + 1}번째 다트는 발사 버튼을 누르는 순간 그 한 결과가 확정되고, 바로 다트 복권 연출이 시작됩니다.`
         : raffleStatus === 'completed'
           ? currentRound?.endedEarly
             ? '공개된 결과와 기록은 유지됩니다. 다음 회차를 같은 조건으로 이어가거나, 명단·규칙을 새로 정할 수 있어요.'
@@ -960,6 +1052,7 @@ function App() {
         spinning={activeSpin}
         spinKey={spinKey}
         presentation={presentation}
+        landing={preview ? undefined : activePresentation?.landing}
         onSpinEnd={preview ? () => undefined : () => completeDraw(activePresentation?.revealId)}
       />
     ) : (
@@ -1049,7 +1142,7 @@ function App() {
           <fieldset className="settings-choice settings-choice--presentation">
             <legend>룰렛 연출</legend>
             <button type="button" aria-pressed={wheelPresentation === 'spin'} disabled={!isConfigurationEditable} onClick={() => changeWheelPresentation('spin')}>자동</button>
-            <button type="button" aria-pressed={wheelPresentation === 'dart'} disabled={!isConfigurationEditable} onClick={() => changeWheelPresentation('dart')}>양궁</button>
+            <button type="button" aria-pressed={wheelPresentation === 'dart'} disabled={!isConfigurationEditable} onClick={() => changeWheelPresentation('dart')}>다트 복권</button>
           </fieldset>
         )}
       </div>
@@ -1273,7 +1366,7 @@ function App() {
                     {item.target === 'prizes' && item.recipient
                       ? `${item.recipient}님에게 전달`
                       : item.mode === 'wheel'
-                        ? item.presentation === 'dart' ? '양궁 룰렛' : '자동 룰렛'
+                        ? item.presentation === 'dart' ? '다트 복권' : '자동 룰렛'
                         : '마블'}
                     {item.candidateCount ? ` · 후보 ${item.candidateCount}${item.target === 'people' ? '명' : '개'}` : ''}
                     {item.candidateTotalWeight ? ` · 총 ${item.candidateTotalWeight}추첨권` : ''}
@@ -1360,7 +1453,7 @@ function App() {
             <div className="preflight-preview__heading">
               <div>
                 <p>방송 화면 미리보기</p>
-                <h2>{drawMode === 'wheel' ? wheelPresentation === 'dart' ? '양궁 피니시 룰렛' : '자동 룰렛으로 진행' : '마블 레이스로 진행'}</h2>
+                <h2>{drawMode === 'wheel' ? wheelPresentation === 'dart' ? '다트 복권으로 진행' : '자동 룰렛으로 진행' : '마블 레이스로 진행'}</h2>
               </div>
               <span>{drawTarget === 'people' ? `사람 ${effectiveWinnerCount}명` : `상품 ${effectiveWinnerCount}개`}</span>
             </div>
@@ -1416,7 +1509,7 @@ function App() {
         </>
       )}
 
-      <section className="broadcast-focus" aria-label="방송 집중 화면" inert={toolsOpen} aria-hidden={toolsOpen || undefined}>
+      <section className={broadcastFocusClassName} aria-label="방송 집중 화면" inert={toolsOpen} aria-hidden={toolsOpen || undefined}>
         <section className="broadcast-focus__stage" aria-labelledby="stage-title">
           <div className="broadcast-focus__heading">
             <div>
@@ -1424,7 +1517,7 @@ function App() {
               <h1 id="stage-title">{stageHeading}</h1>
             </div>
             <span>
-              {roundMode === 'wheel' ? roundWheelPresentation === 'dart' ? '룰렛 · 양궁' : '룰렛 · 자동' : '마블'}
+              {roundMode === 'wheel' ? roundWheelPresentation === 'dart' ? '룰렛 · 다트 복권' : '룰렛 · 자동' : '마블'}
               {' · '}{isWholeRoundPlan ? '시작 후보' : '후보'} {isWholeRoundPlan ? roundInitialCandidateCount : roundCandidateCount}{roundUnit}
             </span>
           </div>
@@ -1433,6 +1526,17 @@ function App() {
 
           <div className={broadcastVisualClassName}>
             <div className="broadcast-focus__camera">{renderDrawVisual('live')}</div>
+            {winnerHero && presentationBeat === 'hero' ? (
+              <WinnerHero
+                key={winnerHero.revealId}
+                className="broadcast-focus__winner-hero"
+                winnerName={winnerHero.result.winner}
+                ordinal={winnerHero.result.roundOrder}
+                total={winnerHero.total}
+                targetLabel={winnerHero.result.target === 'people' ? '당첨자' : '당첨 상품'}
+                recipient={winnerHero.result.recipient}
+              />
+            ) : null}
           </div>
 
           <p className="broadcast-focus__prompt">{stagePrompt}</p>
@@ -1444,10 +1548,10 @@ function App() {
                 <button className="stage-link stage-link--button" type="button" onClick={openConfiguration}>설정 바꾸고 다음 회차</button>
                 <button className="stage-link stage-link--button" type="button" onClick={() => openParticipantEditor('completed', 'paste')}>명단 바꾸기</button>
               </div>
-            ) : raffleStatus === 'awaiting-arrow' ? (
+            ) : raffleStatus === 'awaiting-dart' ? (
               <div className="round-complete-actions">
-                <button className="primary-button" type="button" onClick={startNextArrow} disabled={noAvailableDrawOptions || toolsOpen}>{drawButtonLabel}</button>
-                <button className="stage-link stage-link--button" type="button" onClick={endArrowRound}>이번 회차 여기서 마치기</button>
+                <button className="primary-button" type="button" onClick={startNextDart} disabled={noAvailableDrawOptions || toolsOpen}>{drawButtonLabel}</button>
+                <button className="stage-link stage-link--button" type="button" onClick={endDartRound}>이번 회차 여기서 마치기</button>
               </div>
             ) : raffleStatus === 'ready' ? (
               <div className="round-ready-actions">
@@ -1460,37 +1564,37 @@ function App() {
                   )}
                 </div>
               </div>
-            ) : (
-              <button className="primary-button" type="button" disabled>{drawButtonLabel}</button>
-            )}
+            ) : null}
           </div>
         </section>
 
-        <aside className="broadcast-focus__results" aria-label="이번 추첨 결과">
-          <CurrentRoundWinners
-            winners={currentRoundResults.map((result) => ({
-              id: result.id,
-              name: result.winner,
-              detail: result.target === 'prizes' && result.recipient ? `${result.recipient}님에게 전달` : undefined,
-            }))}
-            drawCount={currentRound?.endedEarly ? currentRoundResults.length : roundGoal}
-            unit={roundUnit}
-            latestWinnerId={latestRoundResult?.id}
-            title={resultTitle}
-            announcement={currentRoundResults.length > 0
-              ? raffleStatus === 'locking' || raffleStatus === 'presenting'
-                ? `${resultTitle} ${currentRoundResults.length}${roundUnit}${roundUnitSubjectParticle} 확정되었습니다.`
-                : `${resultTitle} ${currentRoundResults.length}${roundUnit}${roundUnitSubjectParticle} 발표되었습니다.`
-              : undefined}
-            removalMessage={currentRoundResults.length > 0 ? resultRemovalMessage : undefined}
-          />
-          {currentRound?.target === 'people' && currentRoundResults.length > 0 && (
-            <button className="broadcast-focus__prize-link" type="button" disabled={isStageLocked} onClick={() => {
-              setSideTab('prizes');
-              setToolsOpen(true);
-            }}>당첨자별 상품 설정</button>
-          )}
-        </aside>
+        {showResultsPanel && (
+          <aside className="broadcast-focus__results" aria-label="이번 추첨 결과">
+            <CurrentRoundWinners
+              winners={currentRoundResults.map((result) => ({
+                id: result.id,
+                name: result.winner,
+                detail: result.target === 'prizes' && result.recipient ? `${result.recipient}님에게 전달` : undefined,
+              }))}
+              drawCount={currentRound?.endedEarly ? currentRoundResults.length : roundGoal}
+              unit={roundUnit}
+              latestWinnerId={latestRoundResult?.id}
+              title={resultTitle}
+              announcement={currentRoundResults.length > 0
+                ? raffleStatus === 'presenting'
+                  ? `${resultTitle} ${currentRoundResults.length}${roundUnit}${roundUnitSubjectParticle} 확정되었습니다.`
+                  : `${resultTitle} ${currentRoundResults.length}${roundUnit}${roundUnitSubjectParticle} 발표되었습니다.`
+                : undefined}
+              removalMessage={currentRoundResults.length > 0 ? resultRemovalMessage : undefined}
+            />
+            {currentRound?.target === 'people' && currentRoundResults.length > 0 && (
+              <button className="broadcast-focus__prize-link" type="button" disabled={isStageLocked} onClick={() => {
+                setSideTab('prizes');
+                setToolsOpen(true);
+              }}>당첨자별 상품 설정</button>
+            )}
+          </aside>
+        )}
       </section>
 
       {toast && <div className="toast" role="status">{toast}</div>}

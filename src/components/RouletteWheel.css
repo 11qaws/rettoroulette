@@ -1,7 +1,7 @@
 .roulette-wheel {
   --wheel-size: min(86vw, 42rem);
   --wheel-stage-padding: clamp(2.25rem, 7vw, 4rem);
-  --wheel-spin-duration: 5.2s;
+  --wheel-spin-duration: 3.6s;
   position: relative;
   width: 100%;
   display: grid;
@@ -10,16 +10,24 @@
   isolation: isolate;
 }
 
-.roulette-wheel.is-dart {
-  --wheel-spin-duration: 2.4s;
-}
-
 .roulette-wheel.is-auto-whirl {
-  --wheel-spin-duration: 3.8s;
+  --wheel-spin-duration: 3.6s;
 }
 
-.roulette-wheel.is-auto-finale {
-  --wheel-spin-duration: 1.4s;
+.roulette-wheel.is-dart-flight {
+  --wheel-spin-duration: 1.55s;
+}
+
+.roulette-wheel.is-dart-after-impact {
+  --wheel-spin-duration: var(--wheel-post-impact-duration, 1.55s);
+}
+
+.roulette-wheel.is-boundary-approach {
+  --wheel-spin-duration: 580ms;
+}
+
+.roulette-wheel.is-boundary-creep {
+  --wheel-spin-duration: 780ms;
 }
 
 .roulette-wheel__stage {
@@ -83,6 +91,8 @@
     0 0 0 clamp(0.35rem, 1vw, 0.55rem) var(--ink, #251c32),
     0 1.15rem 0 color-mix(in srgb, var(--ink, #251c32) 17%, transparent),
     0 1.55rem 2.8rem color-mix(in srgb, var(--ink, #251c32) 30%, transparent);
+  transform-origin: 50% 14%;
+  transition: transform 580ms cubic-bezier(0.16, 0.82, 0.2, 1), box-shadow 360ms ease;
 }
 
 .roulette-wheel__rim::before {
@@ -95,19 +105,42 @@
   pointer-events: none;
 }
 
-.roulette-wheel.is-auto-finale .roulette-wheel__stage::before {
+.roulette-wheel.is-boundary-focus .roulette-wheel__stage::before,
+.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__stage::before {
   opacity: 0.78;
-  animation: roulette-finale-rays 1.4s cubic-bezier(0.16, 0.76, 0.18, 1) both;
+  animation: roulette-finale-rays 1.36s cubic-bezier(0.16, 0.76, 0.18, 1) both;
 }
 
-.roulette-wheel.is-auto-finale .roulette-wheel__rim {
+.roulette-wheel.is-boundary-focus .roulette-wheel__rim,
+.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__rim {
   box-shadow:
     0 0 0 clamp(0.2rem, 0.7vw, 0.35rem) var(--cream, #fff9e7),
     0 0 0 clamp(0.35rem, 1vw, 0.55rem) var(--ink, #251c32),
     0 0 0 clamp(0.75rem, 2vw, 1.2rem) color-mix(in srgb, var(--lemon, #ffe45c) 38%, transparent),
     0 1.15rem 0 color-mix(in srgb, var(--ink, #251c32) 17%, transparent),
     0 1.55rem 3.3rem color-mix(in srgb, var(--hot-pink, #ff4f87) 34%, transparent);
-  animation: roulette-finale-rim-focus 1.4s cubic-bezier(0.14, 0.8, 0.16, 1) both;
+}
+
+.roulette-wheel.is-boundary-approach .roulette-wheel__rim {
+  transform: scale(1.13);
+}
+
+.roulette-wheel.is-boundary-creep .roulette-wheel__rim,
+.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__rim {
+  transform: scale(1.19);
+  transition-duration: 780ms;
+}
+
+.roulette-wheel.is-dart-flight .roulette-wheel__rim {
+  transform: scale(1.16);
+  transition-duration: 1.55s;
+  transition-timing-function: cubic-bezier(0.18, 0.76, 0.2, 1);
+}
+
+.roulette-wheel.is-dart-after-impact .roulette-wheel__rim {
+  transform: scale(1.04);
+  transition-duration: 720ms;
+  transition-timing-function: cubic-bezier(0.2, 0.7, 0.22, 1);
 }
 
 .roulette-wheel.has-result:not(.is-dart) .roulette-wheel__rim {
@@ -124,16 +157,31 @@
   will-change: transform;
 }
 
+.roulette-wheel.is-dart-ready .roulette-wheel__disc,
+.roulette-wheel.is-stop-hold .roulette-wheel__disc {
+  transition: none;
+}
+
 .roulette-wheel.is-auto-whirl .roulette-wheel__disc {
   transition-timing-function: cubic-bezier(0.08, 0.78, 0.16, 1);
 }
 
-.roulette-wheel.is-auto-finale .roulette-wheel__disc {
-  transition-timing-function: cubic-bezier(0.08, 0.72, 0.14, 1);
+.roulette-wheel.is-dart-flight .roulette-wheel__disc {
+  /* The board must still be at speed when the dart lands. */
+  transition-timing-function: linear;
 }
 
-.roulette-wheel.is-dart .roulette-wheel__disc {
-  transition-timing-function: cubic-bezier(0.16, 0.74, 0.16, 1);
+.roulette-wheel.is-dart-after-impact .roulette-wheel__disc {
+  /* p(t)=2t-t²: velocity decreases continuously from impact to zero. */
+  transition-timing-function: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
+}
+
+.roulette-wheel.is-boundary-approach .roulette-wheel__disc {
+  transition-timing-function: cubic-bezier(0.22, 0.72, 0.2, 1);
+}
+
+.roulette-wheel.is-boundary-creep .roulette-wheel__disc {
+  transition-timing-function: cubic-bezier(0.12, 0.62, 0.16, 1);
 }
 
 .roulette-wheel__disc svg {
@@ -296,14 +344,14 @@
   animation: roulette-pointer-tick 115ms ease-in-out infinite;
 }
 
-.roulette-wheel.is-auto-finale .roulette-wheel__pointer {
+.roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__pointer {
   filter:
     drop-shadow(0 0.38rem 0 var(--ink, #251c32))
     drop-shadow(0 0 0.9rem color-mix(in srgb, var(--lemon, #ffe45c) 88%, transparent));
-  animation: roulette-pointer-final-tick 460ms cubic-bezier(0.2, 0.82, 0.24, 1) 3 both;
+  animation: roulette-pointer-final-tick 520ms cubic-bezier(0.2, 0.82, 0.24, 1) 2 both;
 }
 
-.roulette-wheel.is-auto-finale .roulette-wheel__pointer::before {
+.roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__pointer::before {
   background: linear-gradient(180deg, var(--lemon, #ffe45c), var(--hot-pink, #ff4f87));
 }
 
@@ -312,21 +360,13 @@
   transform: translateX(-50%) scale(0.82);
 }
 
-.roulette-wheel.is-dart.is-spinning .roulette-wheel__pointer {
-  animation: none;
-}
-
 .roulette-wheel.is-spinning .roulette-wheel__hub {
   animation: roulette-hub-pop 510ms ease-in-out infinite alternate;
 }
 
-.roulette-wheel.is-auto-finale .roulette-wheel__hub {
+.roulette-wheel.is-boundary-focus .roulette-wheel__hub,
+.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__hub {
   animation: roulette-hub-finale 700ms cubic-bezier(0.2, 0.88, 0.24, 1) 2 alternate;
-}
-
-.roulette-wheel.is-auto-finale .roulette-wheel__slice--winner {
-  filter: saturate(1.32) brightness(1.12) drop-shadow(0 0 0.55rem var(--cream, #fff9e7));
-  animation: roulette-finale-slice-glow 520ms ease-in-out infinite alternate;
 }
 
 .roulette-wheel.has-result .roulette-wheel__slice--winner {
@@ -480,14 +520,18 @@
   .roulette-wheel.is-spinning .roulette-wheel__hub,
   .roulette-wheel.has-result .roulette-wheel__slice--winner,
   .roulette-wheel.has-result .roulette-wheel__spark,
-  .roulette-wheel.is-auto-finale .roulette-wheel__stage::before,
-  .roulette-wheel.is-auto-finale .roulette-wheel__rim,
-  .roulette-wheel.is-auto-finale .roulette-wheel__slice--winner {
+  .roulette-wheel.is-boundary-focus .roulette-wheel__stage::before,
+  .roulette-wheel.is-boundary-focus .roulette-wheel__rim,
+  .roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__stage::before,
+  .roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__rim {
     animation: none;
   }
 
-  .roulette-wheel.is-dart .roulette-wheel__disc {
-    transition-duration: 520ms;
-    transition-timing-function: steps(1, end);
+  .roulette-wheel.is-dart-flight .roulette-wheel__disc,
+  .roulette-wheel.is-dart-after-impact .roulette-wheel__disc,
+  .roulette-wheel.is-boundary-approach .roulette-wheel__disc,
+  .roulette-wheel.is-boundary-creep .roulette-wheel__disc {
+    transition-duration: 60ms;
+    transition-timing-function: linear;
   }
 }
