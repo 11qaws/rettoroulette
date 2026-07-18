@@ -11,11 +11,11 @@
 }
 
 .roulette-wheel.is-auto-whirl {
-  --wheel-spin-duration: 3.6s;
+  --wheel-spin-duration: var(--wheel-auto-whirl-duration, 4.2s);
 }
 
 .roulette-wheel.is-dart-flight {
-  --wheel-spin-duration: 1.55s;
+  --wheel-spin-duration: 1.15s;
 }
 
 .roulette-wheel.is-dart-after-impact {
@@ -127,14 +127,18 @@
 
 .roulette-wheel.is-dart-flight .roulette-wheel__rim {
   transform: scale(1.16);
-  transition-duration: 1.55s;
-  transition-timing-function: cubic-bezier(0.18, 0.76, 0.2, 1);
+  transition-duration: 1.15s;
+  transition-timing-function: cubic-bezier(0.12, 0.72, 0.18, 1);
 }
 
 .roulette-wheel.is-dart-after-impact .roulette-wheel__rim {
   transform: scale(1.04);
-  transition-duration: 720ms;
+  transition-duration: var(--wheel-post-impact-duration, 1.55s);
   transition-timing-function: cubic-bezier(0.2, 0.7, 0.22, 1);
+}
+
+.roulette-wheel.is-idle-spinning .roulette-wheel__rim {
+  animation: roulette-ready-engage 900ms cubic-bezier(0.16, 0.78, 0.2, 1) both;
 }
 
 .roulette-wheel.has-result:not(.is-dart) .roulette-wheel__rim {
@@ -152,12 +156,14 @@
 }
 
 .roulette-wheel.is-dart-ready .roulette-wheel__disc,
+.roulette-wheel.is-idle-spinning .roulette-wheel__disc,
 .roulette-wheel.is-stop-hold .roulette-wheel__disc {
   transition: none;
 }
 
 .roulette-wheel.is-auto-whirl .roulette-wheel__disc {
-  transition-timing-function: cubic-bezier(0.08, 0.78, 0.16, 1);
+  /* p(t)=2t-t²: enters at cruise velocity and only loses speed. */
+  transition-timing-function: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
 }
 
 .roulette-wheel.is-dart-flight .roulette-wheel__disc {
@@ -202,6 +208,15 @@
   letter-spacing: -0.045em;
   pointer-events: none;
   user-select: none;
+  transition: opacity 420ms ease, filter 420ms ease;
+}
+
+.roulette-wheel.is-idle-spinning .roulette-wheel__label,
+.roulette-wheel.is-auto-whirl .roulette-wheel__label,
+.roulette-wheel.is-dart-flight .roulette-wheel__label,
+.roulette-wheel.is-dart-after-impact .roulette-wheel__label {
+  opacity: 0.34;
+  filter: blur(1.15px);
 }
 
 .roulette-wheel__hub {
@@ -334,7 +349,8 @@
   filter: saturate(0.68);
 }
 
-.roulette-wheel.is-auto-whirl .roulette-wheel__pointer {
+.roulette-wheel.is-auto-whirl .roulette-wheel__pointer,
+.roulette-wheel.is-idle-spinning:not(.is-dart) .roulette-wheel__pointer {
   animation: roulette-pointer-tick 115ms ease-in-out infinite;
 }
 
@@ -354,7 +370,8 @@
   transform: translateX(-50%) scale(0.82);
 }
 
-.roulette-wheel.is-spinning .roulette-wheel__hub {
+.roulette-wheel.is-spinning .roulette-wheel__hub,
+.roulette-wheel.is-idle-spinning .roulette-wheel__hub {
   animation: roulette-hub-pop 510ms ease-in-out infinite alternate;
 }
 
@@ -409,7 +426,7 @@
     transform: translate(-50%, -50%) rotate(-5deg) scale(0.96);
   }
   to {
-    transform: translate(-50%, -50%) rotate(3deg) scale(1.04);
+    transform: translate(-50%, -50%) rotate(-5deg) scale(1.04);
   }
 }
 
@@ -418,7 +435,21 @@
     transform: translate(-50%, -50%) rotate(-5deg) scale(0.96);
   }
   to {
-    transform: translate(-50%, -50%) rotate(2deg) scale(1.08);
+    transform: translate(-50%, -50%) rotate(-5deg) scale(1.08);
+  }
+}
+
+@keyframes roulette-ready-engage {
+  from {
+    transform: scale(0.975);
+    filter: saturate(0.9);
+  }
+  52% {
+    transform: scale(1.018);
+  }
+  to {
+    transform: scale(1);
+    filter: saturate(1);
   }
 }
 

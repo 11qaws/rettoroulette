@@ -181,6 +181,10 @@
     align-items: stretch;
   }
 
+  .broadcast-action-dock--ready .broadcast-action-dock__controls {
+    grid-template-columns: minmax(220px, 1.2fr) minmax(330px, 1fr);
+  }
+
   .broadcast-action-dock--ready .broadcast-action-dock__button--primary,
   .broadcast-action-dock--completed .broadcast-action-dock__button--primary {
     grid-column: 1;
@@ -193,6 +197,10 @@
     grid-row: 1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-content: stretch;
+  }
+
+  .broadcast-action-dock--ready .broadcast-action-dock__secondary {
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
   }
 
   .broadcast-action-dock__button {

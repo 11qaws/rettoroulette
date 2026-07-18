@@ -10,6 +10,8 @@ export interface PrizeEditorProps {
   prizes: Prize[];
   /** Shows a per-product draw-ticket field when weighted drawing is enabled. */
   useWeights: boolean;
+  /** Keeps probability editing beside the probability rule when false. */
+  showWeightFields?: boolean;
   disabled?: boolean;
   className?: string;
   onAdd: () => void;
@@ -27,6 +29,7 @@ function clampWholeNumber(value: string, min: number, max: number) {
 export default function PrizeEditor({
   prizes,
   useWeights,
+  showWeightFields = useWeights,
   disabled = false,
   className = '',
   onAdd,
@@ -116,9 +119,12 @@ export default function PrizeEditor({
                   </span>
                 </label>
 
-                {useWeights && (
+                {useWeights && showWeightFields && (
                   <label className="prize-editor__number-field">
-                    <span>추첨권</span>
+                    <span>
+                      확률 배수
+                      <small>유효 {Math.max(0, prize.quantity) * Math.max(0, prize.weight)}장</small>
+                    </span>
                     <span className="prize-editor__number-control">
                       <input
                         type="number"
@@ -165,7 +171,7 @@ export default function PrizeEditor({
         </ol>
       )}
 
-      {useWeights && prizes.length > 0 && (
+      {useWeights && showWeightFields && prizes.length > 0 && (
         <p className="prize-editor__weight-help" id={weightHelpId}>
           추첨권이 많을수록 당첨 확률이 커집니다. 0장은 이번 추첨에서 제외됩니다.
         </p>

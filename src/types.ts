@@ -27,6 +27,8 @@ export interface DrawRecord {
   roundId?: string;
   /** Optional on-air context, for example "버거 3명 추첨". */
   roundLabel?: string;
+  /** Optional reward/event name, kept separate from the on-air title. */
+  rewardLabel?: string;
   /** One-based order within a multi-winner draw. */
   roundOrder?: number;
   mode: DrawMode;

@@ -1,7 +1,14 @@
 /* Project-shell refinements. Do not add them to rettoStock.css. */
 
 .brand {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
   text-decoration: none;
+}
+
+.brand strong {
+  white-space: nowrap;
 }
 
 @media (max-width: 980px) {
@@ -35,7 +42,16 @@
   }
 
   .brand strong {
-    font-size: 17px;
+    font-size: 16px;
+  }
+
+  .brand {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .brand__mark {
+    font-size: 16px;
   }
 
   .header-pill {

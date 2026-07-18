@@ -1,4 +1,5 @@
 .prize-editor {
+  container: prize-editor / inline-size;
   width: 100%;
   padding: 16px;
   border: 1px solid var(--line);
@@ -111,7 +112,8 @@
   max-height: min(410px, 48vh);
   margin: 13px 0 0;
   padding: 0 3px 0 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   list-style: none;
   scrollbar-color: var(--hot-pink) transparent;
   scrollbar-width: thin;
@@ -160,6 +162,20 @@
   font-family: 'Fredoka', 'Jua', sans-serif;
   font-size: 10px;
   line-height: 1;
+}
+
+.prize-editor__number-field > span:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.prize-editor__number-field > span:first-child small {
+  color: var(--magenta);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 8px;
+  white-space: nowrap;
 }
 
 .prize-editor__name input,
@@ -264,7 +280,7 @@
   background: #fffafa;
 }
 
-@media (max-width: 680px) {
+@container prize-editor (max-width: 560px) {
   .prize-editor__list li,
   .prize-editor__list li:not(:has(.prize-editor__number-field + .prize-editor__number-field)) {
     grid-template-columns: 25px minmax(0, 1fr) 44px;
@@ -292,6 +308,22 @@
   .prize-editor__row-status {
     grid-column: 2 / -1;
   }
+}
+
+@media (max-width: 680px) {
+  .prize-editor__list li,
+  .prize-editor__list li:not(:has(.prize-editor__number-field + .prize-editor__number-field)) {
+    grid-template-columns: 25px minmax(0, 1fr) 44px;
+  }
+
+  .prize-editor__name { grid-column: 2; }
+  .prize-editor__remove { grid-column: 3; grid-row: 1; }
+  .prize-editor__number-field {
+    grid-column: 2 / -1;
+    grid-template-columns: minmax(70px, 1fr) 82px;
+    align-items: center;
+  }
+  .prize-editor__row-status { grid-column: 2 / -1; }
 }
 
 @media (max-width: 480px) {

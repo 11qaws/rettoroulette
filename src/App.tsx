@@ -4,8 +4,8 @@ import BroadcastActionDock, { type BroadcastDockAction } from './components/Broa
 import CurrentRoundWinners from './components/CurrentRoundWinners';
 import MarbleRace from './components/MarbleRace';
 import ParticipantSetup from './components/ParticipantSetup';
-import PrizeEditor from './components/PrizeEditor';
 import RouletteWheel from './components/RouletteWheel';
+import RoundSetupPanel from './components/RoundSetupPanel';
 import WinnerHero from './components/WinnerHero';
 import { csvField } from './lib/csv';
 import {
@@ -41,6 +41,8 @@ type CurrentRound = {
   id: string;
   /** Optional broadcaster-supplied context shown throughout the live result. */
   label?: string;
+  /** Optional reward/event separated from the on-air title. */
+  rewardLabel?: string;
   target: DrawTarget;
   mode: DrawMode;
   wheelPresentation: WheelPresentation;
@@ -130,10 +132,12 @@ function createFinishLanding(): RouletteFinishLanding {
     ? {
         entryGapDegrees: 1.5 + Math.random() * 1.8,
         leadDegrees: 1.4 + Math.random() * 1.7,
+        boundaryHit: true,
       }
     : {
         entryGapDegrees: 8 + Math.random() * 10,
         leadDegrees: 7 + Math.random() * 9,
+        boundaryHit: false,
       };
 }
 
@@ -161,10 +165,11 @@ function App() {
   const [excludedParticipantIds, setExcludedParticipantIds] = useState<string[]>([]);
   const [poolLimit, setPoolLimit] = useState(0);
   const [poolIds, setPoolIds] = useState<string[]>([]);
-  const [winnerCount, setWinnerCount] = useState(1);
+  const [winnerCounts, setWinnerCounts] = useState<Record<DrawTarget, number>>({ people: 1, prizes: 1 });
   const [drawLabel, setDrawLabel] = useState('');
+  const [rewardLabel, setRewardLabel] = useState('');
   const [removeAfterDraw, setRemoveAfterDraw] = useState(true);
-  const [useWeights, setUseWeights] = useState(false);
+  const [weightModes, setWeightModes] = useState<Record<DrawTarget, boolean>>({ people: false, prizes: false });
   const [recipient, setRecipient] = useState('');
   const [queuedPresentations, setQueuedPresentations] = useState<PlannedPresentation[]>([]);
   const [spinning, setSpinning] = useState(false);
@@ -191,6 +196,16 @@ function App() {
   const winnerHeroTimerRef = useRef<number | null>(null);
   const winnerDockTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const winnerCount = winnerCounts[drawTarget];
+  const useWeights = weightModes[drawTarget];
+
+  const setWinnerCount = useCallback((value: number) => {
+    setWinnerCounts((counts) => ({ ...counts, [drawTarget]: value }));
+  }, [drawTarget]);
+
+  const setUseWeights = useCallback((value: boolean) => {
+    setWeightModes((modes) => ({ ...modes, [drawTarget]: value }));
+  }, [drawTarget]);
 
   const transitionRaffle = useCallback((event: RaffleEvent) => {
     const nextStatus = getRaffleTransition(raffleStatusRef.current, event);
@@ -458,17 +473,13 @@ function App() {
     setWinnerHero(null);
     const revealId = presentationRunRef.current + 1;
     presentationRunRef.current = revealId;
-    window.setTimeout(() => {
-      if (presentationRunRef.current !== revealId) return;
-
-      setActivePresentation({ ...presentation, revealId });
-      setPresentedOptions(presentation.options);
-      setWinnerIndex(presentation.winnerIndex);
-      setSpinning(true);
-      setPresentationBeat('motion');
-      setSpinKey((value) => value + 1);
-      transitionRaffle('start-presentation');
-    }, 150);
+    setActivePresentation({ ...presentation, revealId });
+    setPresentedOptions(presentation.options);
+    setWinnerIndex(presentation.winnerIndex);
+    setSpinning(true);
+    setPresentationBeat('motion');
+    setSpinKey((value) => value + 1);
+    transitionRaffle('start-presentation');
 
     return true;
   }, [cancelWinnerRevealTimers, transitionRaffle]);
@@ -528,7 +539,7 @@ function App() {
   };
 
   const changeWheelPresentation = (presentation: WheelPresentation) => {
-    if (!isConfigurationEditable || drawMode !== 'wheel') return;
+    if (!isConfigurationEditable) return;
     setWheelPresentation(presentation);
     prepareNextRoundSettings();
   };
@@ -570,6 +581,7 @@ function App() {
       revealedAt: new Date().toISOString(),
       roundId: activeRound.id,
       roundLabel: activeRound.label,
+      rewardLabel: activeRound.rewardLabel,
       roundOrder: nextResultOrder,
       mode: activeRound.mode,
       presentation: activeRound.mode === 'wheel' ? activeRound.wheelPresentation : undefined,
@@ -669,6 +681,7 @@ function App() {
     const nextRound: CurrentRound = {
       id: createId('round'),
       label: drawLabel.trim() || undefined,
+      rewardLabel: drawTarget === 'people' ? rewardLabel.trim() || undefined : undefined,
       target: drawTarget,
       mode: drawMode,
       wheelPresentation,
@@ -725,7 +738,7 @@ function App() {
   };
 
   const reshufflePool = () => {
-    if (raffleStatus !== 'ready' || poolLimit === 0) return;
+    if ((raffleStatus !== 'configuring' && raffleStatus !== 'ready') || poolLimit === 0) return;
     const count = Math.min(poolLimit, eligibleParticipants.length);
     setPoolIds(sampleWithoutReplacement(eligibleParticipants, count).map((participant) => participant.id));
     showToast(`후보 ${count}명을 새로 골랐어요.`);
@@ -858,7 +871,8 @@ function App() {
     if (!openConfiguration()) return;
     setRecipient(winner);
     setDrawLabel('');
-    setWinnerCount(1);
+    setRewardLabel('');
+    setWinnerCounts((counts) => ({ ...counts, prizes: 1 }));
     setDrawTarget('prizes');
     setSideTab('prizes');
     showToast(availablePrizeCount === 0
@@ -925,6 +939,7 @@ function App() {
       '선정 시각',
       '공개 시각',
       '회차 제목',
+      '선물·이벤트',
       '모드',
       '연출',
       '추첨 대상',
@@ -942,6 +957,7 @@ function App() {
       new Date(item.createdAt).toLocaleString('ko-KR'),
       item.revealedAt ? new Date(item.revealedAt).toLocaleString('ko-KR') : '',
       item.roundLabel ?? '',
+      item.rewardLabel ?? '',
       item.mode === 'wheel' ? '룰렛' : '마블',
       item.mode === 'wheel' ? item.presentation === 'dart' ? '다트 복권' : '자동' : '마블',
       item.target === 'people' ? '사람' : '상품',
@@ -991,6 +1007,7 @@ function App() {
   const roundRemovesWinners = currentRound?.removeAfterDraw ?? removeAfterDraw;
   const roundUsesWeights = currentRound?.useWeights ?? useWeights;
   const roundRecipient = currentRound?.recipient ?? (recipient.trim() || undefined);
+  const roundRewardLabel = currentRound?.rewardLabel ?? (rewardLabel.trim() || undefined);
   const roundUnit = roundTarget === 'people' ? '명' : '개';
   const roundUnitSubjectParticle = roundUnit === '명' ? '이' : '가';
   const targetLabel = roundTarget === 'people' ? '사람' : '상품';
@@ -998,8 +1015,10 @@ function App() {
     ? '참여자 추첨'
     : roundRecipient ? `${roundRecipient}님 상품 추첨` : '상품 추첨';
   const roundLabel = currentRound?.label ?? (drawLabel.trim() || undefined);
-  const stageTitle = roundLabel ?? defaultStageTitle;
-  const resultTitle = roundLabel ?? (roundTarget === 'people' ? '전체 당첨자' : '뽑힌 상품');
+  const stageTitle = roundLabel
+    ?? (roundTarget === 'people' && roundRewardLabel ? `${roundRewardLabel} 당첨자 추첨` : defaultStageTitle);
+  const resultTitle = roundLabel
+    ?? (roundTarget === 'people' && roundRewardLabel ? `${roundRewardLabel} 전체 당첨자` : roundTarget === 'people' ? '전체 당첨자' : '뽑힌 상품');
   const dynamicFairnessLabel = roundUsesWeights
     ? `가중치 적용 · 총 ${roundTotalWeight} 추첨권 · ${roundMode === 'wheel' ? '조각 크기는 확률에 비례' : '결과 확률은 가중치에 비례'}`
     : '동일 확률 · 후보마다 한 번씩 표시';
@@ -1013,6 +1032,7 @@ function App() {
       ? roundWheelPresentation === 'dart' ? '룰렛 · 다트 복권' : '룰렛 · 자동 회전'
       : '마블',
     `${targetLabel} ${roundGoal}${roundUnit}`,
+    roundTarget === 'people' && roundRewardLabel ? `선물 ${roundRewardLabel}` : null,
     `${isWholeRoundPlan ? '시작 후보' : '후보'} ${isWholeRoundPlan ? roundInitialCandidateCount : roundCandidateCount}${roundUnit}`,
     roundTarget === 'people' && roundPoolLimit > 0 ? '후보 풀 회차 고정' : null,
     roundTarget === 'people' && roundRemovesWinners ? '중복 당첨 방지' : null,
@@ -1028,9 +1048,9 @@ function App() {
   const statusMeta = RAFFLE_STATUS_META[raffleStatus];
   const upcomingDrawLabel = drawMode === 'wheel' && wheelPresentation === 'dart'
     ? `첫 다트 발사 (1/${effectiveWinnerCount})`
-    : drawTarget === 'people'
-      ? `${effectiveWinnerCount}명 추첨하기`
-      : `${effectiveWinnerCount}개 상품 뽑기`;
+    : drawMode === 'wheel'
+      ? `${effectiveWinnerCount}${drawTarget === 'people' ? '명' : '개'} 결과 고정하기`
+      : `${effectiveWinnerCount}${drawTarget === 'people' ? '명' : '개'} 레이스 시작`;
   const noAvailableDrawOptions = drawOptions.length === 0;
   const unavailableDrawLabel = drawTarget === 'people'
     ? participants.length === 0
@@ -1117,7 +1137,9 @@ function App() {
         ? unavailableDrawPrompt
         : drawMode === 'wheel' && wheelPresentation === 'dart'
           ? `발사하는 순간 현재 후보 ${drawOptions.length}${drawTarget === 'people' ? '명' : '개'} 중 첫 결과가 고정됩니다.`
-          : `누르는 순간 후보 ${drawOptions.length}${drawTarget === 'people' ? '명' : '개'}과 ${effectiveWinnerCount}${drawTarget === 'people' ? '명' : '개'} 결과가 함께 고정됩니다.`;
+          : drawMode === 'wheel'
+            ? `원판은 이미 고속 회전 중입니다. 누르는 순간 ${effectiveWinnerCount}${drawTarget === 'people' ? '명' : '개'} 결과가 고정되고 감속합니다.`
+            : `누르는 순간 후보 ${drawOptions.length}${drawTarget === 'people' ? '명' : '개'}과 ${effectiveWinnerCount}${drawTarget === 'people' ? '명' : '개'} 결과가 함께 고정됩니다.`;
   const readyRecoveryLabel = drawTarget === 'people'
     ? participants.length === 0
       ? '명단 준비하기'
@@ -1158,7 +1180,11 @@ function App() {
             ? unavailableDrawPrompt
             : roundTarget === 'prizes' && roundRecipient
               ? `${roundRecipient}님에게 드릴 상품을 뽑아 주세요.`
-              : '추첨 시작을 누르는 순간 후보와 결과가 고정되고, 그 다음에 방송 연출이 시작됩니다.';
+              : roundMode === 'wheel'
+                ? roundWheelPresentation === 'dart'
+                  ? '원판은 이미 고속 회전 중입니다. 발사 버튼을 누르는 순간 결과가 고정되고 다트가 정면으로 날아갑니다.'
+                  : '원판은 이미 고속 회전 중입니다. 결과 고정 버튼을 누르면 그 순간 결과가 정해지고 원판이 감속합니다.'
+                : '레이스 시작을 누르는 순간 후보와 결과가 고정되고, 그 다음에 방송 연출이 시작됩니다.';
 
   const renderDrawVisual = (variant: 'preview' | 'live') => {
     const preview = variant === 'preview';
@@ -1177,6 +1203,7 @@ function App() {
         itemType={target === 'prizes' ? 'prize' : 'participant'}
         winnerIndex={activeWinnerIndex}
         spinning={activeSpin}
+        idleSpinning={!preview && (raffleStatus === 'ready' || raffleStatus === 'awaiting-dart')}
         spinKey={spinKey}
         presentation={presentation}
         landing={preview ? undefined : activePresentation?.landing}
@@ -1195,179 +1222,72 @@ function App() {
   };
 
   const renderRoundSettings = () => (
-    <section className="broadcast-settings broadcast-settings--preflight" aria-label="이번 회차 설정">
-      <div className="broadcast-settings__heading">
-        <div>
-          <p>이번 회차 규칙</p>
-          <h2>{drawTarget === 'people' ? '사람을 뽑을게요' : '상품을 뽑을게요'}</h2>
-        </div>
-        <span>{drawOptions.length}{drawTarget === 'people' ? '명 후보' : '개 준비'}</span>
-      </div>
-
-      <label className="settings-context">
-        <span>방송 제목 <em>선택</em></span>
-        <input
-          value={drawLabel}
-          maxLength={40}
-          disabled={!isConfigurationEditable}
-          onChange={(event) => {
-            setDrawLabel(event.target.value);
-            prepareNextRoundSettings();
-          }}
-          placeholder="예: 버거 3명 추첨"
-        />
-        <small>방송 화면과 당첨 기록에 같은 제목으로 표시됩니다.</small>
-      </label>
-
-      <div className="broadcast-settings__grid">
-        <fieldset className="settings-choice">
-          <legend>무엇을 뽑을까요?</legend>
-          <div className="settings-choice__buttons">
-            <button type="button" aria-pressed={drawTarget === 'people'} disabled={!isConfigurationEditable} onClick={() => changeTarget('people')}>사람</button>
-            <button type="button" aria-pressed={drawTarget === 'prizes'} disabled={!isConfigurationEditable} onClick={() => changeTarget('prizes')}>상품</button>
-          </div>
-        </fieldset>
-
-        <label className="settings-number">
-          <span>이번 당첨</span>
-          <span className="settings-number__control">
-            <input
-              type="number"
-              min="1"
-              max={maximumWinnerCount}
-              value={winnerCount}
-              disabled={!isConfigurationEditable}
-              onChange={(event) => {
-                setWinnerCount(clampInteger(Number(event.target.value), 1, maximumWinnerCount));
-                prepareNextRoundSettings();
-              }}
-            />
-            <em>{drawTarget === 'people' ? '명' : '개'}</em>
-          </span>
-        </label>
-
-        {drawTarget === 'people' ? (
-          <label className="settings-number settings-number--pool">
-            <span>이번 후보</span>
-            <span className="settings-number__control">
-              <input
-                type="number"
-                min="0"
-                max={eligibleParticipants.length}
-                value={poolLimit}
-                disabled={!isConfigurationEditable}
-                onChange={(event) => {
-                  setPoolLimit(Math.max(0, Math.min(eligibleParticipants.length, Number(event.target.value) || 0)));
-                  setPoolIds([]);
-                  prepareNextRoundSettings();
-                }}
-              />
-              <em>명 · 0은 전체</em>
-            </span>
-          </label>
-        ) : (
-          <label className="settings-recipient">
-            <span>받을 사람</span>
-            <input
-              value={recipient}
-              disabled={!isConfigurationEditable}
-              onChange={(event) => {
-                setRecipient(event.target.value);
-                prepareNextRoundSettings();
-              }}
-              placeholder="선택 입력"
-            />
-          </label>
-        )}
-
-        <fieldset className="settings-choice">
-          <legend>어떻게 보여줄까요?</legend>
-          <div className="settings-choice__buttons">
-            <button type="button" aria-pressed={drawMode === 'wheel'} disabled={!isConfigurationEditable} onClick={() => changeMode('wheel')}>룰렛</button>
-            <button type="button" aria-pressed={drawMode === 'marble'} disabled={!isConfigurationEditable} onClick={() => changeMode('marble')}>마블</button>
-          </div>
-        </fieldset>
-
-        {drawMode === 'wheel' && (
-          <fieldset className="settings-choice settings-choice--presentation">
-            <legend>룰렛 연출</legend>
-            <div className="settings-choice__buttons">
-              <button type="button" aria-pressed={wheelPresentation === 'spin'} disabled={!isConfigurationEditable} onClick={() => changeWheelPresentation('spin')}>자동</button>
-              <button type="button" aria-pressed={wheelPresentation === 'dart'} disabled={!isConfigurationEditable} onClick={() => changeWheelPresentation('dart')}>다트 복권</button>
-            </div>
-          </fieldset>
-        )}
-      </div>
-
-      {drawTarget === 'prizes' && (
-        <PrizeEditor
-          prizes={prizes}
-          useWeights={useWeights}
-          disabled={!isConfigurationEditable}
-          onAdd={addPrize}
-          onUpdate={updatePrize}
-          onWeightChange={updatePrizeWeight}
-          onRemove={removePrize}
-        />
-      )}
-
-      <p className="broadcast-settings__status">
-        {drawTarget === 'people'
-          ? removeAfterDraw ? '중복 당첨 방지' : '중복 당첨 허용'
-          : '상품은 재고 단위로 한 번씩'}
-        {useWeights ? ' · 가중치 적용' : ' · 동일 확률'}
-      </p>
-
-      <details className="broadcast-settings__advanced">
-        <summary>고급 추첨 설정</summary>
-        <label>
-          <input
-            type="checkbox"
-            checked={useWeights}
-            disabled={!isConfigurationEditable}
-            onChange={(event) => {
-              setUseWeights(event.target.checked);
-              prepareNextRoundSettings();
-            }}
-          />
-          가중치 추첨 사용
-        </label>
-        {drawTarget === 'people' && (
-          <label>
-            <input
-              type="checkbox"
-              checked={!removeAfterDraw}
-              disabled={!isConfigurationEditable}
-              onChange={(event) => {
-                setRemoveAfterDraw(!event.target.checked);
-                prepareNextRoundSettings();
-              }}
-            />
-            중복 당첨 허용
-          </label>
-        )}
-        {useWeights && drawTarget === 'people' && (
-          <div className="weight-editor">
-            <p className="weight-editor__note">
-              0은 추첨에서 제외됩니다. 숫자만큼 조각 크기와 당첨 확률이 함께 바뀝니다.
-            </p>
-            {candidateParticipants.map((participant) => (
-              <label className="weight-editor__row" key={participant.id}>
-                <span>{participant.name}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={participant.weight}
-                  disabled={!isConfigurationEditable}
-                  onChange={(event) => updateParticipantWeight(participant.id, Number(event.target.value))}
-                />
-              </label>
-            ))}
-          </div>
-        )}
-      </details>
-    </section>
+    <RoundSetupPanel
+      target={drawTarget}
+      drawMode={drawMode}
+      wheelPresentation={wheelPresentation}
+      participantTotal={participants.length}
+      eligibleParticipants={eligibleParticipants}
+      candidateParticipants={candidateParticipants}
+      excludedCount={participants.length - eligibleParticipants.length}
+      poolLimit={poolLimit}
+      winnerCount={winnerCount}
+      maximumWinnerCount={maximumWinnerCount}
+      drawOptionCount={drawOptions.length}
+      prizes={prizes}
+      rewardLabel={rewardLabel}
+      drawLabel={drawLabel}
+      recipient={recipient}
+      removeAfterDraw={removeAfterDraw}
+      useWeights={useWeights}
+      disabled={!isConfigurationEditable}
+      onTargetChange={changeTarget}
+      onRewardLabelChange={(value) => {
+        setRewardLabel(value);
+        prepareNextRoundSettings();
+      }}
+      onDrawLabelChange={(value) => {
+        setDrawLabel(value);
+        prepareNextRoundSettings();
+      }}
+      onRecipientChange={(value) => {
+        setRecipient(value);
+        prepareNextRoundSettings();
+      }}
+      onPoolLimitChange={(value) => {
+        setPoolLimit(Math.max(0, Math.min(eligibleParticipants.length, value)));
+        setPoolIds([]);
+        prepareNextRoundSettings();
+      }}
+      onReshufflePool={reshufflePool}
+      onWinnerCountChange={(value) => {
+        setWinnerCount(clampInteger(value, 1, maximumWinnerCount));
+        prepareNextRoundSettings();
+      }}
+      onPresentationChange={(choice) => {
+        if (!isConfigurationEditable) return;
+        if (choice === 'marble') {
+          changeMode('marble');
+          return;
+        }
+        setDrawMode('wheel');
+        changeWheelPresentation(choice);
+      }}
+      onRemoveAfterDrawChange={(value) => {
+        setRemoveAfterDraw(value);
+        prepareNextRoundSettings();
+      }}
+      onUseWeightsChange={(value) => {
+        setUseWeights(value);
+        prepareNextRoundSettings();
+      }}
+      onParticipantWeightChange={updateParticipantWeight}
+      onEditRoster={() => openParticipantEditor('configuring')}
+      onAddPrize={addPrize}
+      onUpdatePrize={updatePrize}
+      onPrizeWeightChange={updatePrizeWeight}
+      onRemovePrize={removePrize}
+    />
   );
 
   const renderStatusPath = () => (
@@ -1511,7 +1431,11 @@ function App() {
                     {item.revealedAt ? ` · 공개 ${formatTime(item.revealedAt, true)}` : ''}
                     {' · '}{item.target === 'people' ? '사람' : '상품'}
                   </small>
-                  {item.roundLabel && <p className="live-history-list__round">{item.roundLabel}</p>}
+                  {(item.roundLabel || item.rewardLabel) && (
+                    <p className="live-history-list__round">
+                      {[item.roundLabel, item.rewardLabel ? `선물 ${item.rewardLabel}` : undefined].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                   <strong>{item.winner}</strong>
                   <span>
                     {item.target === 'prizes' && item.recipient
@@ -1577,41 +1501,86 @@ function App() {
 
         <section className="preflight-layout" aria-label="추첨 설정">
           <section className="preflight-setup">
-            <p className="preflight-setup__eyebrow">다음 회차 설정</p>
-            <h1>명단은 준비됐어요. 이번 방식만 정해 주세요.</h1>
-            <p className="preflight-setup__copy">결과는 실제 추첨을 시작하기 전까지 확정되지 않아요. 오른쪽에서 방송 화면도 바로 확인할 수 있어요.</p>
-
-            <section className="preflight-roster" aria-labelledby="preflight-roster-title">
+            <div className="preflight-setup__phase">
+              <span aria-hidden="true">2</span>
               <div>
-                <p>참여자</p>
-                <h2 id="preflight-roster-title">{participants.length}명 준비됨</h2>
+                <p className="preflight-setup__eyebrow">추첨 설정</p>
+                <h1>이번 추첨을 설계해요.</h1>
+              </div>
+            </div>
+            <p className="preflight-setup__copy">무엇을, 누구 중에서, 몇 개, 어떤 연출로 뽑을지 위에서 아래로 정합니다. 결과는 추첨 버튼을 누르기 전까지 확정되지 않아요.</p>
+
+            <section className="preflight-roster preflight-roster--summary" aria-labelledby="preflight-roster-title">
+              <div>
+                <p>준비된 명단</p>
+                <h2 id="preflight-roster-title">전체 {participants.length}명 · 추첨 가능 {eligibleParticipants.length}명</h2>
+                {excludedParticipantIds.length > 0 && <small>이전 당첨 제외 {excludedParticipantIds.length}명</small>}
               </div>
               <button className="compact-button" type="button" onClick={() => openParticipantEditor('configuring')}>명단 다듬기</button>
-              <ol>
-                {participants.slice(0, 5).map((participant, index) => (
-                  <li key={participant.id}><span>{index + 1}</span><strong>{participant.name}</strong></li>
-                ))}
-                {participants.length > 5 && <li className="preflight-roster__more">+{participants.length - 5}명</li>}
-              </ol>
             </section>
 
             {renderRoundSettings()}
-
-            <button className="primary-button preflight-setup__start" type="button" disabled={drawOptions.length === 0} onClick={startBroadcast}>이 설정으로 추첨 화면 열기</button>
           </section>
 
           <aside className="preflight-preview" aria-label="방송 화면 미리보기">
             <div className="preflight-preview__heading">
               <div>
-                <p>방송 화면 미리보기</p>
+                <p>보조 미리보기</p>
                 <h2>{drawMode === 'wheel' ? wheelPresentation === 'dart' ? '다트 복권으로 진행' : '자동 룰렛으로 진행' : '마블 레이스로 진행'}</h2>
               </div>
               <span>{drawTarget === 'people' ? `사람 ${effectiveWinnerCount}명` : `상품 ${effectiveWinnerCount}개`}</span>
             </div>
             <div className="preflight-preview__visual">{renderDrawVisual('preview')}</div>
-            <p className="preflight-preview__note">추첨 화면에서는 설정을 접고 룰렛과 당첨자 목록만 크게 보여 줍니다.</p>
+            <section className="preflight-plan-summary" aria-labelledby="preflight-plan-summary-title">
+              <p>확정 전 요약</p>
+              <h3 id="preflight-plan-summary-title">지금 정한 추첨</h3>
+              <dl>
+                <div>
+                  <dt>목적</dt>
+                  <dd>{drawTarget === 'people'
+                    ? rewardLabel.trim() ? `${rewardLabel.trim()} 당첨자` : '당첨자'
+                    : `${prizes.filter((prize) => prize.name.trim()).length}종 상품`}</dd>
+                </div>
+                <div>
+                  <dt>범위</dt>
+                  <dd>{drawTarget === 'people'
+                    ? `${candidateParticipants.length}명 중 ${effectiveWinnerCount}명`
+                    : `${drawOptions.length}개 재고 중 ${effectiveWinnerCount}개`}</dd>
+                </div>
+                <div>
+                  <dt>연출</dt>
+                  <dd>{drawMode === 'marble' ? '마블 레이스' : wheelPresentation === 'dart' ? '다트 복권' : '회전 룰렛'}</dd>
+                </div>
+                <div>
+                  <dt>규칙</dt>
+                  <dd>{useWeights ? '확률 직접 지정' : '동일 확률'}{drawTarget === 'people' ? removeAfterDraw ? ' · 당첨자 제외' : ' · 중복 허용' : ' · 재고 차감'}</dd>
+                </div>
+              </dl>
+              <p className="preflight-plan-summary__sentence">
+                {drawMode === 'wheel'
+                  ? wheelPresentation === 'dart'
+                    ? '추첨 화면을 열면 원판이 고속 회전하고, 발사 버튼을 누를 때마다 결과 1개가 고정됩니다.'
+                    : '추첨 화면을 열면 원판이 가속해 고속 회전하고, 추첨 버튼을 누르면 결과가 고정되며 감속합니다.'
+                  : '추첨 버튼을 누르면 모든 후보가 동시에 레이스를 시작합니다.'}
+              </p>
+              <button className="primary-button preflight-setup__start" type="button" disabled={drawOptions.length === 0} onClick={startBroadcast}>이 설정으로 추첨 화면 열기</button>
+            </section>
           </aside>
         </section>
+
+        <div className="preflight-mobile-action" aria-label="추첨 시작">
+          <span>
+            <small>현재 설정</small>
+            <strong>
+              {drawTarget === 'people'
+                ? `${candidateParticipants.length}명 중 ${effectiveWinnerCount}명`
+                : `${drawOptions.length}개 중 ${effectiveWinnerCount}개`}
+              {' · '}
+              {drawMode === 'marble' ? '마블' : wheelPresentation === 'dart' ? '다트' : '회전 룰렛'}
+            </strong>
+          </span>
+          <button type="button" disabled={drawOptions.length === 0} onClick={startBroadcast}>추첨 화면 열기</button>
+        </div>
 
         {toast && <div className="toast" role="status">{toast}</div>}
       </main>
@@ -1688,6 +1657,7 @@ function App() {
                 total={winnerHero.total}
                 targetLabel={winnerHero.result.target === 'people' ? '당첨자' : '당첨 상품'}
                 recipient={winnerHero.result.recipient}
+                product={winnerHero.result.target === 'people' ? winnerHero.result.rewardLabel : undefined}
               />
             ) : null}
           </div>
@@ -1701,7 +1671,9 @@ function App() {
               winners={currentRoundResults.map((result) => ({
                 id: result.id,
                 name: result.winner,
-                detail: result.target === 'prizes' && result.recipient ? `${result.recipient}님에게 전달` : undefined,
+                detail: result.target === 'prizes'
+                  ? result.recipient ? `${result.recipient}님에게 전달` : undefined
+                  : result.rewardLabel ? `${result.rewardLabel} 당첨` : undefined,
               }))}
               drawCount={currentRound?.endedEarly ? currentRoundResults.length : roundGoal}
               unit={roundUnit}

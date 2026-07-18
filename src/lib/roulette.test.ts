@@ -4,6 +4,7 @@ import {
   AUTO_POINTER_ANGLE,
   DART_IMPACT_ANGLE,
   DART_FLIGHT_DURATION_SECONDS,
+  buildDartRouletteFinishPlan,
   buildRouletteFinishPlan,
   calculateDartPostImpactDuration,
   getRouletteSliceGeometry,
@@ -177,5 +178,30 @@ describe('calculateDartPostImpactDuration', () => {
 
       expect(firstCoastVelocity).toBeLessThanOrEqual(incomingVelocity + 1e-10);
     }
+  });
+});
+
+describe('buildDartRouletteFinishPlan', () => {
+  it('keeps the embedded dart on the same wheel-local point through the coast', () => {
+    const plan = buildDartRouletteFinishPlan(137, 2, 6, 3, 3, undefined, {
+      entryGapDegrees: 4,
+      leadDegrees: 3,
+    });
+
+    expect(plan.impactRotation).toBe(plan.boundaryRotation);
+    expect(plan.finalRotation - plan.impactRotation).toBe(3 * 360);
+    expect(localAngleAtPointer(plan.impactRotation)).toBeCloseTo(plan.landingAngle, 10);
+    expect(localAngleAtPointer(plan.finalRotation)).toBeCloseTo(plan.landingAngle, 10);
+  });
+
+  it('preserves a weighted near-boundary landing without changing the winner', () => {
+    const plan = buildDartRouletteFinishPlan(415, 1, 3, 3, 2, [1, 3, 1], {
+      entryGapDegrees: 2,
+      leadDegrees: 1.8,
+    });
+
+    expect(plan.leadDegrees).toBeCloseTo(1.8, 10);
+    expect(plan.coastTurns).toBe(2);
+    expect(localAngleAtPointer(plan.finalRotation)).toBeCloseTo(plan.landingAngle, 10);
   });
 });

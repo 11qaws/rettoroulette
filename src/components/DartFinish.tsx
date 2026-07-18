@@ -1,30 +1,34 @@
+import type { CSSProperties } from 'react';
+
 import './DartFinish.css';
 
-/**
- * The broadcast canvas owns the timing. This layer only presents an already
- * selected result as a lottery-dart shot and never affects draw state.
- */
+/** The business state lives in App; these are visual beats only. */
 export type DartFinishPhase = 'idle' | 'launch' | 'approach' | 'impact' | 'coast' | 'settled';
 
 export interface DartFinishProps {
-  /** The current visual beat of one dart shot. */
   phase: DartFinishPhase;
-  /** Lets the host add a layout-specific class without coupling this overlay to a stage. */
+  boundaryHit?: boolean;
   className?: string;
 }
 
+type EmbeddedDartStyle = CSSProperties & {
+  '--dart-impact-rotation': string;
+};
+
 /**
- * Lottery-dart finish for a relative roulette stage.
- *
- * The impact point stays fixed at twelve o'clock. The wheel moves beneath the
- * point while this overlay turns the shot into a short dart-follow camera
- * moment, briefly clears the impact flash while the board coasts, then leaves
- * the physical dart embedded as the result pointer.
+ * Screen-space flight and impact flash. The projectile is seen head-on: it
+ * stays on the twelve-o'clock axis and changes scale instead of entering from
+ * a fake diagonal direction.
  */
-export default function DartFinish({ phase, className }: DartFinishProps) {
+export default function DartFinish({
+  phase,
+  boundaryHit = false,
+  className,
+}: DartFinishProps) {
   const rootClassName = [
     'dart-finish',
     `dart-finish--${phase}`,
+    boundaryHit ? 'is-boundary-hit' : '',
     className,
   ]
     .filter(Boolean)
@@ -32,48 +36,19 @@ export default function DartFinish({ phase, className }: DartFinishProps) {
 
   return (
     <div className={rootClassName} data-phase={phase} aria-hidden="true">
-      <div className="dart-finish__pov">
-        <span className="dart-finish__vignette" />
-        <span className="dart-finish__pov-glow" />
+      <span className="dart-finish__flash" />
+      <span className="dart-finish__speed-field" />
 
-        <span className="dart-finish__corridor-ring dart-finish__corridor-ring--one" />
-        <span className="dart-finish__corridor-ring dart-finish__corridor-ring--two" />
-        <span className="dart-finish__corridor-ring dart-finish__corridor-ring--three" />
+      <span className="dart-finish__ring dart-finish__ring--one" />
+      <span className="dart-finish__ring dart-finish__ring--two" />
+      <span className="dart-finish__ring dart-finish__ring--three" />
 
-        <span className="dart-finish__corridor-lane dart-finish__corridor-lane--one" />
-        <span className="dart-finish__corridor-lane dart-finish__corridor-lane--two" />
-        <span className="dart-finish__corridor-lane dart-finish__corridor-lane--three" />
-        <span className="dart-finish__corridor-lane dart-finish__corridor-lane--four" />
-        <span className="dart-finish__corridor-lane dart-finish__corridor-lane--five" />
-        <span className="dart-finish__corridor-lane dart-finish__corridor-lane--six" />
-        <span className="dart-finish__corridor-lane dart-finish__corridor-lane--seven" />
-        <span className="dart-finish__corridor-lane dart-finish__corridor-lane--eight" />
-
-        <span className="dart-finish__pov-arrowhead" />
-      </div>
-
-      <span className="dart-finish__focus" />
-      <span className="dart-finish__target">
-        <span className="dart-finish__target-core" />
-      </span>
-
-      <span className="dart-finish__camera-arrow">
-        <span className="dart-finish__camera-shaft" />
-        <span className="dart-finish__camera-feathers">
-          <span />
-          <span />
-        </span>
-      </span>
-
-      <span className="dart-finish__arrow">
-        <span className="dart-finish__arrowhead" />
-        <span className="dart-finish__shaft" />
-        <span className="dart-finish__binding" />
-        <span className="dart-finish__fletching">
-          <span />
-          <span />
-        </span>
-        <span className="dart-finish__nock" />
+      <span className="dart-finish__projectile">
+        <span className="dart-finish__projectile-core" />
+        <span className="dart-finish__projectile-fin dart-finish__projectile-fin--north" />
+        <span className="dart-finish__projectile-fin dart-finish__projectile-fin--east" />
+        <span className="dart-finish__projectile-fin dart-finish__projectile-fin--south" />
+        <span className="dart-finish__projectile-fin dart-finish__projectile-fin--west" />
       </span>
 
       <span className="dart-finish__impact-ring dart-finish__impact-ring--one" />
@@ -81,6 +56,45 @@ export default function DartFinish({ phase, className }: DartFinishProps) {
       <span className="dart-finish__impact-spark dart-finish__impact-spark--one" />
       <span className="dart-finish__impact-spark dart-finish__impact-spark--two" />
       <span className="dart-finish__impact-spark dart-finish__impact-spark--three" />
+      <span className="dart-finish__boundary-callout">경계선!</span>
     </div>
+  );
+}
+
+export interface EmbeddedDartProps {
+  phase: DartFinishPhase;
+  /** Absolute rotor angle at the instant the dart hit twelve o'clock. */
+  impactRotation: number;
+  boundaryHit?: boolean;
+}
+
+/**
+ * Board-space dart. Its anchor counter-rotates only once to convert the fixed
+ * screen impact point into a wheel-local coordinate. From then on the rotor
+ * owns every movement, so the dart cannot drift away from the plate.
+ */
+export function EmbeddedDart({
+  phase,
+  impactRotation,
+  boundaryHit = false,
+}: EmbeddedDartProps) {
+  const style: EmbeddedDartStyle = {
+    '--dart-impact-rotation': `${-impactRotation}deg`,
+  };
+
+  return (
+    <span
+      className={`embedded-dart embedded-dart--${phase}${boundaryHit ? ' is-boundary-hit' : ''}`}
+      style={style}
+      aria-hidden="true"
+    >
+      <span className="embedded-dart__pin">
+        <span className="embedded-dart__core" />
+        <span className="embedded-dart__fin embedded-dart__fin--north" />
+        <span className="embedded-dart__fin embedded-dart__fin--east" />
+        <span className="embedded-dart__fin embedded-dart__fin--south" />
+        <span className="embedded-dart__fin embedded-dart__fin--west" />
+      </span>
+    </span>
   );
 }

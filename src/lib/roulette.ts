@@ -1,6 +1,6 @@
 export const AUTO_POINTER_ANGLE = -90;
 export const DART_IMPACT_ANGLE = -90;
-export const DART_FLIGHT_DURATION_SECONDS = 1.55;
+export const DART_FLIGHT_DURATION_SECONDS = 1.15;
 export const DART_POST_IMPACT_MIN_SECONDS = 1.05;
 export const DART_POST_IMPACT_MAX_SECONDS = 2.35;
 
@@ -9,6 +9,8 @@ export interface RouletteFinishLanding {
   entryGapDegrees: number;
   /** How far the pointer travels into the winning slice before stopping. */
   leadDegrees: number;
+  /** Requests the short boundary-hit callout without changing the result. */
+  boundaryHit?: boolean;
 }
 
 export interface RouletteFinishPlan {
@@ -28,6 +30,13 @@ export interface RouletteFinishPlan {
   boundaryAngle: number;
   /** Wheel-local angle beneath the pointer at the final stop. */
   landingAngle: number;
+}
+
+export interface DartRouletteFinishPlan extends RouletteFinishPlan {
+  /** Rotation when the fixed, front-facing dart reaches twelve o'clock. */
+  impactRotation: number;
+  /** Whole turns made with the dart physically attached to the board. */
+  coastTurns: number;
 }
 
 export interface RouletteSliceGeometry {
@@ -224,5 +233,44 @@ export function buildRouletteFinishPlan(
     focusAngle,
     boundaryAngle,
     landingAngle,
+  };
+}
+
+/**
+ * Builds a physically coupled dart finish.
+ *
+ * The committed winner is already beneath the fixed twelve-o'clock impact
+ * point when the dart lands. The board then makes only whole turns, so an
+ * embedded dart can live in the board's local coordinate system and return to
+ * the same point when the wheel stops. No visual re-aiming is needed after
+ * impact and the dart can never drift away from its winning slice.
+ */
+export function buildDartRouletteFinishPlan(
+  currentRotation: number,
+  winnerIndex: number,
+  participantCount: number,
+  flightTurns: number,
+  coastTurns: number,
+  weights?: readonly number[],
+  landing?: RouletteFinishLanding,
+): DartRouletteFinishPlan {
+  const landingPlan = buildRouletteFinishPlan(
+    currentRotation,
+    winnerIndex,
+    participantCount,
+    flightTurns,
+    weights,
+    landing,
+  );
+  const safeCoastTurns = Math.max(1, Math.floor(finiteNonNegative(coastTurns, 1)));
+  const impactRotation = landingPlan.finalRotation;
+
+  return {
+    ...landingPlan,
+    focusRotation: impactRotation,
+    boundaryRotation: impactRotation,
+    finalRotation: impactRotation + safeCoastTurns * 360,
+    impactRotation,
+    coastTurns: safeCoastTurns,
   };
 }
