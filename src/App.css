@@ -1511,8 +1511,12 @@
 
   .broadcast-focus__visual .roulette-wheel,
   .broadcast-focus__visual .roulette-wheel.is-dart {
-    --wheel-size: min(calc(100% - 2rem), 22rem, 42vh);
+    --wheel-size: min(100%, 22rem, 42vh);
     --wheel-stage-padding: 1rem;
+  }
+
+  .broadcast-focus__visual .roulette-wheel__stage {
+    padding-inline: var(--wheel-stage-padding);
   }
 
   .broadcast-focus.is-stage-only .broadcast-focus__heading {
