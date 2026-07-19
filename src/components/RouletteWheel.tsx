@@ -589,7 +589,10 @@ export default function RouletteWheel({
         weights,
         landing,
       );
-      actualBoundaryHit = isRoulettePhotoFinish(landing?.boundaryHit, participantCount, finishPlan);
+      // Auto roulette always crosses its real winning boundary on the slow
+      // finish, then settles farther inside the winner for an unambiguous
+      // pointer proof. Dart boundary callouts still require a near-edge hit.
+      actualBoundaryHit = Boolean(landing?.boundaryHit && participantCount > 1);
       const startingVelocity = idleAngularVelocityRef.current > 1
         ? idleAngularVelocityRef.current
         : IDLE_SPIN_DEGREES_PER_SECOND;
@@ -912,6 +915,8 @@ export default function RouletteWheel({
       data-run-phase={activeRunRef.current?.phase ?? 'none'}
       data-motion-phase={motionPhase}
       data-boundary-hit={landingBoundaryHit ? 'true' : 'false'}
+      data-winner-index={validWinner ? winnerIndex : undefined}
+      data-participant-count={participantCount}
       data-auto-whirl-duration={autoWhirlDuration.toFixed(3)}
       data-photo-finish-duration={autoPhotoFinishDuration.toFixed(3)}
       aria-label="Retto Roulette 추첨 룰렛"
@@ -923,6 +928,7 @@ export default function RouletteWheel({
 
         <div className="roulette-wheel__pointer" aria-hidden="true">
           <span className="roulette-wheel__pointer-pin" />
+          <span className="roulette-wheel__selection-anchor" />
         </div>
 
         <div

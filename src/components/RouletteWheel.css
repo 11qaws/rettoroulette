@@ -3,6 +3,7 @@
   --wheel-stage-padding: clamp(2.25rem, 7vw, 4rem);
   --wheel-rim-border: clamp(0.55rem, 1.8vw, 0.9rem);
   --wheel-spin-duration: 3.6s;
+  --wheel-pointer-height: clamp(2.5rem, calc(var(--wheel-size) * 0.09), 3.8rem);
   position: relative;
   width: 100%;
   display: grid;
@@ -262,7 +263,7 @@
 
 .roulette-wheel__pointer {
   --pointer-width: clamp(1.8rem, calc(var(--wheel-size) * 0.065), 2.8rem);
-  --pointer-height: clamp(2.5rem, calc(var(--wheel-size) * 0.09), 3.8rem);
+  --pointer-height: var(--wheel-pointer-height);
   position: absolute;
   z-index: 8;
   top: calc(50% - var(--wheel-size) / 2 - var(--pointer-height) + var(--wheel-rim-border) + 0.08rem);
@@ -271,7 +272,8 @@
   height: var(--pointer-height);
   filter: drop-shadow(0 0.38rem 0 var(--ink, #251c32));
   transform: translateX(-50%);
-  transform-origin: 50% 12%;
+  /* The triangle may tick, but its selecting tip never leaves twelve. */
+  transform-origin: 50% 100%;
   pointer-events: none;
 }
 
@@ -303,6 +305,20 @@
   border-radius: 50%;
   background: var(--lemon, #ffe45c);
   transform: translateX(-50%);
+}
+
+.roulette-wheel__selection-anchor {
+  position: absolute;
+  z-index: 3;
+  bottom: 0;
+  left: 50%;
+  width: clamp(0.34rem, calc(var(--wheel-size) * 0.011), 0.48rem);
+  aspect-ratio: 1;
+  border: 0.1rem solid var(--cream, #fff9e7);
+  border-radius: 50%;
+  background: var(--ink, #251c32);
+  box-shadow: 0 0 0 0.08rem var(--hot-pink, #ff4f87);
+  transform: translate(-50%, 50%);
 }
 
 .roulette-wheel__spark {
@@ -421,7 +437,7 @@
 
 @keyframes roulette-pointer-final-tick {
   0%, 100% {
-    transform: translateX(-50%) rotate(-9deg) scale(1);
+    transform: translateX(-50%) rotate(0deg) scale(1);
   }
   42% {
     transform: translateX(-50%) rotate(7deg) scale(1.08);

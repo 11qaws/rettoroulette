@@ -11,6 +11,7 @@ import {
   calculateDartPostImpactDuration,
   createDartShotPlan,
   getRouletteSliceGeometry,
+  getRouletteSliceIndexAtScreenAngle,
   isRoulettePhotoFinish,
   nextWheelRotation,
   normalizeRouletteWeights,
@@ -189,6 +190,54 @@ describe('buildRouletteFinishPlan', () => {
     expect(plan.leadDegrees).toBeGreaterThan(0);
     expect(plan.focusRotation).toBeLessThan(plan.boundaryRotation);
     expect(plan.boundaryRotation).toBeLessThan(plan.finalRotation);
+  });
+
+  it('uses a clear final proof point while keeping narrow winners centred', () => {
+    const broad = buildRouletteFinishPlan(0, 0, 5, 2, undefined, {
+      entryGapDegrees: 14,
+      leadDegrees: 0.4,
+      minimumProofLeadDegrees: 4,
+      boundaryHit: true,
+    });
+    const narrow = buildRouletteFinishPlan(0, 1, 2, 2, [99, 1], {
+      entryGapDegrees: 14,
+      leadDegrees: 0.4,
+      minimumProofLeadDegrees: 4,
+      boundaryHit: true,
+    });
+    const narrowWinner = getRouletteSliceGeometry(2, [99, 1])[1];
+
+    expect(broad.leadDegrees).toBe(4);
+    expect(narrow.leadDegrees).toBeCloseTo(
+      (narrowWinner.endAngle - narrowWinner.startAngle) / 2,
+      10,
+    );
+  });
+
+  it('keeps the committed winner under the twelve-o-clock pointer for representative wheels', () => {
+    for (const participantCount of [2, 3, 4, 5, 8, 10]) {
+      const weightSets = [
+        undefined,
+        Array.from({ length: participantCount }, (_, index) => index + 1),
+      ];
+
+      for (const weights of weightSets) {
+        for (let winnerIndex = 0; winnerIndex < participantCount; winnerIndex += 1) {
+          const plan = buildRouletteFinishPlan(137.25, winnerIndex, participantCount, 4, weights, {
+            entryGapDegrees: 15,
+            leadDegrees: 0.5,
+            minimumProofLeadDegrees: 4,
+            boundaryHit: true,
+          });
+
+          expect(getRouletteSliceIndexAtScreenAngle(
+            plan.finalRotation,
+            participantCount,
+            weights,
+          )).toBe(winnerIndex);
+        }
+      }
+    }
   });
 });
 

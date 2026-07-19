@@ -53,6 +53,7 @@ import './App.css';
 import './styles/rettoRoulette.cinematic.css';
 import './styles/rettoRoulette.flow.css';
 import './styles/rettoRoulette.preparation.css';
+import './styles/rettoRoulette.viewport.css';
 
 type DrawOption = {
   id: string;
@@ -179,6 +180,7 @@ function createFinishLanding(presentation: WheelPresentation): RouletteFinishLan
     ? {
         entryGapDegrees: 12 + Math.random() * 6,
         leadDegrees: 0.25 + Math.random() * 0.55,
+        minimumProofLeadDegrees: presentation === 'spin' ? 4 : undefined,
         boundaryHit: true,
       }
     : {

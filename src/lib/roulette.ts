@@ -22,6 +22,11 @@ export interface RouletteFinishLanding {
   entryGapDegrees: number;
   /** How far the pointer travels into the winning slice before stopping. */
   leadDegrees: number;
+  /**
+   * Optional final-proof clearance for an animated boundary crossing.
+   * Narrow wedges use their centre instead of crossing a second boundary.
+   */
+  minimumProofLeadDegrees?: number;
   /** Requests the short boundary-hit callout without changing the result. */
   boundaryHit?: boolean;
 }
@@ -345,6 +350,27 @@ export function getRouletteSliceGeometry(
   });
 }
 
+/** Resolves the visible wedge beneath a fixed screen-space selection point. */
+export function getRouletteSliceIndexAtScreenAngle(
+  rotation: number,
+  participantCount: number,
+  weights?: readonly number[],
+  screenAngle = AUTO_POINTER_ANGLE,
+) {
+  if (participantCount < 1 || !Number.isFinite(rotation) || !Number.isFinite(screenAngle)) {
+    return -1;
+  }
+
+  const normalizedLocalAngle = normalizeAngle(screenAngle - rotation);
+  const localAngle = normalizedLocalAngle >= 270 ? normalizedLocalAngle - 360 : normalizedLocalAngle;
+  const epsilon = 1e-9;
+
+  return getRouletteSliceGeometry(participantCount, weights).findIndex((slice) => (
+    localAngle >= slice.startAngle - epsilon
+    && localAngle < slice.endAngle - epsilon
+  ));
+}
+
 /**
  * Places the centre of a wheel slice beneath a fixed presentation point.
  * The pointer and dart share this calculation; only the reveal changes.
@@ -420,13 +446,19 @@ export function buildRouletteFinishPlan(
   const nextSpan = nextSlice.endAngle - nextSlice.startAngle;
   const requestedEntryGap = finiteNonNegative(landing.entryGapDegrees, 8);
   const requestedLead = finiteNonNegative(landing.leadDegrees, 12);
+  const requestedProofClearance = finiteNonNegative(landing.minimumProofLeadDegrees ?? 0, 0);
 
   // Leave ten per cent of either wedge untouched so the focus and final
   // positions remain unambiguously on their intended sides of the boundary.
   const minimumEntryGap = Math.min(0.1, nextSpan * 0.1);
   const minimumLead = Math.min(0.1, winnerSpan * 0.1);
+  const proofClearance = Math.min(requestedProofClearance, winnerSpan / 2);
   const entryGapDegrees = clamp(requestedEntryGap, minimumEntryGap, nextSpan * 0.9);
-  const leadDegrees = clamp(requestedLead, minimumLead, winnerSpan * 0.9);
+  const leadDegrees = clamp(
+    Math.max(requestedLead, proofClearance),
+    minimumLead,
+    winnerSpan * 0.9,
+  );
   const boundaryAngle = winner.endAngle;
   const focusAngle = boundaryAngle + entryGapDegrees;
   const landingAngle = boundaryAngle - leadDegrees;
