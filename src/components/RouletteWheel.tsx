@@ -5,13 +5,12 @@ import DartFinish, {
   BoundaryNames,
   EmbeddedDart,
   isDartBoundaryPhaseVisible,
+  type DartFinishPhase,
 } from './DartFinish';
 import {
-  buildDartRouletteFinishPlan,
   buildCommittedDartRouletteFinishPlan,
   buildRouletteFinishPlan,
   calculateAutoPhotoFinishTiming,
-  calculateDartFlightTiming,
   calculateDartPostImpactDuration,
   createRouletteGeometrySignature,
   DART_FLIGHT_DURATION_SECONDS,
@@ -51,8 +50,6 @@ export interface RouletteWheelProps {
   dartAim?: DartAimSession;
   /** Click-time physical impact that selected the dart winner. */
   dartCommit?: DartPhysicalCommit;
-  /** Allows the design preview to stage a dart without committing a live result. */
-  scriptedDartPreview?: boolean;
   /** Physical reveal beats used by the camera, sound, lighting and status UI. */
   onRevealPhase?: (event: RouletteRevealEvent) => void;
   /** Enables the host action only after the live rotor reaches cruise speed. */
@@ -120,9 +117,9 @@ const WHEEL_COLORS = [
 const VIEWBOX_CENTER = 300;
 const WHEEL_RADIUS = VIEWBOX_CENTER + 4;
 const DART_IMPACT_HIGHLIGHT_DELAY = 220;
-const DART_CONTACT_HOLD_DELAY = 72;
 const STOP_HOLD_DELAY = 950;
-const DART_STOP_HOLD_DELAY = 1_500;
+const DART_STOP_HOLD_DELAY = STOP_HOLD_DELAY;
+const BOUNDARY_RESOLVED_HOLD_DELAY = 220;
 const IDLE_SPIN_ACCELERATION_MS = 900;
 const IDLE_SPIN_DEGREES_PER_SECOND = 1080;
 const AUTO_WHIRL_FULL_TURNS = 4;
@@ -162,7 +159,6 @@ type ActiveWheelRun = {
 };
 
 type RouletteStyle = CSSProperties & {
-  '--wheel-rotation': string;
   '--slice-count': number;
   '--wheel-auto-whirl-duration': string;
   '--wheel-auto-brake-ease': string;
@@ -170,6 +166,10 @@ type RouletteStyle = CSSProperties & {
   '--wheel-dart-flight-duration': string;
   '--wheel-dart-attached-duration': string;
   '--wheel-post-impact-duration': string;
+};
+
+type RouletteDiscStyle = CSSProperties & {
+  '--wheel-rotation': string;
 };
 
 type RouletteImpactStyle = CSSProperties & {
@@ -237,7 +237,6 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   dartShot,
   dartAim,
   dartCommit,
-  scriptedDartPreview = false,
   onRevealPhase,
   onIdleCruise,
   onSpinEnd,
@@ -252,7 +251,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   const [spinPhase, setSpinPhase] = useState<SpinPhase>('idle');
   const [boundaryVisualPhase, setBoundaryVisualPhase] = useState<BoundaryVisualPhase>('idle');
   const [idleMotionPhase, setIdleMotionPhase] = useState<IdleMotionPhase>('stopped');
-  const [dartPhase, setDartPhase] = useState<'idle' | 'launch' | 'approach' | 'impact' | 'coast' | 'settled'>('idle');
+  const [dartPhase, setDartPhase] = useState<DartFinishPhase>('idle');
   const [dartImpactRotation, setDartImpactRotation] = useState(0);
   const [landingBoundaryHit, setLandingBoundaryHit] = useState(false);
   const [landingVisual, setLandingVisual] = useState<LandingVisualState | null>(null);
@@ -263,9 +262,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   const completedSpinKey = useRef<number | null>(null);
   const completionFallbackTimer = useRef<number | null>(null);
   const stopHoldTimer = useRef<number | null>(null);
-  const dartApproachTimer = useRef<number | null>(null);
   const dartImpactTimer = useRef<number | null>(null);
-  const dartContactTimer = useRef<number | null>(null);
   const dartNameRevealTimer = useRef<number | null>(null);
   const boundaryEnteredTimer = useRef<number | null>(null);
   const boundaryCrossedTimer = useRef<number | null>(null);
@@ -320,7 +317,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     onIdleCruiseRef.current = onIdleCruise;
   }, [onIdleCruise]);
 
-  const paintDartAim = useCallback((shot: DartShotPlan) => {
+  const paintDartAim = useCallback((shot: DartShotPlan, committed = false) => {
     const point = resolveDartImpactPoint(shot);
     const rim = rimRef.current;
     if (rim) {
@@ -333,8 +330,10 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
       rim.style.setProperty('--dart-jitter-b-x', `${point.jitterB.xPixels}px`);
       rim.style.setProperty('--dart-jitter-b-y', `${point.jitterB.yPixels}px`);
       rim.style.setProperty('--dart-roll', `${point.rollDegrees}deg`);
-      rim.dataset.dartImpactX = point.xPercent.toFixed(3);
-      rim.dataset.dartImpactY = point.yPercent.toFixed(3);
+      if (committed) {
+        rim.dataset.dartImpactX = point.xPercent.toFixed(3);
+        rim.dataset.dartImpactY = point.yPercent.toFixed(3);
+      }
     }
     lastPaintedAimRef.current = {
       impactAngleDegrees: point.impactAngleDegrees,
@@ -363,7 +362,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     dartAimFrozenRef.current = true;
     lastPaintedAimRef.current = dartShot;
     setDisplayAimShot(dartShot);
-    paintDartAim(dartShot);
+    paintDartAim(dartShot, true);
   }, [dartShot, paintDartAim]);
 
   useImperativeHandle(ref, () => ({
@@ -380,6 +379,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
       dartAimFrozenRef.current = true;
       setDartAimLocked(true);
       setDisplayAimShot(shot);
+      paintDartAim(shot, true);
       return {
         shot: {
           impactAngleDegrees: shot.impactAngleDegrees,
@@ -405,17 +405,9 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
       window.clearTimeout(stopHoldTimer.current);
       stopHoldTimer.current = null;
     }
-    if (dartApproachTimer.current !== null) {
-      window.clearTimeout(dartApproachTimer.current);
-      dartApproachTimer.current = null;
-    }
     if (dartImpactTimer.current !== null) {
       window.clearTimeout(dartImpactTimer.current);
       dartImpactTimer.current = null;
-    }
-    if (dartContactTimer.current !== null) {
-      window.clearTimeout(dartContactTimer.current);
-      dartContactTimer.current = null;
     }
     if (dartNameRevealTimer.current !== null) {
       window.clearTimeout(dartNameRevealTimer.current);
@@ -680,44 +672,14 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
           participantCount,
           DART_ATTACHED_COAST_TURNS,
           weights,
+          startingRotation + cruiseVelocity * 0.42,
         );
         const flightDistance = Math.max(1, dartPlan.impactRotation - startingRotation);
-        plannedDartFlightDuration = Math.max(0.42, flightDistance / cruiseVelocity);
+        plannedDartFlightDuration = flightDistance / cruiseVelocity;
         flightAngularVelocity = flightDistance / plannedDartFlightDuration;
-      } else if (scriptedDartPreview) {
-        const basePlan = buildDartRouletteFinishPlan(
-          startingRotation,
-          winnerIndex,
-          participantCount,
-          0,
-          DART_ATTACHED_COAST_TURNS,
-          weights,
-          landing,
-          dartShot,
-        );
-        const flightTiming = calculateDartFlightTiming(
-          basePlan.impactRotation - startingRotation,
-          cruiseVelocity,
-        );
-        dartPlan = buildDartRouletteFinishPlan(
-          startingRotation,
-          winnerIndex,
-          participantCount,
-          flightTiming.fullTurns,
-          DART_ATTACHED_COAST_TURNS,
-          weights,
-          landing,
-          dartShot,
-        );
-        plannedDartFlightDuration = Math.max(
-          0.42,
-          (dartPlan.impactRotation - startingRotation) / flightTiming.angularVelocity,
-        );
-        flightAngularVelocity = flightTiming.angularVelocity;
       } else {
-        // A live dart must never retarget a preselected winner. If its
-        // click-time physical commit is missing or stale, stop this visual run
-        // instead of silently falling back to the scripted preview path.
+        // A dart must never retarget a preselected winner. Live and preview
+        // both require the same click-time physical commit.
         activeRunRef.current = null;
         setIsAnimating(false);
         return;
@@ -821,7 +783,6 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     const fallbackDelay = isDartPresentation
       ? Math.ceil((
           plannedDartFlightDuration +
-          DART_CONTACT_HOLD_DELAY / 1_000 +
           DART_ATTACHED_PROOF_SECONDS +
           plannedPostImpactDuration +
           DART_STOP_HOLD_DELAY / 1_000 +
@@ -849,21 +810,19 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
         setBoundaryVisualPhase(activePlan.crossesBoundary ? 'crossed' : 'held');
         emitRevealPhase('boundary-entered', spinKey);
         emitRevealPhase(activePlan.crossesBoundary ? 'boundary-crossed' : 'boundary-held', spinKey);
+        boundaryEnteredTimer.current = window.setTimeout(() => {
+          boundaryEnteredTimer.current = null;
+          if (!isActiveRun(spinKey, runRevealId)) return;
+          beginProofHold(spinKey, runRevealId, false);
+        }, BOUNDARY_RESOLVED_HOLD_DELAY);
+        return;
       }
       beginProofHold(spinKey, runRevealId, isDartPresentation);
     }, fallbackDelay);
 
     if (isDartPresentation) {
-      setDartPhase('launch');
+      setDartPhase('flight');
       emitRevealPhase('dart-launched', spinKey);
-      dartApproachTimer.current = window.setTimeout(() => {
-        if (
-          isActiveRun(spinKey, runRevealId)
-          && activeRunRef.current?.phase === 'dart-flight'
-        ) {
-          setDartPhase('approach');
-        }
-      }, plannedDartFlightDuration * 0.37 * 1_000);
       rotationRef.current = finishPlan.boundaryRotation;
       activateRunPhase(spinKey, runRevealId, 'dart-flight', plannedDartFlightDuration);
       setRotation(finishPlan.boundaryRotation);
@@ -890,7 +849,6 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     revealId,
     spinKey,
     spinning,
-    scriptedDartPreview,
     weights,
     winnerIndex,
   ]);
@@ -926,10 +884,6 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
 
     if (run.phase === 'dart-flight') {
       if (!('impactRotation' in finishPlan)) return;
-      if (dartApproachTimer.current !== null) {
-        window.clearTimeout(dartApproachTimer.current);
-        dartApproachTimer.current = null;
-      }
       rotationRef.current = finishPlan.impactRotation;
       setDartPhase('impact');
       emitRevealPhase('dart-impacted', spinKey);
@@ -941,30 +895,23 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
         dartImpactTimer.current = null;
         setDartPhase('coast');
       }, DART_IMPACT_HIGHLIGHT_DELAY);
-      // Paint the exact contact frame before the board carries the dart away.
-      // Two requestAnimationFrame boundaries provide a short hit-stop while
-      // keeping the pre-impact rotor at full speed and the embedded dart in
-      // the same wheel-local coordinate for every following frame.
+      // Paint the exact contact frame, then let the board carry the embedded
+      // dart on the very next frame. Impact emphasis is visual only; physics
+      // never pauses for a timer.
       activateRunPhase(spinKey, runRevealId, 'dart-impact-contact');
       setRotation(finishPlan.impactRotation);
       dartAttachFrame.current = window.requestAnimationFrame(() => {
-        dartAttachFrame.current = window.requestAnimationFrame(() => {
-          dartAttachFrame.current = null;
-          if (!isActiveRun(spinKey, runRevealId)) return;
-          dartContactTimer.current = window.setTimeout(() => {
-            dartContactTimer.current = null;
-            if (!isActiveRun(spinKey, runRevealId)) return;
-            rotationRef.current = dartAttachedRotationRef.current;
-            activateRunPhase(
-              spinKey,
-              runRevealId,
-              'dart-attached-proof',
-              DART_ATTACHED_PROOF_SECONDS,
-            );
-            setRotation(dartAttachedRotationRef.current);
-            emitRevealPhase('dart-attached', spinKey);
-          }, DART_CONTACT_HOLD_DELAY);
-        });
+        dartAttachFrame.current = null;
+        if (!isActiveRun(spinKey, runRevealId)) return;
+        rotationRef.current = dartAttachedRotationRef.current;
+        activateRunPhase(
+          spinKey,
+          runRevealId,
+          'dart-attached-proof',
+          DART_ATTACHED_PROOF_SECONDS,
+        );
+        setRotation(dartAttachedRotationRef.current);
+        emitRevealPhase('dart-attached', spinKey);
       });
       return;
     }
@@ -1044,7 +991,11 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
         finishPlan.crossesBoundary ? 'boundary-crossed' : 'boundary-held',
         spinKey,
       );
-      beginProofHold(spinKey, runRevealId, false);
+      boundaryEnteredTimer.current = window.setTimeout(() => {
+        boundaryEnteredTimer.current = null;
+        if (!isActiveRun(spinKey, runRevealId)) return;
+        beginProofHold(spinKey, runRevealId, false);
+      }, BOUNDARY_RESOLVED_HOLD_DELAY);
     }
   };
 
@@ -1072,18 +1023,20 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   );
   const showBoundaryNames = participantCount > 1 && validWinner && (
     (!isDartPresentation && landingBoundaryHit && isBoundaryFocus) ||
-    (isDartPresentation && landingBoundaryHit && isDartBoundaryPhaseVisible(dartPhase))
+    (isDartPresentation && landingBoundaryHit && dartNamesRevealed && isDartBoundaryPhaseVisible(dartPhase))
   );
-  const isBoundaryResolved = boundaryVisualPhase === 'crossed' || boundaryVisualPhase === 'held';
+  const isAutoBoundaryStopped = !isDartPresentation
+    && landingBoundaryHit
+    && spinPhase === 'stop-hold';
   const boundaryWinnerSide =
-    (!isDartPresentation && isBoundaryResolved) || isDartBoundaryStop
+    isAutoBoundaryStopped || isDartBoundaryStop
       ? currentLandingVisual?.winnerSide ?? undefined
       : undefined;
   const showBoundaryWinnerSlice = Boolean(
     validWinner &&
     landingBoundaryHit &&
     (
-      (!isDartPresentation && isBoundaryResolved) ||
+      isAutoBoundaryStopped ||
       isDartBoundaryStop
     ),
   );
@@ -1115,7 +1068,6 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     .filter(Boolean)
     .join(' ');
   const wheelStyle: RouletteStyle = {
-    '--wheel-rotation': `${rotation}deg`,
     '--slice-count': Math.max(1, participantCount),
     '--wheel-auto-whirl-duration': `${autoWhirlDuration}s`,
     '--wheel-auto-brake-ease': autoBrakeEase,
@@ -1123,6 +1075,9 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     '--wheel-dart-flight-duration': `${dartFlightDuration}s`,
     '--wheel-dart-attached-duration': `${DART_ATTACHED_PROOF_SECONDS}s`,
     '--wheel-post-impact-duration': `${postImpactDuration}s`,
+  };
+  const discStyle: RouletteDiscStyle = {
+    '--wheel-rotation': `${rotation}deg`,
   };
   const impactStyle: RouletteImpactStyle = {
     '--dart-impact-x': `${dartImpactPoint.xPercent}%`,
@@ -1150,6 +1105,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
       data-participant-count={participantCount}
       data-auto-whirl-duration={autoWhirlDuration.toFixed(3)}
       data-photo-finish-duration={autoPhotoFinishDuration.toFixed(3)}
+      style={wheelStyle}
       aria-label="Retto Roulette 추첨 룰렛"
     >
       <div className="roulette-wheel__stage">
@@ -1174,7 +1130,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
           <div
             ref={discRef}
             className="roulette-wheel__disc"
-            style={wheelStyle}
+            style={discStyle}
             onTransitionEnd={handleTransitionEnd}
           >
             <svg

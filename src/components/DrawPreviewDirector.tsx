@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 import type { DrawMode, DrawTarget, WheelPresentation } from '../types';
 import {
-  createDartShotPlan,
+  createDartAimSession,
+  createDartPhysicalCommit,
   createRouletteFinishLanding,
-  type DartShotPlan,
+  resolveDartImpactPoint,
+  type DartAimSession,
+  type DartPhysicalCommit,
   type RouletteFinishLanding,
 } from '../lib/roulette';
-import type { RouletteRevealEvent, RouletteRevealPhase } from './RouletteWheel';
+import type {
+  RouletteRevealEvent,
+  RouletteRevealPhase,
+  RouletteWheelHandle,
+} from './RouletteWheel';
 import MarbleRace from './MarbleRace';
 import RouletteWheel from './RouletteWheel';
 
@@ -15,7 +23,7 @@ import './DrawPreviewDirector.css';
 
 const SAMPLE_PEOPLE = ['아모레또', '유레카', '세나', '코코', '망징이'];
 const SAMPLE_PRIZES = ['선물 A', '선물 B', '선물 C', '선물 D', '선물 E', '선물 F'];
-const PREVIEW_CRUISE_DELAY = 900;
+const PREVIEW_COMMIT_DELAY = 120;
 const PREVIEW_RESULT_HOLD = 900;
 const PREVIEW_RESTART_GAP = 220;
 
@@ -44,7 +52,20 @@ function createPreviewLandingRandom(seed: number, presentation: WheelPresentatio
   };
 }
 
-type PreviewPhase = 'idle' | 'cruise' | 'motion' | 'hold' | RouletteRevealPhase;
+type PreviewPhase =
+  | 'idle'
+  | 'cruise'
+  | 'result-committed'
+  | 'motion-started'
+  | 'hold'
+  | RouletteRevealPhase;
+
+type PreviewCameraStyle = CSSProperties & {
+  '--cinematic-impact-x': string;
+  '--cinematic-impact-y': string;
+  '--cinematic-final-x': string;
+  '--cinematic-final-y': string;
+};
 
 export interface DrawPreviewDirectorProps {
   names: readonly string[];
@@ -62,15 +83,17 @@ export default function DrawPreviewDirector({
   presentation,
 }: DrawPreviewDirectorProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const wheelRef = useRef<RouletteWheelHandle>(null);
   const timersRef = useRef<number[]>([]);
   const runIdRef = useRef(0);
+  const armedRunIdRef = useRef(0);
   const spinKeyRef = useRef(0);
   const sampleIndexRef = useRef(0);
   const singleRunRef = useRef(false);
   const [spinKey, setSpinKey] = useState(0);
-  const [visualRunId, setVisualRunId] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState<number | null>(null);
-  const [dartShot, setDartShot] = useState<DartShotPlan>(() => createDartShotPlan(() => 0.5));
+  const [dartAim, setDartAim] = useState<DartAimSession | null>(null);
+  const [dartCommit, setDartCommit] = useState<DartPhysicalCommit | null>(null);
   const [landing, setLanding] = useState<RouletteFinishLanding>(() => (
     createRouletteFinishLanding(presentation, () => 0.5)
   ));
@@ -108,28 +131,92 @@ export default function DrawPreviewDirector({
     clearTimers();
     runIdRef.current += 1;
     const runId = runIdRef.current;
-    setVisualRunId(runId);
+    armedRunIdRef.current = 0;
     singleRunRef.current = single;
     setMoving(false);
     setWinnerIndex(null);
+    setDartCommit(null);
+    setDartAim(presentation === 'dart'
+      ? createDartAimSession(
+          runId,
+          typeof performance === 'undefined' ? Date.now() : performance.now(),
+          createPreviewRandom(runId + 301),
+        )
+      : null);
     setPhase(reducedMotion && !single ? 'idle' : 'cruise');
 
     if (!active || (reducedMotion && !single) || previewNames.length === 0) return;
 
+    if (mode === 'marble') {
+      schedule(() => {
+        if (runId !== runIdRef.current) return;
+        const nextWinner = sampleIndexRef.current % previewNames.length;
+        sampleIndexRef.current += 1;
+        spinKeyRef.current += 1;
+        setWinnerIndex(nextWinner);
+        setSpinKey(spinKeyRef.current);
+        setPhase('motion-started');
+        setMoving(true);
+      }, 520);
+    }
+  }, [active, clearTimers, mode, presentation, previewNames.length, reducedMotion, schedule]);
+
+  const commitWheelPreview = useCallback((runId: number) => {
+    if (runId !== runIdRef.current || previewNames.length === 0 || mode !== 'wheel') return;
+
+    sampleIndexRef.current += 1;
+    const sampleIndex = sampleIndexRef.current;
+    let nextWinner: number;
+    let nextLanding: RouletteFinishLanding;
+    let nextDartCommit: DartPhysicalCommit | null = null;
+
+    if (presentation === 'dart') {
+      const capture = wheelRef.current?.freezeDartAim();
+      if (!capture) {
+        armedRunIdRef.current = 0;
+        return;
+      }
+      nextDartCommit = createDartPhysicalCommit(
+        capture.rotation,
+        capture.angularVelocity,
+        previewNames.length,
+        previewWeights,
+        capture.shot,
+      );
+      if (!nextDartCommit) {
+        armedRunIdRef.current = 0;
+        return;
+      }
+      nextWinner = nextDartCommit.winnerIndex;
+      nextLanding = nextDartCommit.landing;
+    } else {
+      nextWinner = (sampleIndex - 1) % previewNames.length;
+      nextLanding = createRouletteFinishLanding(
+        presentation,
+        createPreviewLandingRandom(sampleIndex, presentation),
+      );
+    }
+
+    spinKeyRef.current += 1;
+    const nextSpinKey = spinKeyRef.current;
+    setLanding(nextLanding);
+    setDartCommit(nextDartCommit);
+    setWinnerIndex(nextWinner);
+    setPhase('result-committed');
     schedule(() => {
       if (runId !== runIdRef.current) return;
-      const nextWinner = sampleIndexRef.current % previewNames.length;
-      sampleIndexRef.current += 1;
-      spinKeyRef.current += 1;
-      const previewRandom = createPreviewLandingRandom(sampleIndexRef.current, presentation);
-      setLanding(createRouletteFinishLanding(presentation, previewRandom));
-      setDartShot(createDartShotPlan(createPreviewRandom(sampleIndexRef.current + 101)));
-      setWinnerIndex(nextWinner);
-      setSpinKey(spinKeyRef.current);
-      setPhase('motion');
+      setSpinKey(nextSpinKey);
+      setPhase('motion-started');
       setMoving(true);
-    }, mode === 'marble' ? 520 : PREVIEW_CRUISE_DELAY);
-  }, [active, clearTimers, mode, presentation, previewNames.length, reducedMotion, schedule]);
+    }, presentation === 'dart' ? 0 : 140);
+  }, [mode, presentation, previewNames.length, previewWeights, schedule]);
+
+  const handleIdleCruise = useCallback(() => {
+    const runId = runIdRef.current;
+    if (!active || mode !== 'wheel' || armedRunIdRef.current === runId) return;
+    armedRunIdRef.current = runId;
+    schedule(() => commitWheelPreview(runId), PREVIEW_COMMIT_DELAY);
+  }, [active, commitWheelPreview, mode, schedule]);
 
   const finishCycle = useCallback((runId: number) => {
     if (runId !== runIdRef.current) return;
@@ -140,6 +227,7 @@ export default function DrawPreviewDirector({
     schedule(() => {
       if (runId !== runIdRef.current) return;
       setWinnerIndex(null);
+      setDartCommit(null);
       setPhase('idle');
       schedule(() => {
         if (runId !== runIdRef.current) return;
@@ -193,11 +281,20 @@ export default function DrawPreviewDirector({
 
   const rootClassName = [
     'draw-preview-director',
+    'broadcast-focus',
     `preview-phase--${phase}`,
+    `reveal-phase--${phase}`,
     moving ? 'is-moving' : '',
     isSample ? 'is-sample' : '',
     reducedMotion ? 'is-reduced-motion' : '',
   ].filter(Boolean).join(' ');
+  const previewImpactPoint = resolveDartImpactPoint(dartCommit?.shot);
+  const cameraStyle: PreviewCameraStyle = {
+    '--cinematic-impact-x': `${previewImpactPoint.xPercent}%`,
+    '--cinematic-impact-y': `${previewImpactPoint.yPercent}%`,
+    '--cinematic-final-x': `${previewImpactPoint.finalXPercent}%`,
+    '--cinematic-final-y': `${previewImpactPoint.finalYPercent}%`,
+  };
 
   return (
     <div ref={rootRef} className={rootClassName} data-preview-signature={signature}>
@@ -206,23 +303,26 @@ export default function DrawPreviewDirector({
         <span>{isSample ? '샘플 명단' : '결과에 반영되지 않음'}</span>
       </div>
 
-      <div className="draw-preview-director__viewport" key={`${signature}-${visualRunId}`}>
+      <div className="draw-preview-director__viewport broadcast-focus__camera" style={cameraStyle}>
         {mode === 'wheel' ? (
           <RouletteWheel
+            ref={wheelRef}
             participants={previewNames}
             weights={previewWeights}
             itemType={target === 'prizes' ? 'prize' : 'participant'}
             winnerIndex={winnerIndex}
             spinning={moving}
-            idleSpinning={active && !reducedMotion && !moving && winnerIndex === null}
+            idleSpinning={active && phase !== 'idle' && !moving && winnerIndex === null}
             spinKey={spinKey}
             revealId={spinKey}
             presentation={presentation}
-            scriptedDartPreview
             landing={landing}
-            dartShot={presentation === 'dart' ? dartShot : undefined}
+            dartShot={presentation === 'dart' ? dartCommit?.shot : undefined}
+            dartAim={presentation === 'dart' ? dartAim ?? undefined : undefined}
+            dartCommit={presentation === 'dart' ? dartCommit ?? undefined : undefined}
             onRevealPhase={handleRevealPhase}
-            onSpinEnd={() => finishCycle(visualRunId)}
+            onIdleCruise={handleIdleCruise}
+            onSpinEnd={() => finishCycle(runIdRef.current)}
           />
         ) : (
           <MarbleRace
@@ -231,7 +331,7 @@ export default function DrawPreviewDirector({
             winnerIndex={winnerIndex}
             racing={moving}
             raceKey={spinKey}
-            onRaceEnd={() => finishCycle(visualRunId)}
+            onRaceEnd={() => finishCycle(runIdRef.current)}
           />
         )}
       </div>
@@ -240,6 +340,7 @@ export default function DrawPreviewDirector({
         className="draw-preview-director__replay"
         type="button"
         onClick={() => startCycle(reducedMotion)}
+        disabled={moving}
         aria-label="연출 미리보기 다시 재생"
       >
         ↻ 다시 보기

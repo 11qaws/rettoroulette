@@ -4,7 +4,7 @@ import { DART_FLIGHT_DURATION_SECONDS } from '../lib/roulette';
 import './DartFinish.css';
 
 /** The business state lives in App; these are visual beats only. */
-export type DartFinishPhase = 'idle' | 'launch' | 'approach' | 'impact' | 'coast' | 'settled';
+export type DartFinishPhase = 'idle' | 'flight' | 'impact' | 'coast' | 'settled';
 
 export interface DartFinishProps {
   phase: DartFinishPhase;
@@ -19,8 +19,7 @@ type EmbeddedDartStyle = CSSProperties & {
 };
 
 type DartFinishStyle = CSSProperties & {
-  '--dart-launch-duration': string;
-  '--dart-approach-duration': string;
+  '--dart-flight-duration': string;
 };
 
 type BoundaryNamesStyle = CSSProperties & {
@@ -42,10 +41,8 @@ export default function DartFinish({
   const safeFlightDuration = Number.isFinite(flightDurationSeconds)
     ? Math.max(0.42, flightDurationSeconds)
     : DART_FLIGHT_DURATION_SECONDS;
-  const launchDuration = safeFlightDuration * 0.37;
   const style: DartFinishStyle = {
-    '--dart-launch-duration': `${launchDuration}s`,
-    '--dart-approach-duration': `${safeFlightDuration - launchDuration}s`,
+    '--dart-flight-duration': `${safeFlightDuration}s`,
   };
   const rootClassName = [
     'dart-finish',
@@ -58,29 +55,31 @@ export default function DartFinish({
 
   return (
     <div className={rootClassName} data-phase={phase} style={style} aria-hidden="true">
-      <span className="dart-finish__flash" />
-      <span className="dart-finish__speed-field" />
-      <span className="dart-finish__target" data-dart-impact-anchor="screen">
-        <span />
+      <span className="dart-finish__impact-anchor">
+        <span className="dart-finish__flash" />
+        <span className="dart-finish__speed-field" />
+        <span className="dart-finish__target" data-dart-impact-anchor="screen">
+          <span />
+        </span>
+
+        <span className="dart-finish__ring dart-finish__ring--one" />
+        <span className="dart-finish__ring dart-finish__ring--two" />
+        <span className="dart-finish__ring dart-finish__ring--three" />
+
+        <span className="dart-finish__projectile">
+          <span className="dart-finish__projectile-core" />
+          <span className="dart-finish__projectile-fin dart-finish__projectile-fin--north" />
+          <span className="dart-finish__projectile-fin dart-finish__projectile-fin--east" />
+          <span className="dart-finish__projectile-fin dart-finish__projectile-fin--south" />
+          <span className="dart-finish__projectile-fin dart-finish__projectile-fin--west" />
+        </span>
+
+        <span className="dart-finish__impact-ring dart-finish__impact-ring--one" />
+        <span className="dart-finish__impact-ring dart-finish__impact-ring--two" />
+        <span className="dart-finish__impact-spark dart-finish__impact-spark--one" />
+        <span className="dart-finish__impact-spark dart-finish__impact-spark--two" />
+        <span className="dart-finish__impact-spark dart-finish__impact-spark--three" />
       </span>
-
-      <span className="dart-finish__ring dart-finish__ring--one" />
-      <span className="dart-finish__ring dart-finish__ring--two" />
-      <span className="dart-finish__ring dart-finish__ring--three" />
-
-      <span className="dart-finish__projectile">
-        <span className="dart-finish__projectile-core" />
-        <span className="dart-finish__projectile-fin dart-finish__projectile-fin--north" />
-        <span className="dart-finish__projectile-fin dart-finish__projectile-fin--east" />
-        <span className="dart-finish__projectile-fin dart-finish__projectile-fin--south" />
-        <span className="dart-finish__projectile-fin dart-finish__projectile-fin--west" />
-      </span>
-
-      <span className="dart-finish__impact-ring dart-finish__impact-ring--one" />
-      <span className="dart-finish__impact-ring dart-finish__impact-ring--two" />
-      <span className="dart-finish__impact-spark dart-finish__impact-spark--one" />
-      <span className="dart-finish__impact-spark dart-finish__impact-spark--two" />
-      <span className="dart-finish__impact-spark dart-finish__impact-spark--three" />
       <span className="dart-finish__boundary-callout">경계선!</span>
     </div>
   );
@@ -101,7 +100,7 @@ export interface BoundaryNamesProps {
 }
 
 export function isDartBoundaryPhaseVisible(phase: DartFinishPhase) {
-  return phase === 'impact' || phase === 'coast' || phase === 'settled';
+  return phase === 'coast' || phase === 'settled';
 }
 
 /**

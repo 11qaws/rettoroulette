@@ -36,7 +36,6 @@ export interface PreparationInput {
   poolLimit: number;
   prizeInventoryCount: number;
   drawOptionCount: number;
-  effectiveWinnerCount: number;
   useWeights: boolean;
 }
 
@@ -122,6 +121,6 @@ export function derivePreparationReadiness(input: PreparationInput): Preparation
   return {
     state: 'ready',
     statusLabel: '준비 완료',
-    ctaLabel: `${input.drawOptionCount}${unit} 중 ${input.effectiveWinnerCount}${unit} · 방송 화면 열기`,
+    ctaLabel: `${input.drawOptionCount}${unit} · 한 번에 1${unit} · 방송 화면 열기`,
   };
 }

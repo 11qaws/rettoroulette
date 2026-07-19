@@ -2,7 +2,7 @@ import { useId, type ReactNode } from 'react';
 
 import './BroadcastActionDock.css';
 
-export type BroadcastActionDockPhase = 'ready' | 'awaiting' | 'completed';
+export type BroadcastActionDockPhase = 'ready' | 'completed';
 export type BroadcastActionTone = 'normal' | 'quiet' | 'danger';
 
 export interface BroadcastDockAction {

@@ -22,7 +22,7 @@ const ALLOWED_TRANSITIONS: Record<RaffleStatus, Partial<Record<RaffleEvent, Raff
   },
   ready: {
     'open-roster': 'roster',
-    'open-configuration': 'configuring',
+    'end-broadcast': 'configuring',
     'lock-result': 'locking',
   },
   locking: {
@@ -30,16 +30,11 @@ const ALLOWED_TRANSITIONS: Record<RaffleStatus, Partial<Record<RaffleEvent, Raff
   },
   presenting: {
     'lock-result': 'locking',
-    'await-next-dart': 'awaiting-dart',
     'complete-round': 'completed',
-  },
-  'awaiting-dart': {
-    'lock-result': 'locking',
-    'end-round-early': 'completed',
   },
   completed: {
     'open-roster': 'roster',
-    'open-configuration': 'configuring',
+    'end-broadcast': 'configuring',
     'start-next-round': 'ready',
   },
 };
@@ -54,19 +49,12 @@ describe('raffle lifecycle', () => {
     expect(getRaffleTransition('completed', 'start-next-round')).toBe('ready');
   });
 
-  it('keeps a multi-shot dart round locked until it is completed or ended', () => {
-    expect(getRaffleTransition('presenting', 'await-next-dart')).toBe('awaiting-dart');
-    expect(getRaffleTransition('awaiting-dart', 'lock-result')).toBe('locking');
-    expect(getRaffleTransition('awaiting-dart', 'end-round-early')).toBe('completed');
-    expect(getRaffleTransition('awaiting-dart', 'open-configuration')).toBeNull();
-    expect(isRaffleActive('awaiting-dart')).toBe(true);
-    expect(isRaffleActive('completed')).toBe(false);
-  });
-
   it('allows roster and rule changes only from a safe boundary', () => {
     expect(getRaffleTransition('ready', 'open-roster')).toBe('roster');
-    expect(getRaffleTransition('completed', 'open-configuration')).toBe('configuring');
+    expect(getRaffleTransition('ready', 'end-broadcast')).toBe('configuring');
+    expect(getRaffleTransition('completed', 'end-broadcast')).toBe('configuring');
     expect(getRaffleTransition('presenting', 'open-roster')).toBeNull();
+    expect(getRaffleTransition('presenting', 'end-broadcast')).toBeNull();
   });
 
   it('defines every allowed and forbidden transition in one exhaustive matrix', () => {
@@ -79,15 +67,15 @@ describe('raffle lifecycle', () => {
   });
 
   it('never edits rules or the roster while a result is being fixed or revealed', () => {
-    for (const status of ['locking', 'presenting', 'awaiting-dart'] as const) {
+    for (const status of ['locking', 'presenting'] as const) {
       expect(getRaffleTransition(status, 'open-roster')).toBeNull();
-      expect(getRaffleTransition(status, 'open-configuration')).toBeNull();
+      expect(getRaffleTransition(status, 'end-broadcast')).toBeNull();
       expect(getRaffleTransition(status, 'open-stage')).toBeNull();
     }
   });
 
   it('treats only the result-owning states as active', () => {
     const activeStatuses = RAFFLE_STATUSES.filter(isRaffleActive);
-    expect(activeStatuses).toEqual(['locking', 'presenting', 'awaiting-dart']);
+    expect(activeStatuses).toEqual(['locking', 'presenting']);
   });
 });

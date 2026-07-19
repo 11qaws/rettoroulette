@@ -196,6 +196,14 @@
   --cinematic-camera-ease: cubic-bezier(0.16, 0.78, 0.2, 1);
 }
 
+.broadcast-focus.reveal-phase--dart-names-revealed:has(.roulette-wheel[data-boundary-hit='true']) {
+  --cinematic-camera-scale: 1.5;
+}
+
+.broadcast-focus.reveal-phase--dart-names-revealed:has(.roulette-wheel[data-boundary-hit='false']) {
+  --cinematic-camera-scale: 1.18;
+}
+
 .broadcast-focus.reveal-phase--dart-names-revealed .broadcast-focus__camera {
   transform-origin:
     var(--cinematic-final-x, 50%)
@@ -211,9 +219,15 @@
 }
 
 .broadcast-focus.reveal-phase--rotation-stopped:has(.roulette-wheel.is-dart) {
-  --cinematic-camera-scale: 1.38;
-  --cinematic-camera-y: 0.25%;
+  --cinematic-camera-scale: 1.62;
+  --cinematic-camera-y: 0.55%;
   --cinematic-camera-duration: 520ms;
+}
+
+/* Interior stops need a clear pointer proof, not a fake boundary macro. */
+.broadcast-focus.reveal-phase--rotation-stopped:has(.roulette-wheel[data-boundary-hit='false']) {
+  --cinematic-camera-scale: 1.14;
+  --cinematic-camera-y: 0;
 }
 
 .broadcast-focus.reveal-phase--rotation-stopped:has(.roulette-wheel.is-dart) .broadcast-focus__camera {

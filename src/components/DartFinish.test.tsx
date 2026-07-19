@@ -1,7 +1,19 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { BoundaryNames, isDartBoundaryPhaseVisible } from './DartFinish';
+import DartFinish, { BoundaryNames, isDartBoundaryPhaseVisible } from './DartFinish';
+
+describe('DartFinish', () => {
+  it('uses one continuous flight phase on one shared impact anchor', () => {
+    const markup = renderToStaticMarkup(<DartFinish phase="flight" />);
+
+    expect(markup).toContain('dart-finish--flight');
+    expect(markup).toContain('--dart-flight-duration:1.15s');
+    expect(markup).toContain('dart-finish__impact-anchor');
+    expect(markup).not.toContain('dart-finish--launch');
+    expect(markup).not.toContain('dart-finish--approach');
+  });
+});
 
 describe('BoundaryNames', () => {
   it('renders explicit physical left and right candidates', () => {
@@ -74,10 +86,10 @@ describe('BoundaryNames', () => {
     expect(markup).not.toContain('is-winner');
   });
 
-  it('keeps a real dart boundary visible from impact through the final stop', () => {
-    expect(isDartBoundaryPhaseVisible('launch')).toBe(false);
-    expect(isDartBoundaryPhaseVisible('approach')).toBe(false);
-    expect(isDartBoundaryPhaseVisible('impact')).toBe(true);
+  it('allows the full dart boundary proof only during the final one-second coast', () => {
+    expect(isDartBoundaryPhaseVisible('idle')).toBe(false);
+    expect(isDartBoundaryPhaseVisible('flight')).toBe(false);
+    expect(isDartBoundaryPhaseVisible('impact')).toBe(false);
     expect(isDartBoundaryPhaseVisible('coast')).toBe(true);
     expect(isDartBoundaryPhaseVisible('settled')).toBe(true);
   });

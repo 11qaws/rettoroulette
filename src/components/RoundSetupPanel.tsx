@@ -16,8 +16,6 @@ export interface RoundSetupPanelProps {
   drawOptionCount: number;
   excludedCount: number;
   poolLimit: number;
-  winnerCount: number;
-  maximumWinnerCount: number;
   prizes: Prize[];
   rewardLabel: string;
   drawLabel: string;
@@ -31,7 +29,6 @@ export interface RoundSetupPanelProps {
   onRecipientChange: (value: string) => void;
   onPoolLimitChange: (value: number) => void;
   onReshufflePool: () => void;
-  onWinnerCountChange: (value: number) => void;
   onPresentationChange: (choice: PresentationChoice) => void;
   onRemoveAfterDrawChange: (value: boolean) => void;
   onUseWeightsChange: (value: boolean) => void;
@@ -58,8 +55,6 @@ export default function RoundSetupPanel({
   drawOptionCount,
   excludedCount,
   poolLimit,
-  winnerCount,
-  maximumWinnerCount,
   prizes,
   rewardLabel,
   drawLabel,
@@ -73,7 +68,6 @@ export default function RoundSetupPanel({
   onRecipientChange,
   onPoolLimitChange,
   onReshufflePool,
-  onWinnerCountChange,
   onPresentationChange,
   onRemoveAfterDrawChange,
   onUseWeightsChange,
@@ -85,9 +79,7 @@ export default function RoundSetupPanel({
   onPrizeWeightChange,
   onRemovePrize,
 }: RoundSetupPanelProps) {
-  const countInputId = useId();
   const poolInputId = useId();
-  const countUnit = target === 'people' ? '명' : '개';
   const presentationChoice: PresentationChoice = wheelPresentation;
   const validPrizes = prizes.filter((prize) => prize.name.trim() && prize.quantity > 0);
   const validPrizeInventory = validPrizes.reduce((sum, prize) => sum + Math.max(0, prize.quantity), 0);
@@ -98,7 +90,6 @@ export default function RoundSetupPanel({
     : validPrizes.length === 0
       ? '상품 없음'
       : `${validPrizes.length}종 · 재고 ${validPrizeInventory}개`;
-  const maximumForInput = Math.max(1, maximumWinnerCount);
   const poolSampleSize = poolLimit > 0 ? poolLimit : Math.min(10, eligibleParticipants.length);
   const extraSettingCount = [
     poolLimit > 0,
@@ -160,35 +151,6 @@ export default function RoundSetupPanel({
           />
         </div>
       )}
-
-      <div className="round-setup__row round-setup__row--count">
-        <label className="round-setup__label" htmlFor={countInputId}>당첨 {target === 'people' ? '인원' : '수량'}</label>
-        <div className="round-setup__count-control">
-          <button
-            type="button"
-            aria-label={`${countUnit} 수 줄이기`}
-            disabled={disabled || maximumWinnerCount === 0 || winnerCount <= 1}
-            onClick={() => onWinnerCountChange(winnerCount - 1)}
-          >−</button>
-          <input
-            id={countInputId}
-            type="number"
-            min="1"
-            max={maximumForInput}
-            value={maximumWinnerCount === 0 ? '' : Math.max(1, winnerCount)}
-            placeholder="—"
-            disabled={disabled || maximumWinnerCount === 0}
-            onChange={(event) => onWinnerCountChange(clampWholeNumber(Number(event.target.value), 1, maximumForInput))}
-          />
-          <span>{countUnit}</span>
-          <button
-            type="button"
-            aria-label={`${countUnit} 수 늘리기`}
-            disabled={disabled || maximumWinnerCount === 0 || winnerCount >= maximumWinnerCount}
-            onClick={() => onWinnerCountChange(winnerCount + 1)}
-          >＋</button>
-        </div>
-      </div>
 
       <div className="round-setup__row round-setup__row--presentation">
         <span className="round-setup__label">연출</span>

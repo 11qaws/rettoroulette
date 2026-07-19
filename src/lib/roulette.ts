@@ -4,7 +4,8 @@ export const DART_FLIGHT_DURATION_SECONDS = 1.15;
 export const DART_POST_IMPACT_MIN_SECONDS = 1.05;
 export const DART_POST_IMPACT_MAX_SECONDS = 2.35;
 export const PHOTO_FINISH_MAX_LEAD_DEGREES = 2.2;
-export const AUTO_PHOTO_FINISH_MIN_SECONDS = 1.45;
+/** The two boundary candidates must remain readable for roughly two seconds. */
+export const AUTO_PHOTO_FINISH_MIN_SECONDS = 1.95;
 export const DART_BOUNDARY_MAX_DEGREES = 2.2;
 
 export type RouletteLandingKind = 'near-start' | 'near-end' | 'interior';
@@ -55,11 +56,9 @@ export interface DartShotPlan {
 export interface DartAimSession {
   id: number;
   startedAt: number;
-  baseAngleDegrees: number;
-  angleAmplitudeDegrees: number;
-  baseRadiusRatio: number;
-  radiusAmplitudeRatio: number;
-  phaseRadians: number;
+  /** Seeded hand-like waypoints; interpolation is C2 at every junction. */
+  waypoints: Array<{ angleDegrees: number; radiusRatio: number }>;
+  segmentDurationSeconds: number;
   jitterA: { xPixels: number; yPixels: number };
   jitterB: { xPixels: number; yPixels: number };
   rollDegrees: number;
@@ -173,7 +172,7 @@ export function createRouletteFinishLanding(
       ? 'near-end'
       : 'near-start';
     const leadDegrees = presentation === 'spin'
-      ? 1.8 + nextUnitRandom(random) * 2.6
+      ? 0.35 + nextUnitRandom(random) * 1.3
       : 0.25 + nextUnitRandom(random) * 0.6;
 
     return {
@@ -219,21 +218,23 @@ export function createDartAimSession(
   startedAt: number,
   random: () => number = Math.random,
 ): DartAimSession {
+  const waypoints = Array.from({ length: 7 }, () => ({
+    angleDegrees: -112 + nextUnitRandom(random) * 44,
+    radiusRatio: 0.6 + nextUnitRandom(random) * 0.18,
+  }));
+
   return {
     id,
     startedAt: Number.isFinite(startedAt) ? startedAt : 0,
-    baseAngleDegrees: -106 + nextUnitRandom(random) * 32,
-    angleAmplitudeDegrees: 4.5 + nextUnitRandom(random) * 3,
-    baseRadiusRatio: 0.63 + nextUnitRandom(random) * 0.12,
-    radiusAmplitudeRatio: 0.018 + nextUnitRandom(random) * 0.025,
-    phaseRadians: nextUnitRandom(random) * Math.PI * 2,
+    waypoints,
+    segmentDurationSeconds: 1.45 + nextUnitRandom(random) * 0.55,
     jitterA: {
-      xPixels: (nextUnitRandom(random) * 2 - 1) * 7,
-      yPixels: (nextUnitRandom(random) * 2 - 1) * 5,
+      xPixels: 0,
+      yPixels: 0,
     },
     jitterB: {
-      xPixels: (nextUnitRandom(random) * 2 - 1) * 7,
-      yPixels: (nextUnitRandom(random) * 2 - 1) * 5,
+      xPixels: 0,
+      yPixels: 0,
     },
     rollDegrees: -12 + nextUnitRandom(random) * 24,
   };
@@ -242,24 +243,27 @@ export function createDartAimSession(
 /** Deterministic motion: frame rate never consumes randomness or changes odds. */
 export function sampleDartAimSession(session: DartAimSession, now: number): DartShotPlan {
   const elapsedSeconds = Math.max(0, (finiteNonNegative(now, session.startedAt) - session.startedAt) / 1_000);
-  const primary = elapsedSeconds * 2.05 + session.phaseRadians;
-  const secondary = elapsedSeconds * 4.7 + session.phaseRadians * 0.63;
-  const impactAngleDegrees = finiteClamped(
-    session.baseAngleDegrees
-      + Math.sin(primary) * session.angleAmplitudeDegrees
-      + Math.sin(secondary) * session.angleAmplitudeDegrees * 0.24,
-    -115,
-    -65,
-    DART_IMPACT_ANGLE,
-  );
-  const impactRadiusRatio = finiteClamped(
-    session.baseRadiusRatio
-      + Math.sin(elapsedSeconds * 2.35 + session.phaseRadians * 1.31)
-        * session.radiusAmplitudeRatio,
-    0.58,
-    0.8,
-    0.72,
-  );
+  const points = session.waypoints.length >= 2
+    ? session.waypoints
+    : [
+        { angleDegrees: DART_IMPACT_ANGLE, radiusRatio: 0.72 },
+        { angleDegrees: DART_IMPACT_ANGLE, radiusRatio: 0.72 },
+      ];
+  const segmentDuration = Math.max(0.3, finiteNonNegative(session.segmentDurationSeconds, 0.9));
+  const segmentPosition = elapsedSeconds / segmentDuration;
+  const segmentIndex = Math.floor(segmentPosition) % points.length;
+  const nextIndex = (segmentIndex + 1) % points.length;
+  const linearProgress = segmentPosition - Math.floor(segmentPosition);
+  // Smootherstep reaches every random waypoint with zero velocity and
+  // acceleration, so a new direction never reads as a cursor teleport.
+  const smoothProgress = linearProgress ** 3
+    * (linearProgress * (linearProgress * 6 - 15) + 10);
+  const currentPoint = points[segmentIndex];
+  const nextPoint = points[nextIndex];
+  const impactAngleDegrees = currentPoint.angleDegrees
+    + (nextPoint.angleDegrees - currentPoint.angleDegrees) * smoothProgress;
+  const impactRadiusRatio = currentPoint.radiusRatio
+    + (nextPoint.radiusRatio - currentPoint.radiusRatio) * smoothProgress;
 
   return {
     impactAngleDegrees,
@@ -883,6 +887,7 @@ export function buildCommittedDartRouletteFinishPlan(
   participantCount: number,
   coastTurns: number,
   weights?: readonly number[],
+  minimumImpactRotation = commit.impactRotation,
 ): DartRouletteFinishPlan {
   const impactPoint = resolveDartImpactPoint(commit.shot);
   const geometry = resolveLandingGeometry(
@@ -892,13 +897,24 @@ export function buildCommittedDartRouletteFinishPlan(
     commit.landing,
   );
   const safeCoastTurns = Math.max(1, Math.floor(finiteNonNegative(coastTurns, 1)));
+  const safeMinimumImpact = Number.isFinite(minimumImpactRotation)
+    ? minimumImpactRotation
+    : commit.impactRotation;
+  const catchUpTurns = Math.max(
+    0,
+    Math.ceil((safeMinimumImpact - commit.impactRotation) / 360),
+  );
+  // A delayed React paint may happen after the originally committed impact
+  // angle. Whole turns preserve the exact local wedge and result while making
+  // the contact a future, clockwise event instead of reversing the rotor.
+  const impactRotation = commit.impactRotation + catchUpTurns * 360;
   const alignmentToPointer = normalizeAngle(AUTO_POINTER_ANGLE - impactPoint.impactAngleDegrees);
-  const finalRotation = commit.impactRotation + safeCoastTurns * 360 + alignmentToPointer;
+  const finalRotation = impactRotation + safeCoastTurns * 360 + alignmentToPointer;
 
   if (!geometry) {
     return {
-      focusRotation: commit.impactRotation,
-      boundaryRotation: commit.impactRotation,
+      focusRotation: impactRotation,
+      boundaryRotation: impactRotation,
       finalRotation,
       entryGapDegrees: 0,
       leadDegrees: 0,
@@ -912,7 +928,7 @@ export function buildCommittedDartRouletteFinishPlan(
       crossesBoundary: false,
       boundaryDistanceDegrees: 0,
       positionRatio: 0.5,
-      impactRotation: commit.impactRotation,
+      impactRotation,
       coastTurns: safeCoastTurns,
       impactAngleDegrees: impactPoint.impactAngleDegrees,
       impactRadiusRatio: impactPoint.impactRadiusRatio,
@@ -920,8 +936,8 @@ export function buildCommittedDartRouletteFinishPlan(
   }
 
   return {
-    focusRotation: commit.impactRotation,
-    boundaryRotation: commit.impactRotation,
+    focusRotation: impactRotation,
+    boundaryRotation: impactRotation,
     finalRotation,
     entryGapDegrees: geometry.entryGapDegrees,
     leadDegrees: geometry.boundaryDistanceDegrees,
@@ -935,7 +951,7 @@ export function buildCommittedDartRouletteFinishPlan(
     crossesBoundary: false,
     boundaryDistanceDegrees: geometry.boundaryDistanceDegrees,
     positionRatio: geometry.positionRatio,
-    impactRotation: commit.impactRotation,
+    impactRotation,
     coastTurns: safeCoastTurns,
     impactAngleDegrees: impactPoint.impactAngleDegrees,
     impactRadiusRatio: impactPoint.impactRadiusRatio,

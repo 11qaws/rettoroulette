@@ -138,3 +138,13 @@
     font-size: 28px;
   }
 }
+
+.broadcast-tools-drawer__reset {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.broadcast-tools-drawer__reset button {
+  color: #8f2929;
+}

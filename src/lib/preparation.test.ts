@@ -11,7 +11,6 @@ const BASE: PreparationInput = {
   poolLimit: 0,
   prizeInventoryCount: 0,
   drawOptionCount: 8,
-  effectiveWinnerCount: 1,
   useWeights: false,
 };
 
@@ -63,7 +62,7 @@ describe('preparation readiness', () => {
       candidateParticipantCount: 0,
       prizeInventoryCount: 3,
       drawOptionCount: 3,
-    })).toEqual({ state: 'ready', statusLabel: '준비 완료', ctaLabel: '3개 중 1개 · 방송 화면 열기' });
+    })).toEqual({ state: 'ready', statusLabel: '준비 완료', ctaLabel: '3개 · 한 번에 1개 · 방송 화면 열기' });
   });
 
   it('adds inventory before opening a prize stage', () => {
@@ -77,8 +76,8 @@ describe('preparation readiness', () => {
     })).toMatchObject({ state: 'blocked', issue: 'prize-inventory-empty', recovery: 'add-prize' });
   });
 
-  it('opens the stage with an exact candidate and winner summary when ready', () => {
-    expect(derivePreparationReadiness({ ...BASE, drawOptionCount: 6, effectiveWinnerCount: 2 }))
-      .toEqual({ state: 'ready', statusLabel: '준비 완료', ctaLabel: '6명 중 2명 · 방송 화면 열기' });
+  it('opens the stage with one-at-a-time draw semantics when ready', () => {
+    expect(derivePreparationReadiness({ ...BASE, drawOptionCount: 6 }))
+      .toEqual({ state: 'ready', statusLabel: '준비 완료', ctaLabel: '6명 · 한 번에 1명 · 방송 화면 열기' });
   });
 });

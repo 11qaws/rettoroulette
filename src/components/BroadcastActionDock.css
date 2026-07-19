@@ -124,25 +124,9 @@
   justify-content: center;
 }
 
-/* Awaiting: launch remains twice as prominent as the early-finish choice. */
-.broadcast-action-dock--awaiting .broadcast-action-dock__controls {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  align-items: stretch;
-}
-
-.broadcast-action-dock--awaiting .broadcast-action-dock__secondary {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.broadcast-action-dock--awaiting .broadcast-action-dock__button--primary {
-  grid-column: 1;
-  grid-row: 1;
-}
-
 /* Completed: continue first, then two equal ways to revise the next round. */
 .broadcast-action-dock--completed .broadcast-action-dock__secondary {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 @media (max-width: 560px) {
@@ -155,10 +139,6 @@
   .broadcast-action-dock--ready .broadcast-action-dock__secondary,
   .broadcast-action-dock--completed .broadcast-action-dock__secondary {
     grid-template-columns: 1fr;
-  }
-
-  .broadcast-action-dock--awaiting .broadcast-action-dock__controls {
-    grid-template-columns: minmax(0, 2fr) minmax(112px, 1fr);
   }
 
   .broadcast-action-dock__button {
@@ -195,7 +175,7 @@
   .broadcast-action-dock--completed .broadcast-action-dock__secondary {
     grid-column: 2;
     grid-row: 1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     justify-content: stretch;
   }
 

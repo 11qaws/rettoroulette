@@ -12,7 +12,6 @@ export const RAFFLE_STATUSES = [
   'ready',
   'locking',
   'presenting',
-  'awaiting-dart',
   'completed',
 ] as const;
 
@@ -24,13 +23,11 @@ export const RAFFLE_EVENTS = [
   'cancel-roster-ready',
   'cancel-roster-completed',
   'open-roster',
-  'open-configuration',
+  'end-broadcast',
   'open-stage',
   'lock-result',
   'start-presentation',
-  'await-next-dart',
   'complete-round',
-  'end-round-early',
   'start-next-round',
 ] as const;
 
@@ -48,7 +45,6 @@ export const RAFFLE_STATUS_META: Record<RaffleStatus, RaffleStatusMeta> = {
   ready: { step: 3, label: '추첨 대기', liveLabel: '추첨 대기' },
   locking: { step: 3, label: '결과 고정', liveLabel: '결과 고정' },
   presenting: { step: 3, label: '방송 연출', liveLabel: '결과 공개 중' },
-  'awaiting-dart': { step: 3, label: '다음 다트 대기', liveLabel: '다음 다트 대기' },
   completed: { step: 4, label: '결과 확정', liveLabel: '결과 확정' },
 };
 
@@ -65,7 +61,7 @@ const TRANSITIONS: Record<RaffleStatus, Partial<Record<RaffleEvent, RaffleStatus
   },
   ready: {
     'open-roster': 'roster',
-    'open-configuration': 'configuring',
+    'end-broadcast': 'configuring',
     'lock-result': 'locking',
   },
   locking: {
@@ -73,16 +69,11 @@ const TRANSITIONS: Record<RaffleStatus, Partial<Record<RaffleEvent, RaffleStatus
   },
   presenting: {
     'lock-result': 'locking',
-    'await-next-dart': 'awaiting-dart',
     'complete-round': 'completed',
-  },
-  'awaiting-dart': {
-    'lock-result': 'locking',
-    'end-round-early': 'completed',
   },
   completed: {
     'open-roster': 'roster',
-    'open-configuration': 'configuring',
+    'end-broadcast': 'configuring',
     'start-next-round': 'ready',
   },
 };
@@ -92,5 +83,5 @@ export function getRaffleTransition(status: RaffleStatus, event: RaffleEvent) {
 }
 
 export function isRaffleActive(status: RaffleStatus) {
-  return status === 'locking' || status === 'presenting' || status === 'awaiting-dart';
+  return status === 'locking' || status === 'presenting';
 }

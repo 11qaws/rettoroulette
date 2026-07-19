@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AUTO_POINTER_ANGLE,
+  AUTO_PHOTO_FINISH_MIN_SECONDS,
   DART_IMPACT_ANGLE,
   DART_FLIGHT_DURATION_SECONDS,
+  PHOTO_FINISH_MAX_LEAD_DEGREES,
   buildCommittedDartRouletteFinishPlan,
   buildDartRouletteFinishPlan,
   buildRouletteFinishPlan,
@@ -117,8 +119,14 @@ describe('result-neutral landing variety', () => {
   };
 
   it('samples both boundary sides and the interior without touching winner odds', () => {
-    expect(createRouletteFinishLanding('spin', sequence(0.1, 0.5, 0.5)).kind).toBe('near-end');
-    expect(createRouletteFinishLanding('spin', sequence(0.4, 0.5, 0.5)).kind).toBe('near-start');
+    const nearEnd = createRouletteFinishLanding('spin', sequence(0.1, 1, 0.5));
+    const nearStart = createRouletteFinishLanding('spin', sequence(0.4, 1, 0.5));
+    expect(nearEnd.kind).toBe('near-end');
+    expect(nearStart.kind).toBe('near-start');
+    expect(nearEnd.leadDegrees).toBeLessThanOrEqual(PHOTO_FINISH_MAX_LEAD_DEGREES);
+    expect(nearStart.leadDegrees).toBeLessThanOrEqual(PHOTO_FINISH_MAX_LEAD_DEGREES);
+    expect(isRoulettePhotoFinish(true, 8, buildRouletteFinishPlan(0, 0, 8, 4, undefined, nearEnd))).toBe(true);
+    expect(isRoulettePhotoFinish(true, 8, buildRouletteFinishPlan(0, 0, 8, 4, undefined, nearStart))).toBe(true);
     const interior = createRouletteFinishLanding('spin', sequence(0.8, 0.25));
     expect(interior.kind).toBe('interior');
     expect(interior.positionRatio).toBeCloseTo(0.37, 10);
@@ -129,7 +137,11 @@ describe('result-neutral landing variety', () => {
   });
 
   it('keeps a deterministic moving aim inside the visible safe arc', () => {
-    const aim = createDartAimSession(7, 1_000, () => 0.5);
+    let randomState = 17;
+    const aim = createDartAimSession(7, 1_000, () => {
+      randomState = (randomState * 48271) % 0x7fffffff;
+      return randomState / 0x7fffffff;
+    });
     const first = sampleDartAimSession(aim, 1_000);
     const repeated = sampleDartAimSession(aim, 1_000);
     expect(first).toEqual(repeated);
@@ -141,6 +153,27 @@ describe('result-neutral landing variety', () => {
       expect(shot.impactRadiusRatio).toBeGreaterThanOrEqual(0.58);
       expect(shot.impactRadiusRatio).toBeLessThanOrEqual(0.8);
     }
+  });
+
+  it('moves between random aim waypoints without a frame-sized teleport', () => {
+    let randomState = 29;
+    const aim = createDartAimSession(8, 0, () => {
+      randomState = (randomState * 48271) % 0x7fffffff;
+      return randomState / 0x7fffffff;
+    });
+    let previous = resolveDartImpactPoint(sampleDartAimSession(aim, 0));
+    let maximumStep = 0;
+
+    for (let time = 16; time <= 8_000; time += 16) {
+      const current = resolveDartImpactPoint(sampleDartAimSession(aim, time));
+      maximumStep = Math.max(
+        maximumStep,
+        Math.hypot(current.xPercent - previous.xPercent, current.yPercent - previous.yPercent),
+      );
+      previous = current;
+    }
+
+    expect(maximumStep).toBeLessThan(0.9);
   });
 });
 
@@ -360,7 +393,7 @@ describe('auto roulette photo finish', () => {
     expect(isRoulettePhotoFinish(true, 8, ordinary)).toBe(false);
   });
 
-  it('matches the brake exit speed to a slow final creep lasting at least 1.45s', () => {
+  it('matches the brake exit speed to a two-second boundary tension beat', () => {
     const startingRotation = 0;
     const startingVelocity = 780;
     const plan = buildRouletteFinishPlan(startingRotation, 2, 10, 4, undefined, {
@@ -372,7 +405,7 @@ describe('auto roulette photo finish', () => {
     const brakeDistance = plan.focusRotation - startingRotation;
     const brakeExitVelocity = (2 * brakeDistance) / timing.brakeDuration - startingVelocity;
 
-    expect(timing.photoFinishDuration).toBeGreaterThanOrEqual(1.45);
+    expect(timing.photoFinishDuration).toBeGreaterThanOrEqual(AUTO_PHOTO_FINISH_MIN_SECONDS);
     expect(timing.brakeDuration).toBeGreaterThanOrEqual(2.8);
     expect(brakeExitVelocity).toBeCloseTo(timing.photoFinishEntryVelocity, 8);
     expect(plan.finalRotation - plan.boundaryRotation).toBeCloseTo(0.5, 10);
@@ -589,5 +622,29 @@ describe('physical dart commit', () => {
         commit.winnerIndex,
       );
     }
+  });
+
+  it('adds result-neutral whole turns when rendering starts after the committed impact', () => {
+    const commit = createDartPhysicalCommit(10, 1080, 5, undefined, shot);
+    expect(commit).not.toBeNull();
+    if (!commit) return;
+
+    const delayedStart = commit.impactRotation + 45;
+    const plan = buildCommittedDartRouletteFinishPlan(
+      commit,
+      5,
+      2,
+      undefined,
+      delayedStart + 1080 * 0.42,
+    );
+
+    expect(plan.impactRotation).toBeGreaterThan(delayedStart);
+    expect(plan.impactRotation - commit.impactRotation).toBeGreaterThanOrEqual(360);
+    expect(getRouletteSliceIndexAtScreenAngle(
+      plan.impactRotation,
+      5,
+      undefined,
+      shot.impactAngleDegrees,
+    )).toBe(commit.winnerIndex);
   });
 });
