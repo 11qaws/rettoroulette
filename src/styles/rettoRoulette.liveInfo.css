@@ -1,0 +1,144 @@
+/* Live-only information rails introduced after the frozen RettoStock skin.
+   This file is imported last so the three-column contract wins over legacy
+   two-column and stage-only geometry without modifying the shared palette. */
+
+#root .app-shell--live .broadcast-phase-bar__status {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#root .app-shell--live .broadcast-phase-bar__status > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: 'Jua', sans-serif;
+  font-size: clamp(0.95rem, 1.35vw, 1.2rem);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#root .app-shell--live .broadcast-phase-bar > p {
+  flex: 0 1 auto;
+  max-width: 48%;
+}
+
+#root .app-shell--live .broadcast-candidate-roster {
+  grid-area: roster;
+  max-height: 100%;
+}
+
+@media (min-width: 901px) {
+  #root .app-shell--live .broadcast-focus {
+    grid-template-areas:
+      'roster stage results'
+      'action action results';
+    grid-template-columns:
+      clamp(9.5rem, 12.5vw, 13.5rem)
+      minmax(0, 1fr)
+      clamp(17.8rem, 24vw, 32.5rem);
+  }
+
+  #root .app-shell--live .broadcast-focus.has-no-results-panel:not(.is-completed) {
+    grid-template-areas:
+      'roster stage'
+      'action action';
+    grid-template-columns: clamp(9.5rem, 12.5vw, 13.5rem) minmax(0, 1fr);
+  }
+
+  #root .app-shell--live .broadcast-focus.is-stage-only {
+    grid-template-areas: 'roster stage';
+    grid-template-columns: clamp(9.5rem, 12.5vw, 13.5rem) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  #root .app-shell--live .broadcast-focus__stage {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  #root .app-shell--live .broadcast-focus__visual,
+  #root .app-shell--live .broadcast-focus__visual.is-round-complete,
+  #root .app-shell--live .broadcast-focus__visual.is-winner-hero {
+    grid-row: 1;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1180px) {
+  #root .app-shell--live .broadcast-focus,
+  #root .app-shell--live .broadcast-focus.has-no-results-panel:not(.is-completed),
+  #root .app-shell--live .broadcast-focus.is-stage-only {
+    grid-template-columns: 8.75rem minmax(0, 1fr) minmax(17.8rem, 30vw);
+  }
+
+  #root .app-shell--live .broadcast-focus.has-no-results-panel:not(.is-completed),
+  #root .app-shell--live .broadcast-focus.is-stage-only {
+    grid-template-columns: 8.75rem minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  #root .app-shell--live > .broadcast-focus,
+  #root .app-shell--live > .broadcast-focus.is-completed {
+    grid-template-areas:
+      'stage'
+      'action'
+      'roster'
+      'results';
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto;
+  }
+
+  #root .app-shell--live > .broadcast-focus.is-stage-only {
+    grid-template-areas:
+      'stage'
+      'roster';
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  #root .app-shell--live .broadcast-candidate-roster {
+    width: min(100%, 32rem);
+    justify-self: center;
+  }
+
+  #root .app-shell--live .broadcast-phase-bar__status {
+    width: 100%;
+  }
+
+  #root .app-shell--live .broadcast-phase-bar > p {
+    max-width: none;
+  }
+}
+
+/* During the decisive motion, keep the proof list visible but still. Moving
+   peripheral names would compete with the pointer/dart close-up. */
+#root .app-shell--live .broadcast-focus:is(
+  .reveal-phase--motion-started,
+  .reveal-phase--boundary-entered,
+  .reveal-phase--boundary-crossed,
+  .reveal-phase--boundary-held,
+  .reveal-phase--dart-launched,
+  .reveal-phase--dart-impacted,
+  .reveal-phase--dart-attached,
+  .reveal-phase--dart-names-revealed,
+  .reveal-phase--rotation-stopped,
+  .reveal-phase--proof-hold-done
+) .broadcast-candidate-roster {
+  opacity: 0.68;
+  filter: saturate(0.62);
+  transition: opacity 180ms ease, filter 180ms ease;
+}
+
+#root .app-shell--live .broadcast-focus:is(
+  .reveal-phase--motion-started,
+  .reveal-phase--boundary-entered,
+  .reveal-phase--boundary-crossed,
+  .reveal-phase--boundary-held,
+  .reveal-phase--dart-launched,
+  .reveal-phase--dart-impacted,
+  .reveal-phase--dart-attached,
+  .reveal-phase--dart-names-revealed,
+  .reveal-phase--rotation-stopped,
+  .reveal-phase--proof-hold-done
+) .broadcast-candidate-roster__track {
+  animation-play-state: paused;
+}

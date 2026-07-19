@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import BroadcastActionDock, { type BroadcastDockAction } from './components/BroadcastActionDock';
+import BroadcastCandidateRoster from './components/BroadcastCandidateRoster';
 import CurrentRoundWinners from './components/CurrentRoundWinners';
 import DrawPreviewDirector from './components/DrawPreviewDirector';
 import MarbleRace from './components/MarbleRace';
@@ -59,6 +60,7 @@ import './styles/rettoRoulette.cinematic.css';
 import './styles/rettoRoulette.flow.css';
 import './styles/rettoRoulette.preparation.css';
 import './styles/rettoRoulette.viewport.css';
+import './styles/rettoRoulette.liveInfo.css';
 
 type DrawOption = {
   id: string;
@@ -1338,25 +1340,6 @@ function App() {
     presentationBeat === 'dock' ? 'is-result-docking' : '',
     raffleStatus === 'completed' ? 'is-completed' : '',
   ].filter(Boolean).join(' ');
-  const stageHeading = raffleStatus === 'completed'
-    ? `추첨 완료 · 누적 ${sessionResults.length}${roundUnit}`
-    : raffleStatus === 'locking' || raffleStatus === 'presenting'
-      ? '결과 공개 중'
-      : stageTitle;
-  const stageFactSummary = [
-    `후보 ${roundCandidateCount}${roundUnit}`,
-    roundUsesWeights ? `가중치 · 총 ${roundTotalWeight}추첨권` : '동일 확률',
-    roundTarget === 'people'
-      ? roundRemovesWinners ? '중복 당첨 방지' : '중복 당첨 허용'
-      : '재고 단위 차감',
-  ].join(' · ');
-  const liveProgressLabel = raffleStatus === 'ready'
-    ? rotorReady ? '시작 준비 완료' : '원판 가속 중'
-    : raffleStatus === 'locking'
-      ? '결과 고정 중'
-      : raffleStatus === 'presenting'
-        ? '결과 공개 중'
-        : `누적 ${sessionResults.length}${roundUnit} 확정`;
   const actionNote = raffleStatus === 'completed'
     ? '방금 결과가 저장되었습니다. 계속 뽑거나 이번 추첨을 끝내세요.'
     : !rotorReady && raffleStatus === 'ready' && !noAvailableDrawOptions
@@ -1834,7 +1817,7 @@ function App() {
       <div className="broadcast-phase-bar" inert={toolsOpen} aria-hidden={toolsOpen || undefined}>
         <div className="broadcast-phase-bar__status">
           <span>{statusMeta.liveLabel}</span>
-          <strong>{liveProgressLabel}</strong>
+          <strong id="stage-title">{stageTitle}</strong>
         </div>
         <p>{ruleSummary}</p>
       </div>
@@ -1853,15 +1836,13 @@ function App() {
       )}
 
       <section className={broadcastFocusClassName} aria-label="방송 집중 화면" inert={toolsOpen} aria-hidden={toolsOpen || undefined}>
-        <section className="broadcast-focus__stage" aria-labelledby="stage-title">
-          <div className="broadcast-focus__heading">
-            <div>
-              <p>{statusMeta.liveLabel}</p>
-              <h1 id="stage-title">{stageHeading}</h1>
-            </div>
-            <span>{stageFactSummary}</span>
-          </div>
+        <BroadcastCandidateRoster
+          items={displayNames}
+          title={roundTarget === 'people' ? '참여자 명단' : '추첨 상품'}
+          unit={roundUnit}
+        />
 
+        <section className="broadcast-focus__stage" aria-labelledby="stage-title">
           <p className="broadcast-focus__fairness">{fairnessLabel}</p>
 
           <div className={broadcastVisualClassName}>

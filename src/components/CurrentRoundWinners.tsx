@@ -76,7 +76,7 @@ export default function CurrentRoundWinners({
   const announcementText = announcement ?? (winners.length > 0 ? `방송 누적 당첨자 ${winners.length}${unit}${unitSubjectParticle} 발표되었습니다.` : undefined);
   const eyebrow = winners.length === 0
     ? `🍸 ${unit === '명' ? '방송 전체 당첨자' : '방송에서 뽑힌 상품'}`
-    : `🎉 누적 ${winners.length}${unit}`;
+    : '🎉 방송 결과';
 
   useEffect(() => {
     const didAppend = winners.length > previousWinnerCountRef.current;
