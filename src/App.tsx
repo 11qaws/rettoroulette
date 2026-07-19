@@ -20,11 +20,7 @@ import {
   type BroadcastSession,
 } from './lib/broadcastSession';
 import { csvField } from './lib/csv';
-import {
-  buildWeightedDrawPlanWithReplacement,
-  buildWeightedDrawPlanWithoutReplacement,
-  sampleWithoutReplacement,
-} from './lib/draw';
+import { sampleWithoutReplacement } from './lib/draw';
 import {
   getRaffleTransition,
   isRaffleActive,
@@ -46,12 +42,14 @@ import {
 import {
   createDartAimSession,
   createDartPhysicalCommit,
-  createRouletteFinishLanding,
+  createRouletteGeometrySignature,
+  createSpinPhysicalCommit,
   resolveDartImpactPoint,
   type DartAimSession,
   type DartPhysicalCommit,
   type DartShotPlan,
   type RouletteFinishLanding,
+  type SpinPhysicalCommit,
 } from './lib/roulette';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize, WheelPresentation } from './types';
 
@@ -100,8 +98,10 @@ type PlannedPresentation = {
   selectedAt: string;
   candidateFingerprint: string;
   candidateTotalWeight: number;
-  /** Changes only where the committed result stops inside its slice. */
+  /** Physical coordinate inside the slice that selected this result. */
   landing: RouletteFinishLanding;
+  /** Click-time rotor coordinate that physically selected an automatic winner. */
+  spinCommit?: SpinPhysicalCommit;
   /** Result-neutral physical coordinates fixed once for a dart reveal. */
   dartShot?: DartShotPlan;
   /** Rotor/aim impact that physically selected a dart winner at click time. */
@@ -585,11 +585,10 @@ function App() {
 
   const buildPresentationPlan = useCallback((
     snapshot: readonly DrawOption[],
-    count: number,
     target: DrawTarget,
     recipientSnapshot: string | undefined,
-    withoutReplacement: boolean,
     wheelReveal: WheelPresentation,
+    spinPhysicalCommit?: SpinPhysicalCommit,
     dartPhysicalCommit?: DartPhysicalCommit,
   ) => {
     const options = [...snapshot];
@@ -600,6 +599,10 @@ function App() {
         !dartPhysicalCommit
         || dartPhysicalCommit.winnerIndex < 0
         || dartPhysicalCommit.winnerIndex >= options.length
+        || dartPhysicalCommit.geometrySignature !== createRouletteGeometrySignature(
+          options.length,
+          options.map((option) => option.weight),
+        )
       ) return [];
 
       return [{
@@ -616,43 +619,27 @@ function App() {
       }];
     }
 
-    const drawPlan = withoutReplacement
-      ? buildWeightedDrawPlanWithoutReplacement(options, count)
-      : buildWeightedDrawPlanWithReplacement(options, count);
+    if (
+      !spinPhysicalCommit
+      || spinPhysicalCommit.winnerIndex < 0
+      || spinPhysicalCommit.winnerIndex >= options.length
+      || spinPhysicalCommit.geometrySignature !== createRouletteGeometrySignature(
+        options.length,
+        options.map((option) => option.weight),
+      )
+    ) return [];
 
-    if (!withoutReplacement) {
-      return drawPlan.indices.map((winnerIndex) => ({
-        options,
-        winnerIndex,
-        target,
-        selectedAt,
-        recipient: recipientSnapshot,
-        candidateFingerprint: fingerprintOptions(options),
-        candidateTotalWeight: totalEffectiveWeight(options),
-        landing: createRouletteFinishLanding(wheelReveal),
-      }));
-    }
-
-    const remaining = options.map((option, sourceIndex) => ({ option, sourceIndex }));
-
-    return drawPlan.indices.flatMap((sourceIndex) => {
-      const winnerIndex = remaining.findIndex((item) => item.sourceIndex === sourceIndex);
-      if (winnerIndex < 0) return [];
-
-      const candidateSnapshot = remaining.map((item) => item.option);
-      const presentation: PlannedPresentation = {
-        options: candidateSnapshot,
-        winnerIndex,
-        target,
-        selectedAt,
-        recipient: recipientSnapshot,
-        candidateFingerprint: fingerprintOptions(candidateSnapshot),
-        candidateTotalWeight: totalEffectiveWeight(candidateSnapshot),
-        landing: createRouletteFinishLanding(wheelReveal),
-      };
-      remaining.splice(winnerIndex, 1);
-      return [presentation];
-    });
+    return [{
+      options,
+      winnerIndex: spinPhysicalCommit.winnerIndex,
+      target,
+      selectedAt,
+      recipient: recipientSnapshot,
+      candidateFingerprint: fingerprintOptions(options),
+      candidateTotalWeight: totalEffectiveWeight(options),
+      landing: spinPhysicalCommit.landing,
+      spinCommit: spinPhysicalCommit,
+    }];
   }, []);
 
   /**
@@ -826,6 +813,17 @@ function App() {
     );
   };
 
+  const capturePhysicalSpin = () => {
+    const capture = liveWheelRef.current?.captureRotor();
+    if (!capture) return null;
+    return createSpinPhysicalCommit(
+      capture.rotation,
+      capture.angularVelocity,
+      drawOptions.length,
+      drawOptionWeights,
+    );
+  };
+
   const startDraw = () => {
     if (raffleStatusRef.current !== 'ready') return;
     if (!rotorReady) return;
@@ -838,7 +836,12 @@ function App() {
       return;
     }
 
+    const spinCommit = wheelPresentation === 'spin' ? capturePhysicalSpin() : undefined;
     const dartCommit = wheelPresentation === 'dart' ? freezePhysicalDart() : undefined;
+    if (wheelPresentation === 'spin' && !spinCommit) {
+      showToast('원판 위치가 준비될 때까지 잠시 기다려 주세요.');
+      return;
+    }
     if (wheelPresentation === 'dart' && !dartCommit) {
       showToast('다트 조준점이 준비될 때까지 잠시 기다려 주세요.');
       return;
@@ -846,14 +849,12 @@ function App() {
 
     clearStagePresentation();
     const recipientSnapshot = drawTarget === 'prizes' ? recipient.trim() || undefined : undefined;
-    const withoutReplacement = drawTarget === 'prizes' || removeAfterDraw;
     const presentations = buildPresentationPlan(
       drawOptions,
-      1,
       drawTarget,
       recipientSnapshot,
-      withoutReplacement,
       wheelPresentation,
+      spinCommit ?? undefined,
       dartCommit ?? undefined,
     );
     if (presentations.length === 0) {
@@ -1422,6 +1423,7 @@ function App() {
         presentation={presentation}
         revealId={preview ? undefined : activePresentation?.revealId}
         landing={preview ? undefined : activePresentation?.landing}
+        spinCommit={preview ? undefined : activePresentation?.spinCommit}
         dartShot={preview ? undefined : activePresentation?.dartShot}
         dartAim={preview ? undefined : dartAimSession ?? undefined}
         dartCommit={preview ? undefined : activePresentation?.dartCommit}

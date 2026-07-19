@@ -1,3 +1,5 @@
+import { randomUnit, type RandomSource } from './draw';
+
 export const AUTO_POINTER_ANGLE = -90;
 export const DART_IMPACT_ANGLE = -90;
 export const DART_FLIGHT_DURATION_SECONDS = 1.15;
@@ -7,6 +9,9 @@ export const PHOTO_FINISH_MAX_LEAD_DEGREES = 2.2;
 /** The two boundary candidates must remain readable for roughly two seconds. */
 export const AUTO_PHOTO_FINISH_MIN_SECONDS = 1.95;
 export const DART_BOUNDARY_MAX_DEGREES = 2.2;
+export const SPIN_BOUNDARY_MAX_DEGREES = 2.2;
+/** At most ten percent of a slice is treated as a dramatic spin boundary. */
+export const SPIN_BOUNDARY_RATIO_PER_SIDE = 0.05;
 
 export type RouletteLandingKind = 'near-start' | 'near-end' | 'interior';
 export type RouletteBoundarySide = 'start' | 'end';
@@ -23,7 +28,7 @@ export interface DartFlightTiming {
 }
 
 export interface RouletteFinishLanding {
-  /** Physical region inside the already selected winning slice. */
+  /** Physical region inside the slice resolved from the committed coordinate. */
   kind?: RouletteLandingKind;
   /** Exact normalized slice coordinate: 0 is start, 1 is end. */
   positionRatio?: number;
@@ -72,6 +77,24 @@ export interface DartPhysicalCommit {
   /** Guards the rotor geometry used at click time from stale visual props. */
   geometrySignature: string;
   winnerIndex: number;
+  landing: RouletteFinishLanding;
+}
+
+/** Click-time physical brake commit that selects an automatic winner. */
+export interface SpinPhysicalCommit {
+  /** Exact wheel rotation painted when the host pressed stop. */
+  capturedRotation: number;
+  /** Cruise velocity at the same click-time frame. */
+  angularVelocity: number;
+  /** Result-neutral braking travel fixed before a slice is inspected. */
+  plannedTravelDegrees: number;
+  /** Physical stop coordinate produced by rotation + braking travel. */
+  stopRotation: number;
+  /** Guards the weighted wedge geometry used to resolve the coordinate. */
+  geometrySignature: string;
+  /** Slice found beneath the fixed pointer at the committed stop coordinate. */
+  winnerIndex: number;
+  /** Exact within-slice coordinate derived from the stop, never retargeted. */
   landing: RouletteFinishLanding;
 }
 
@@ -152,44 +175,6 @@ function finiteClamped(value: number, minimum: number, maximum: number, fallback
 
 function nextUnitRandom(random: () => number) {
   return finiteClamped(random(), 0, 1, 0.5);
-}
-
-/**
- * Creates result-neutral finish variety only after an automatic winner exists.
- * Dart live draws use physical impact instead; this also drives deterministic
- * preview samples and keeps legacy callers on the same three-region model.
- */
-export function createRouletteFinishLanding(
-  presentation: 'spin' | 'dart',
-  random: () => number = Math.random,
-): RouletteFinishLanding {
-  const regionRoll = nextUnitRandom(random);
-  const firstBoundaryCut = presentation === 'spin' ? 0.3 : 0.15;
-  const secondBoundaryCut = presentation === 'spin' ? 0.6 : 0.3;
-
-  if (regionRoll < firstBoundaryCut || regionRoll < secondBoundaryCut) {
-    const kind: RouletteLandingKind = regionRoll < firstBoundaryCut
-      ? 'near-end'
-      : 'near-start';
-    const leadDegrees = presentation === 'spin'
-      ? 0.35 + nextUnitRandom(random) * 1.3
-      : 0.25 + nextUnitRandom(random) * 0.6;
-
-    return {
-      kind,
-      entryGapDegrees: 10 + nextUnitRandom(random) * 8,
-      leadDegrees,
-      boundaryHit: true,
-    };
-  }
-
-  return {
-    kind: 'interior',
-    positionRatio: 0.24 + nextUnitRandom(random) * 0.52,
-    entryGapDegrees: 0,
-    leadDegrees: 0,
-    boundaryHit: false,
-  };
 }
 
 /**
@@ -520,6 +505,165 @@ export function getRouletteSliceIndexAtScreenAngle(
   ));
 }
 
+function resolvePhysicalLanding(
+  rotation: number,
+  participantCount: number,
+  weights: readonly number[] | undefined,
+  screenAngle: number,
+  maximumBoundaryDegrees: number,
+  boundaryRatioPerSide: number,
+) {
+  const winnerIndex = getRouletteSliceIndexAtScreenAngle(
+    rotation,
+    participantCount,
+    weights,
+    screenAngle,
+  );
+  const winner = getRouletteSliceGeometry(participantCount, weights)[winnerIndex];
+  if (!winner) return null;
+
+  const span = winner.endAngle - winner.startAngle;
+  const normalizedLocalAngle = normalizeAngle(screenAngle - rotation);
+  const localAngle = normalizedLocalAngle >= 270
+    ? normalizedLocalAngle - 360
+    : normalizedLocalAngle;
+  const offsetFromStart = clamp(localAngle - winner.startAngle, 0, span);
+  const positionRatio = span > 0 ? clamp(offsetFromStart / span, 0, 1) : 0.5;
+  const distanceFromStart = offsetFromStart;
+  const distanceFromEnd = Math.max(0, span - offsetFromStart);
+  const threshold = Math.min(
+    finiteNonNegative(maximumBoundaryDegrees, 0),
+    span * finiteClamped(boundaryRatioPerSide, 0, 0.5, 0),
+  );
+  const nearStart = distanceFromStart <= threshold;
+  const nearEnd = distanceFromEnd <= threshold;
+  const kind: RouletteLandingKind = nearStart
+    ? 'near-start'
+    : nearEnd
+      ? 'near-end'
+      : 'interior';
+
+  return {
+    winnerIndex,
+    landing: {
+      kind,
+      positionRatio,
+      entryGapDegrees: 12,
+      leadDegrees: Math.min(distanceFromStart, distanceFromEnd),
+      boundaryHit: kind !== 'interior',
+    } satisfies RouletteFinishLanding,
+  };
+}
+
+/**
+ * Captures the live rotor state, fixes a result-neutral braking coordinate,
+ * then resolves the automatic result from the slice beneath the fixed pointer
+ * at that stop. The API accepts no winner and therefore cannot rotate a
+ * previously selected result into place.
+ */
+export function createSpinPhysicalCommit(
+  currentRotation: number,
+  angularVelocity: number,
+  participantCount: number,
+  weights?: readonly number[],
+  random: RandomSource = randomUnit,
+): SpinPhysicalCommit | null {
+  if (participantCount < 1) return null;
+
+  const capturedRotation = Number.isFinite(currentRotation) ? currentRotation : 0;
+  const safeVelocity = Math.max(1, finiteNonNegative(angularVelocity, 1));
+  const baseFullTurns = Math.round(clamp(safeVelocity / 270, 3, 5));
+  // The fractional turn is sampled before looking at any slice. Uniform angle
+  // preserves weighted odds because visible wedge area remains the only input.
+  const plannedTravelDegrees = baseFullTurns * 360
+    + Math.min(nextUnitRandom(random), 1 - Number.EPSILON) * 360;
+  const stopRotation = capturedRotation + plannedTravelDegrees;
+  const resolved = resolvePhysicalLanding(
+    stopRotation,
+    participantCount,
+    weights,
+    AUTO_POINTER_ANGLE,
+    SPIN_BOUNDARY_MAX_DEGREES,
+    SPIN_BOUNDARY_RATIO_PER_SIDE,
+  );
+  if (!resolved) return null;
+
+  return {
+    capturedRotation,
+    angularVelocity: safeVelocity,
+    plannedTravelDegrees,
+    stopRotation,
+    geometrySignature: createRouletteGeometrySignature(participantCount, weights),
+    winnerIndex: resolved.winnerIndex,
+    landing: resolved.landing,
+  };
+}
+
+/**
+ * Replays an already committed physical stop. A delayed paint may add whole
+ * catch-up turns, but the stop coordinate modulo one turn never changes.
+ */
+export function buildCommittedSpinRouletteFinishPlan(
+  commit: SpinPhysicalCommit,
+  participantCount: number,
+  weights?: readonly number[],
+  minimumStartingRotation = commit.capturedRotation,
+): RouletteFinishPlan | null {
+  if (
+    participantCount < 1
+    || commit.winnerIndex < 0
+    || commit.winnerIndex >= participantCount
+    || commit.geometrySignature !== createRouletteGeometrySignature(participantCount, weights)
+  ) return null;
+
+  const basePlan = buildRouletteFinishPlan(
+    commit.capturedRotation,
+    commit.winnerIndex,
+    participantCount,
+    0,
+    weights,
+    commit.landing,
+  );
+  const committedTurns = Math.max(
+    0,
+    Math.round((commit.stopRotation - basePlan.finalRotation) / 360),
+  );
+  let fullTurns = committedTurns;
+  let plan = buildRouletteFinishPlan(
+    commit.capturedRotation,
+    commit.winnerIndex,
+    participantCount,
+    fullTurns,
+    weights,
+    commit.landing,
+  );
+  const safeMinimum = Number.isFinite(minimumStartingRotation)
+    ? minimumStartingRotation
+    : commit.capturedRotation;
+  if (plan.focusRotation <= safeMinimum) {
+    fullTurns += Math.ceil((safeMinimum - plan.focusRotation + 0.001) / 360);
+    plan = buildRouletteFinishPlan(
+      commit.capturedRotation,
+      commit.winnerIndex,
+      participantCount,
+      fullTurns,
+      weights,
+      commit.landing,
+    );
+  }
+
+  const phaseDifference = Math.abs(
+    normalizeAngle(plan.finalRotation) - normalizeAngle(commit.stopRotation),
+  );
+  if (
+    getRouletteSliceIndexAtScreenAngle(plan.finalRotation, participantCount, weights)
+      !== commit.winnerIndex
+    || Math.min(phaseDifference, 360 - phaseDifference) > 1e-7
+  ) return null;
+
+  return plan;
+}
+
 /**
  * Commits the dart result from the painted target and the live rotor rather
  * than rotating a preselected winner into place. The result is still known
@@ -540,29 +684,15 @@ export function createDartPhysicalCommit(
   const safeDuration = finiteClamped(flightDurationSeconds, 1, 1.3, DART_FLIGHT_DURATION_SECONDS);
   const impactPoint = resolveDartImpactPoint(shot);
   const impactRotation = safeRotation + safeVelocity * safeDuration;
-  const winnerIndex = getRouletteSliceIndexAtScreenAngle(
+  const resolved = resolvePhysicalLanding(
     impactRotation,
     participantCount,
     weights,
     impactPoint.impactAngleDegrees,
+    DART_BOUNDARY_MAX_DEGREES,
+    0.16,
   );
-  const winner = getRouletteSliceGeometry(participantCount, weights)[winnerIndex];
-  if (!winner) return null;
-
-  const span = winner.endAngle - winner.startAngle;
-  const localAngle = normalizeAngle(impactPoint.impactAngleDegrees - impactRotation);
-  const offsetFromStart = clamp(normalizeAngle(localAngle - winner.startAngle), 0, span);
-  const positionRatio = span > 0 ? clamp(offsetFromStart / span, 0, 1) : 0.5;
-  const distanceFromStart = offsetFromStart;
-  const distanceFromEnd = Math.max(0, span - offsetFromStart);
-  const threshold = Math.min(DART_BOUNDARY_MAX_DEGREES, span * 0.16);
-  const nearStart = distanceFromStart <= threshold;
-  const nearEnd = distanceFromEnd <= threshold;
-  const kind: RouletteLandingKind = nearStart
-    ? 'near-start'
-    : nearEnd
-      ? 'near-end'
-      : 'interior';
+  if (!resolved) return null;
 
   return {
     shot: {
@@ -575,14 +705,8 @@ export function createDartPhysicalCommit(
     impactRotation,
     flightDurationSeconds: safeDuration,
     geometrySignature: createRouletteGeometrySignature(participantCount, weights),
-    winnerIndex,
-    landing: {
-      kind,
-      positionRatio,
-      entryGapDegrees: 12,
-      leadDegrees: Math.min(distanceFromStart, distanceFromEnd),
-      boundaryHit: kind !== 'interior',
-    },
+    winnerIndex: resolved.winnerIndex,
+    landing: resolved.landing,
   };
 }
 

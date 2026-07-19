@@ -101,7 +101,7 @@ export default function RoundSetupPanel({
 
   return (
     <section className="round-setup round-setup--compact" aria-label="추첨 설정">
-      <label className="round-setup__row round-setup__row--title">
+      <label className="round-setup__row round-setup__row--title" data-setup-slot="title">
         <span className="round-setup__label">방송 제목</span>
         <input
           value={drawLabel}
@@ -113,7 +113,7 @@ export default function RoundSetupPanel({
         />
       </label>
 
-      <div className="round-setup__row round-setup__row--target">
+      <div className="round-setup__row round-setup__row--target" data-setup-slot="target">
         <span className="round-setup__label">추첨 대상</span>
         <div className="round-setup__segmented" role="group" aria-label="추첨 대상">
           <button type="button" aria-pressed={target === 'people'} disabled={disabled} onClick={() => onTargetChange('people')}>
@@ -125,7 +125,7 @@ export default function RoundSetupPanel({
         </div>
       </div>
 
-      <div className="round-setup__row round-setup__row--presentation">
+      <div className="round-setup__row round-setup__row--presentation" data-setup-slot="presentation">
         <span className="round-setup__label">연출</span>
         <div className="round-setup__segmented" role="group" aria-label="방송 연출">
           <button type="button" aria-pressed={presentationChoice === 'spin'} disabled={disabled} onClick={() => onPresentationChange('spin')}>
@@ -137,46 +137,53 @@ export default function RoundSetupPanel({
         </div>
       </div>
 
-      <div className="round-setup__row round-setup__row--source">
-        <span className="round-setup__label">{target === 'people' ? '명단' : '상품'}</span>
-        <div className="round-setup__source-summary">
-          <strong>{sourceValue}</strong>
-          {target === 'people' && drawOptionCount > 0 && drawOptionCount !== participantTotal && (
-            <span>추첨 가능 {drawOptionCount}명</span>
-          )}
-        </div>
-        {target === 'people' ? (
-          <div className="round-setup__source-actions">
-            {excludedCount > 0 && onRestoreExcluded && (
-              <button type="button" disabled={disabled} onClick={onRestoreExcluded}>{excludedCount}명 복귀</button>
+      <div
+        className={`round-setup__data-slot round-setup__data-slot--${target}`}
+        data-setup-slot="data"
+        data-setup-data-layout={target === 'people' ? 'span' : 'split'}
+      >
+        <div className={`round-setup__row round-setup__row--source${target === 'people' ? ' round-setup__row--source-spanning' : ''}`}>
+          <span className="round-setup__label">{target === 'people' ? '명단' : '상품'}</span>
+          <div className="round-setup__source-summary">
+            <strong>{sourceValue}</strong>
+            {target === 'people' && drawOptionCount > 0 && drawOptionCount !== participantTotal && (
+              <span>추첨 가능 {drawOptionCount}명</span>
             )}
-            <button
-              type="button"
-              className={participantTotal === 0 ? 'is-primary' : undefined}
-              disabled={disabled}
-              onClick={onEditRoster}
-            >{participantTotal === 0 ? '명단 추가' : '편집'}</button>
           </div>
-        ) : null}
-      </div>
-
-      {target === 'prizes' && (
-        <div className="round-setup__prizes">
-          <PrizeEditor
-            prizes={prizes}
-            useWeights={useWeights}
-            showWeightFields={false}
-            disabled={disabled}
-            onAdd={onAddPrize}
-            onUpdate={onUpdatePrize}
-            onWeightChange={onPrizeWeightChange}
-            onRemove={onRemovePrize}
-          />
+          {target === 'people' ? (
+            <div className="round-setup__source-actions">
+              {excludedCount > 0 && onRestoreExcluded && (
+                <button type="button" disabled={disabled} onClick={onRestoreExcluded}>{excludedCount}명 복귀</button>
+              )}
+              <button
+                type="button"
+                className={participantTotal === 0 ? 'is-primary' : undefined}
+                disabled={disabled}
+                onClick={onEditRoster}
+              >{participantTotal === 0 ? '명단 추가' : '편집'}</button>
+            </div>
+          ) : null}
         </div>
-      )}
+
+        {target === 'prizes' && (
+          <div className="round-setup__prizes">
+            <PrizeEditor
+              prizes={prizes}
+              useWeights={useWeights}
+              showWeightFields={false}
+              disabled={disabled}
+              onAdd={onAddPrize}
+              onUpdate={onUpdatePrize}
+              onWeightChange={onPrizeWeightChange}
+              onRemove={onRemovePrize}
+            />
+          </div>
+        )}
+      </div>
 
       <details
         className="round-setup__advanced"
+        data-setup-slot="advanced"
         open={advancedOpen}
         onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
       >

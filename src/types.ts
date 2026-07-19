@@ -1,6 +1,6 @@
 export type DrawMode = 'wheel' | 'marble';
 export type DrawTarget = 'people' | 'prizes';
-/** How a wheel result is revealed. It never changes the draw result itself. */
+/** Physical interaction that fixes a result against the same weighted wheel geometry. */
 export type WheelPresentation = 'spin' | 'dart';
 
 export interface Participant {

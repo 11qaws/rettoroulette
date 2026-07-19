@@ -5,7 +5,7 @@ import './CurrentRoundWinners.css';
 export type CurrentRoundWinner = {
   /** Stable when available so the newest winner can be highlighted reliably. */
   id?: string;
-  /** The name shown on the broadcast screen. Names always wrap; none are truncated. */
+  /** The name shown on the broadcast screen on one line. */
   name: string;
   /** Optional short context, for example the matched prize name. */
   detail?: string;
@@ -38,6 +38,13 @@ function itemKey(winner: CurrentRoundWinner, index: number) {
   return winner.id ?? `${winner.name}-${index}`;
 }
 
+function winnerNameClass(name: string) {
+  const length = Array.from(name).length;
+  if (length >= 7) return 'current-round-winners__name current-round-winners__name--compact';
+  if (length >= 5) return 'current-round-winners__name current-round-winners__name--medium';
+  return 'current-round-winners__name';
+}
+
 /**
  * A persistent broadcast board for every winner revealed in one stage session.
  *
@@ -65,7 +72,6 @@ export default function CurrentRoundWinners({
     : -1;
   const scrollTargetIndex = latestIndex >= 0 ? latestIndex : winners.length - 1;
   const isComplete = winners.length > 0 && pendingCount === 0;
-  const useTwoColumns = winners.length >= 6 && winners.length <= 10;
   const boardClassName = [
     'current-round-winners',
     winners.length === 0 ? 'is-empty' : undefined,
@@ -141,7 +147,7 @@ export default function CurrentRoundWinners({
           </div>
         ) : (
           <ol
-            className={`current-round-winners__list${useTwoColumns ? ' current-round-winners__list--two-column' : ''}`}
+            className="current-round-winners__list"
             aria-label={`${title} · 방송 누적 ${winners.length}${unit}`}
           >
             {winners.map((winner, index) => {
@@ -158,7 +164,7 @@ export default function CurrentRoundWinners({
                 >
                   <span className="current-round-winners__number" aria-hidden="true">{index + 1}</span>
                   <span className="current-round-winners__identity">
-                    <strong>{name}</strong>
+                    <strong className={winnerNameClass(name)} title={name}>{name}</strong>
                     {winner.detail && <small>{winner.detail}</small>}
                   </span>
                   <span className="current-round-winners__state">

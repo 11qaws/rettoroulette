@@ -49,27 +49,28 @@ function renderPanel(overrides: Partial<RoundSetupPanelProps> = {}) {
 }
 
 describe('RoundSetupPanel information order', () => {
-  it('keeps title, target, presentation and roster in the requested primary order', () => {
-    const markup = renderPanel();
-    const title = markup.indexOf('round-setup__row--title');
-    const target = markup.indexOf('round-setup__row--target');
-    const presentation = markup.indexOf('round-setup__row--presentation');
-    const roster = markup.indexOf('round-setup__row--source');
-    const advanced = markup.indexOf('round-setup__advanced');
+  it.each(['people', 'prizes'] as const)('keeps the same five setup slots for %s draws', (target) => {
+    const markup = renderPanel({ target });
+    const slots = [...markup.matchAll(/data-setup-slot="([^"]+)"/g)].map((match) => match[1]);
 
-    expect(title).toBeGreaterThanOrEqual(0);
-    expect(title).toBeLessThan(target);
-    expect(target).toBeLessThan(presentation);
-    expect(presentation).toBeLessThan(roster);
-    expect(roster).toBeLessThan(advanced);
+    expect(slots).toEqual(['title', 'target', 'presentation', 'data', 'advanced']);
     expect(markup.match(/>방송 제목</g)).toHaveLength(1);
-    expect(markup).toContain('>상품명 <');
   });
 
-  it('keeps the prize recipient field in advanced settings', () => {
-    const markup = renderPanel({ target: 'prizes' });
+  it('lets the people roster span the data slot used by the two prize rows', () => {
+    const peopleMarkup = renderPanel({ target: 'people' });
+    const prizeMarkup = renderPanel({ target: 'prizes' });
 
-    expect(markup).toContain('>받을 사람 <');
-    expect(markup.match(/>방송 제목</g)).toHaveLength(1);
+    expect(peopleMarkup).toContain('round-setup__data-slot round-setup__data-slot--people');
+    expect(peopleMarkup).toContain('data-setup-data-layout="span"');
+    expect(peopleMarkup).toContain('round-setup__row--source-spanning');
+    expect(peopleMarkup).not.toContain('round-setup__prizes');
+    expect(peopleMarkup).toContain('>상품명 <');
+
+    expect(prizeMarkup).toContain('round-setup__data-slot round-setup__data-slot--prizes');
+    expect(prizeMarkup).toContain('data-setup-data-layout="split"');
+    expect(prizeMarkup).toContain('round-setup__prizes');
+    expect(prizeMarkup.indexOf('round-setup__row--source')).toBeLessThan(prizeMarkup.indexOf('round-setup__prizes'));
+    expect(prizeMarkup).toContain('>받을 사람 <');
   });
 });

@@ -5,11 +5,12 @@ import type { DrawMode, DrawTarget, WheelPresentation } from '../types';
 import {
   createDartAimSession,
   createDartPhysicalCommit,
-  createRouletteFinishLanding,
+  createSpinPhysicalCommit,
   resolveDartImpactPoint,
   type DartAimSession,
   type DartPhysicalCommit,
   type RouletteFinishLanding,
+  type SpinPhysicalCommit,
 } from '../lib/roulette';
 import type {
   RouletteRevealEvent,
@@ -34,21 +35,6 @@ function createPreviewRandom(seed: number) {
     state = Math.imul(state ^ (state >>> 15), 0x735a2d97);
     state ^= state >>> 15;
     return (state >>> 0) / 0x1_0000_0000;
-  };
-}
-
-function createPreviewLandingRandom(seed: number, presentation: WheelPresentation) {
-  const base = createPreviewRandom(seed);
-  const spinRegions = [0.1, 0.4, 0.8];
-  const dartRegions = [0.1, 0.2, 0.7];
-  const regions = presentation === 'spin' ? spinRegions : dartRegions;
-  let first = true;
-  return () => {
-    if (first) {
-      first = false;
-      return regions[seed % regions.length];
-    }
-    return base();
   };
 }
 
@@ -103,10 +89,15 @@ export default function DrawPreviewDirector({
   const [spinKey, setSpinKey] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState<number | null>(null);
   const [dartAim, setDartAim] = useState<DartAimSession | null>(null);
+  const [spinCommit, setSpinCommit] = useState<SpinPhysicalCommit | null>(null);
   const [dartCommit, setDartCommit] = useState<DartPhysicalCommit | null>(null);
-  const [landing, setLanding] = useState<RouletteFinishLanding>(() => (
-    createRouletteFinishLanding(presentation, () => 0.5)
-  ));
+  const [landing, setLanding] = useState<RouletteFinishLanding>({
+    kind: 'interior',
+    positionRatio: 0.5,
+    entryGapDegrees: 0,
+    leadDegrees: 0,
+    boundaryHit: false,
+  });
   const [moving, setMoving] = useState(false);
   const [phase, setPhase] = useState<PreviewPhase>('idle');
   const [inViewport, setInViewport] = useState(true);
@@ -146,6 +137,7 @@ export default function DrawPreviewDirector({
     singleRunRef.current = single;
     setMoving(false);
     setWinnerIndex(null);
+    setSpinCommit(null);
     setDartCommit(null);
     setDartAim(presentation === 'dart'
       ? createDartAimSession(
@@ -179,6 +171,7 @@ export default function DrawPreviewDirector({
     const sampleIndex = sampleIndexRef.current;
     let nextWinner: number;
     let nextLanding: RouletteFinishLanding;
+    let nextSpinCommit: SpinPhysicalCommit | null = null;
     let nextDartCommit: DartPhysicalCommit | null = null;
 
     if (presentation === 'dart') {
@@ -201,16 +194,30 @@ export default function DrawPreviewDirector({
       nextWinner = nextDartCommit.winnerIndex;
       nextLanding = nextDartCommit.landing;
     } else {
-      nextWinner = (sampleIndex - 1) % previewNames.length;
-      nextLanding = createRouletteFinishLanding(
-        presentation,
-        createPreviewLandingRandom(sampleIndex, presentation),
+      const capture = wheelRef.current?.captureRotor();
+      if (!capture) {
+        armedRunIdRef.current = 0;
+        return;
+      }
+      nextSpinCommit = createSpinPhysicalCommit(
+        capture.rotation,
+        capture.angularVelocity,
+        previewNames.length,
+        previewWeights,
+        createPreviewRandom(sampleIndex + 701),
       );
+      if (!nextSpinCommit) {
+        armedRunIdRef.current = 0;
+        return;
+      }
+      nextWinner = nextSpinCommit.winnerIndex;
+      nextLanding = nextSpinCommit.landing;
     }
 
     spinKeyRef.current += 1;
     const nextSpinKey = spinKeyRef.current;
     setLanding(nextLanding);
+    setSpinCommit(nextSpinCommit);
     setDartCommit(nextDartCommit);
     setPhase('result-committed');
     schedule(() => {
@@ -240,6 +247,7 @@ export default function DrawPreviewDirector({
     schedule(() => {
       if (runId !== runIdRef.current) return;
       setWinnerIndex(null);
+      setSpinCommit(null);
       setDartCommit(null);
       setPhase('idle');
       schedule(() => {
@@ -332,6 +340,7 @@ export default function DrawPreviewDirector({
             revealId={spinKey}
             presentation={presentation}
             landing={landing}
+            spinCommit={presentation === 'spin' ? spinCommit ?? undefined : undefined}
             dartShot={presentation === 'dart' ? dartCommit?.shot : undefined}
             dartAim={presentation === 'dart' ? dartAim ?? undefined : undefined}
             dartCommit={presentation === 'dart' ? dartCommit ?? undefined : undefined}

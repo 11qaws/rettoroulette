@@ -130,10 +130,6 @@
   scrollbar-color: var(--hot-pink) transparent;
 }
 
-.preparation-rail__controls .round-setup--compact {
-  min-height: 100%;
-}
-
 .preparation-preview {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

@@ -192,21 +192,37 @@
   font-family: 'Share Tech Mono', monospace;
   font-size: 15px;
   text-align: right;
+  white-space: nowrap;
 }
 
 .current-round-winners__identity {
   display: grid;
   min-width: 0;
   gap: 2px;
+  overflow: hidden;
+  container-type: inline-size;
 }
 
-.current-round-winners__identity strong {
-  overflow-wrap: anywhere;
+.current-round-winners__name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink);
   font-family: 'Jua', sans-serif;
   font-size: clamp(18px, 1.9vw, 24px);
   font-weight: 400;
   line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.current-round-winners__name--medium {
+  font-size: clamp(14px, 15cqi, 22px);
+}
+
+.current-round-winners__name--compact {
+  font-size: clamp(12px, 11.5cqi, 19px);
+  letter-spacing: -0.01em;
 }
 
 .current-round-winners__identity small {
@@ -242,18 +258,6 @@
   line-height: 1.45;
 }
 
-.current-round-winners__list--two-column {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.current-round-winners__list--two-column li {
-  grid-template-columns: 24px minmax(0, 1fr);
-}
-
-.current-round-winners__list--two-column .current-round-winners__state {
-  display: none;
-}
-
 @media (max-width: 520px) {
   .current-round-winners {
     block-size: auto;
@@ -268,7 +272,7 @@
   }
 
   .current-round-winners__list li {
-    grid-template-columns: 25px minmax(0, 1fr);
+    grid-template-columns: 25px minmax(0, 1fr) max-content;
     gap: 8px;
     min-height: 50px;
     padding: 9px;
@@ -287,17 +291,16 @@
     margin-top: -4px;
   }
 
-  .current-round-winners__state {
-    grid-column: 2;
-    justify-self: start;
-    margin-top: -4px;
-  }
-
-  .current-round-winners__identity strong {
+  .current-round-winners__name {
     font-size: 21px;
   }
 
-  .current-round-winners__list--two-column {
-    grid-template-columns: 1fr;
+  .current-round-winners__name--medium {
+    font-size: clamp(14px, 15cqi, 18px);
   }
+
+  .current-round-winners__name--compact {
+    font-size: clamp(12px, 11.5cqi, 16px);
+  }
+
 }

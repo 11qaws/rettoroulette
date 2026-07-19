@@ -785,6 +785,14 @@
     font-size: clamp(16px, 1.6vw, 20px);
   }
 
+  .broadcast-focus.is-completed strong.current-round-winners__name--medium {
+    font-size: clamp(14px, 15cqi, 18px);
+  }
+
+  .broadcast-focus.is-completed strong.current-round-winners__name--compact {
+    font-size: clamp(12px, 11.5cqi, 16px);
+  }
+
   .broadcast-focus.is-completed .broadcast-focus__prize-link {
     min-height: 32px;
     padding-block: 4px;

@@ -10,7 +10,7 @@ import DartFinish, {
 } from './DartFinish';
 import {
   buildCommittedDartRouletteFinishPlan,
-  buildRouletteFinishPlan,
+  buildCommittedSpinRouletteFinishPlan,
   calculateAutoPhotoFinishTiming,
   calculateDartPostImpactDuration,
   createRouletteGeometrySignature,
@@ -25,6 +25,7 @@ import {
   type DartRouletteFinishPlan,
   type RouletteFinishLanding,
   type RouletteFinishPlan,
+  type SpinPhysicalCommit,
 } from '../lib/roulette';
 import type { WheelPresentation } from '../types';
 import './RouletteWheel.css';
@@ -45,6 +46,8 @@ export interface RouletteWheelProps {
   presentation?: WheelPresentation;
   /** Visual-only finish placement, generated after the winner is committed. */
   landing?: RouletteFinishLanding;
+  /** Click-time rotor coordinate that physically selected an automatic winner. */
+  spinCommit?: SpinPhysicalCommit;
   /** One result-neutral, physically shared impact point for a dart reveal. */
   dartShot?: DartShotPlan;
   /** Moving result-neutral target shown before a live dart is committed. */
@@ -64,7 +67,14 @@ export interface DartAimCapture {
   angularVelocity: number;
 }
 
+export interface RouletteRotorCapture {
+  rotation: number;
+  angularVelocity: number;
+}
+
 export interface RouletteWheelHandle {
+  /** Captures the exact live rotor frame beneath the fixed pointer. */
+  captureRotor: () => RouletteRotorCapture | null;
   /** Freezes exactly the last aim sample painted with the live rotor. */
   freezeDartAim: () => DartAimCapture | null;
 }
@@ -123,7 +133,6 @@ const DART_STOP_HOLD_DELAY = STOP_HOLD_DELAY;
 const BOUNDARY_RESOLVED_HOLD_DELAY = 220;
 const IDLE_SPIN_ACCELERATION_MS = 900;
 const IDLE_SPIN_DEGREES_PER_SECOND = 1080;
-const AUTO_WHIRL_FULL_TURNS = 4;
 const DART_ATTACHED_PROOF_SECONDS = 0.28;
 const DART_ATTACHED_COAST_TURNS = 2;
 
@@ -234,6 +243,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   revealId,
   presentation = 'spin',
   landing,
+  spinCommit,
   dartShot,
   dartAim,
   dartCommit,
@@ -366,6 +376,12 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   }, [dartShot, paintDartAim]);
 
   useImperativeHandle(ref, () => ({
+    captureRotor: () => idleMotionPhase === 'cruise'
+      ? {
+          rotation: rotationRef.current,
+          angularVelocity: idleAngularVelocityRef.current,
+        }
+      : null,
     freezeDartAim: () => {
       if (!isDartPresentation) return null;
       let shot = lastPaintedAimRef.current;
@@ -394,7 +410,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
           : IDLE_SPIN_DEGREES_PER_SECOND,
       };
     },
-  }), [isDartPresentation, paintDartAim]);
+  }), [idleMotionPhase, isDartPresentation, paintDartAim]);
 
   const clearRunTimers = useCallback(() => {
     if (completionFallbackTimer.current !== null) {
@@ -712,22 +728,35 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
       setPostImpactDuration(plannedPostImpactDuration);
       setDartImpactRotation(dartPlan.impactRotation);
     } else {
-      finishPlan = buildRouletteFinishPlan(
-        startingRotation,
-        winnerIndex,
+      if (
+        !spinCommit
+        || spinCommit.winnerIndex !== winnerIndex
+        || spinCommit.geometrySignature !== createRouletteGeometrySignature(participantCount, weights)
+      ) {
+        // Automatic roulette also requires a click-time physical coordinate.
+        // Never rotate a preselected winner into place as a fallback.
+        activeRunRef.current = null;
+        setIsAnimating(false);
+        return;
+      }
+      const committedPlan = buildCommittedSpinRouletteFinishPlan(
+        spinCommit,
         participantCount,
-        AUTO_WHIRL_FULL_TURNS,
         weights,
-        landing,
+        startingRotation,
       );
+      if (!committedPlan) {
+        activeRunRef.current = null;
+        setIsAnimating(false);
+        return;
+      }
+      finishPlan = committedPlan;
       actualBoundaryHit = isRoulettePhotoFinish(
-        landing?.boundaryHit,
+        spinCommit.landing.boundaryHit,
         participantCount,
         finishPlan,
       );
-      const startingVelocity = idleAngularVelocityRef.current > 1
-        ? idleAngularVelocityRef.current
-        : IDLE_SPIN_DEGREES_PER_SECOND;
+      const startingVelocity = spinCommit.angularVelocity;
 
       if (actualBoundaryHit) {
         const timing = calculateAutoPhotoFinishTiming(startingRotation, finishPlan, startingVelocity);
@@ -861,6 +890,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     participants,
     presentation,
     revealId,
+    spinCommit,
     spinKey,
     spinning,
     weights,

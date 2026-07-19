@@ -6,7 +6,9 @@ import {
   DART_IMPACT_ANGLE,
   DART_FLIGHT_DURATION_SECONDS,
   PHOTO_FINISH_MAX_LEAD_DEGREES,
+  SPIN_BOUNDARY_RATIO_PER_SIDE,
   buildCommittedDartRouletteFinishPlan,
+  buildCommittedSpinRouletteFinishPlan,
   buildDartRouletteFinishPlan,
   buildRouletteFinishPlan,
   calculateAutoPhotoFinishTiming,
@@ -15,8 +17,8 @@ import {
   createDartAimSession,
   createDartPhysicalCommit,
   createDartShotPlan,
-  createRouletteFinishLanding,
   createRouletteGeometrySignature,
+  createSpinPhysicalCommit,
   getRouletteSliceGeometry,
   getRouletteSliceIndexAtScreenAngle,
   isRoulettePhotoFinish,
@@ -80,6 +82,104 @@ const normalized = (angle: number) => ((angle % 360) + 360) % 360;
 const localAngleAtPointer = (rotation: number) => normalized(AUTO_POINTER_ANGLE - rotation);
 const localAngleAt = (screenAngle: number, rotation: number) => normalized(screenAngle - rotation);
 
+describe('automatic roulette physical commit', () => {
+  it('derives the winner and exact landing coordinate from the clicked rotor frame', () => {
+    const weights = [1, 2, 1];
+
+    const captures = [0, 44.5, 89.9, 137.25, 271.4, 719.75];
+    for (const [index, capturedRotation] of captures.entries()) {
+      const friction = (index + 0.5) / captures.length;
+      const commit = createSpinPhysicalCommit(capturedRotation, 1_080, 3, weights, () => friction);
+      expect(commit).not.toBeNull();
+      if (!commit) continue;
+
+      expect(commit.winnerIndex).toBe(getRouletteSliceIndexAtScreenAngle(
+        commit.stopRotation,
+        3,
+        weights,
+      ));
+      expect(commit.stopRotation).toBeCloseTo(
+        commit.capturedRotation + commit.plannedTravelDegrees,
+        10,
+      );
+
+      const plan = buildCommittedSpinRouletteFinishPlan(
+        commit,
+        3,
+        weights,
+        capturedRotation + 151.2,
+      );
+      expect(plan).not.toBeNull();
+      if (!plan) continue;
+      expect(getRouletteSliceIndexAtScreenAngle(plan.finalRotation, 3, weights)).toBe(commit.winnerIndex);
+      expect(localAngleAtPointer(plan.finalRotation)).toBeCloseTo(
+        localAngleAtPointer(commit.stopRotation),
+        8,
+      );
+    }
+  });
+
+  it('preserves weighted odds through physical angular area without selecting a winner first', () => {
+    const weights = [1, 2, 1];
+    const counts = [0, 0, 0];
+    const samples = 36_000;
+
+    for (let index = 0; index < samples; index += 1) {
+      const commit = createSpinPhysicalCommit(137.25, 1_080, 3, weights, () => (
+        (index + 0.5) / samples
+      ));
+      if (commit) counts[commit.winnerIndex] += 1;
+    }
+
+    expect(counts[0] / samples).toBeCloseTo(0.25, 3);
+    expect(counts[1] / samples).toBeCloseTo(0.5, 3);
+    expect(counts[2] / samples).toBeCloseTo(0.25, 3);
+  });
+
+  it('refuses to replay a physical stop against stale wedge geometry', () => {
+    const commit = createSpinPhysicalCommit(137.25, 1_080, 3, [1, 2, 1], () => 0.42);
+    expect(commit).not.toBeNull();
+    if (!commit) return;
+
+    expect(buildCommittedSpinRouletteFinishPlan(commit, 3, [1, 3, 1])).toBeNull();
+    expect(buildCommittedSpinRouletteFinishPlan(commit, 4, [1, 2, 1, 1])).toBeNull();
+  });
+
+  it('shows a boundary finish only when the captured coordinate is genuinely close', () => {
+    const countBoundaryLandings = (
+      participantCount: number,
+      weights?: readonly number[],
+    ) => {
+      const samples = 36_000;
+      const kinds = { start: 0, end: 0, interior: 0 };
+      for (let index = 0; index < samples; index += 1) {
+        const commit = createSpinPhysicalCommit(
+          137.25,
+          1_080,
+          participantCount,
+          weights,
+          () => (index + 0.5) / samples,
+        );
+        if (commit?.landing.kind === 'near-start') kinds.start += 1;
+        else if (commit?.landing.kind === 'near-end') kinds.end += 1;
+        else kinds.interior += 1;
+      }
+      return { ...kinds, samples };
+    };
+
+    const five = countBoundaryLandings(5);
+    const many = countBoundaryLandings(32);
+    const weighted = countBoundaryLandings(4, [1, 4, 2, 3]);
+    expect(SPIN_BOUNDARY_RATIO_PER_SIDE).toBeLessThanOrEqual(0.05);
+    expect((five.start + five.end) / five.samples).toBeGreaterThan(0.05);
+    expect((five.start + five.end) / five.samples).toBeLessThan(0.07);
+    expect((many.start + many.end) / many.samples).toBeLessThanOrEqual(0.101);
+    expect(Math.abs(many.start - many.end)).toBeLessThanOrEqual(2);
+    expect((weighted.start + weighted.end) / weighted.samples).toBeLessThanOrEqual(0.101);
+    expect(Math.abs(weighted.start - weighted.end)).toBeLessThanOrEqual(2);
+  });
+});
+
 describe('dart shot placement', () => {
   it('keeps generated shots inside the safe upper arc and jitter bounds', () => {
     const low = createDartShotPlan(() => 0);
@@ -112,30 +212,7 @@ describe('dart shot placement', () => {
   });
 });
 
-describe('result-neutral landing variety', () => {
-  const sequence = (...values: number[]) => {
-    let index = 0;
-    return () => values[Math.min(index++, values.length - 1)] ?? 0.5;
-  };
-
-  it('samples both boundary sides and the interior without touching winner odds', () => {
-    const nearEnd = createRouletteFinishLanding('spin', sequence(0.1, 1, 0.5));
-    const nearStart = createRouletteFinishLanding('spin', sequence(0.4, 1, 0.5));
-    expect(nearEnd.kind).toBe('near-end');
-    expect(nearStart.kind).toBe('near-start');
-    expect(nearEnd.leadDegrees).toBeLessThanOrEqual(PHOTO_FINISH_MAX_LEAD_DEGREES);
-    expect(nearStart.leadDegrees).toBeLessThanOrEqual(PHOTO_FINISH_MAX_LEAD_DEGREES);
-    expect(isRoulettePhotoFinish(true, 8, buildRouletteFinishPlan(0, 0, 8, 4, undefined, nearEnd))).toBe(true);
-    expect(isRoulettePhotoFinish(true, 8, buildRouletteFinishPlan(0, 0, 8, 4, undefined, nearStart))).toBe(true);
-    const interior = createRouletteFinishLanding('spin', sequence(0.8, 0.25));
-    expect(interior.kind).toBe('interior');
-    expect(interior.positionRatio).toBeCloseTo(0.37, 10);
-
-    expect(createRouletteFinishLanding('dart', sequence(0.1, 0.5, 0.5)).kind).toBe('near-end');
-    expect(createRouletteFinishLanding('dart', sequence(0.2, 0.5, 0.5)).kind).toBe('near-start');
-    expect(createRouletteFinishLanding('dart', sequence(0.7, 0.5)).kind).toBe('interior');
-  });
-
+describe('physical aim motion', () => {
   it('keeps a deterministic moving aim inside the visible safe arc', () => {
     let randomState = 17;
     const aim = createDartAimSession(7, 1_000, () => {
