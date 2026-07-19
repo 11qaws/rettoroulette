@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import BroadcastActionDock, { type BroadcastDockAction } from './components/BroadcastActionDock';
 import CurrentRoundWinners from './components/CurrentRoundWinners';
+import DrawPreviewDirector from './components/DrawPreviewDirector';
 import MarbleRace from './components/MarbleRace';
 import ParticipantSetup from './components/ParticipantSetup';
 import RouletteWheel, {
@@ -23,12 +24,14 @@ import {
   type RaffleEvent,
   type RaffleStatus,
 } from './lib/raffleLifecycle';
+import { derivePreparationReadiness } from './lib/preparation';
 import type { RouletteFinishLanding } from './lib/roulette';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize, WheelPresentation } from './types';
 
 import './App.css';
 import './styles/rettoRoulette.cinematic.css';
 import './styles/rettoRoulette.flow.css';
+import './styles/rettoRoulette.preparation.css';
 
 type DrawOption = {
   id: string;
@@ -189,16 +192,18 @@ function App() {
   const [currentRound, setCurrentRound] = useState<CurrentRound | null>(null);
   const [history, setHistory] = useState<DrawRecord[]>([]);
   const [sideTab, setSideTab] = useState<SideTab>('participants');
-  const [raffleStatus, setRaffleStatus] = useState<RaffleStatus>('roster');
+  const [raffleStatus, setRaffleStatus] = useState<RaffleStatus>('configuring');
   const [setupReturnStatus, setSetupReturnStatus] = useState<SetupReturnStatus>('configuring');
   const [setupSession, setSetupSession] = useState(0);
   const [setupStartStep, setSetupStartStep] = useState<SetupStartStep>('paste');
+  const [participantPreviewDraft, setParticipantPreviewDraft] = useState<Participant[]>([]);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toolsTriggerRef = useRef<HTMLButtonElement>(null);
   const toolsCloseRef = useRef<HTMLButtonElement>(null);
   const toolsDrawerRef = useRef<HTMLElement>(null);
-  const raffleStatusRef = useRef<RaffleStatus>('roster');
+  const rosterTriggerRef = useRef<HTMLElement | null>(null);
+  const raffleStatusRef = useRef<RaffleStatus>('configuring');
   const presentationRunRef = useRef(0);
   const spinKeyRef = useRef(0);
   const presentationStartTimerRef = useRef<number | null>(null);
@@ -418,18 +423,16 @@ function App() {
     : drawTarget === 'people' && !removeAfterDraw
       ? 99
       : drawOptions.length;
-  const effectiveWinnerCount = Math.min(Math.max(0, winnerCount), maximumWinnerCount);
+  const effectiveWinnerCount = maximumWinnerCount === 0
+    ? 0
+    : Math.min(Math.max(1, winnerCount), maximumWinnerCount);
 
   useEffect(() => {
-    if (maximumWinnerCount === 0 && winnerCount !== 0) {
-      setWinnerCount(0);
-      return;
-    }
-    if (maximumWinnerCount > 0 && winnerCount < 1) {
+    if (winnerCount < 1) {
       setWinnerCount(1);
       return;
     }
-    if (winnerCount > maximumWinnerCount) setWinnerCount(maximumWinnerCount);
+    if (maximumWinnerCount > 0 && winnerCount > maximumWinnerCount) setWinnerCount(maximumWinnerCount);
   }, [maximumWinnerCount, winnerCount]);
 
   const drawOptionNames = useMemo(() => drawOptions.map((option) => option.name), [drawOptions]);
@@ -795,8 +798,26 @@ function App() {
     showToast(`후보 ${count}명을 새로 골랐어요.`);
   };
 
+  const restoreRosterFocus = (returnStatus: SetupReturnStatus) => {
+    window.requestAnimationFrame(() => {
+      const previousTrigger = rosterTriggerRef.current;
+      if (previousTrigger?.isConnected && !previousTrigger.closest('[inert]')) {
+        previousTrigger.focus();
+        return;
+      }
+
+      const fallbackSelector = returnStatus === 'configuring'
+        ? '.preparation-preview__primary'
+        : '.broadcast-focus__action button, .broadcast-header__actions button';
+      document.querySelector<HTMLElement>(fallbackSelector)?.focus();
+    });
+  };
+
   const openParticipantEditor = (returnStatus: SetupReturnStatus, startStep: SetupStartStep = 'edit') => {
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!transitionRaffle('open-roster')) return;
+    rosterTriggerRef.current = trigger;
+    setParticipantPreviewDraft(participants);
     setSetupStartStep(startStep);
     setSetupReturnStatus(returnStatus);
     setSetupSession((value) => value + 1);
@@ -808,11 +829,13 @@ function App() {
     if (!window.confirm(`현재 명단 ${participants.length}명을 비울까요? 당첨 기록과 상품 설정은 유지됩니다.`)) return;
 
     setParticipants([]);
+    setParticipantPreviewDraft([]);
     setExcludedParticipantIds([]);
     setPoolIds([]);
     setPoolLimit(0);
     setRecipient('');
     clearCurrentRound();
+    setSetupReturnStatus('configuring');
     setSetupStartStep('paste');
     setSetupSession((value) => value + 1);
     showToast('명단을 비웠어요. 새 명단을 붙여넣거나 직접 입력해 주세요.');
@@ -824,18 +847,24 @@ function App() {
       : setupReturnStatus === 'completed'
         ? 'cancel-roster-completed'
         : 'cancel-roster-ready';
-    transitionRaffle(event);
+    setParticipantPreviewDraft([]);
+    if (transitionRaffle(event)) {
+      restoreRosterFocus(setupReturnStatus);
+    }
   };
 
   const saveParticipants = (nextParticipants: Participant[]) => {
     const nextIds = new Set(nextParticipants.map((participant) => participant.id));
     setParticipants(nextParticipants);
+    setParticipantPreviewDraft([]);
     setExcludedParticipantIds((ids) => ids.filter((id) => nextIds.has(id)));
     setPoolIds([]);
     setPoolLimit((limit) => Math.min(limit, nextParticipants.length));
     clearCurrentRound();
     setToolsOpen(false);
-    transitionRaffle('save-roster');
+    if (transitionRaffle('save-roster')) {
+      restoreRosterFocus('configuring');
+    }
     showToast(`${nextParticipants.length}명의 참여자 명단을 준비했어요.`);
   };
 
@@ -1298,7 +1327,6 @@ function App() {
       poolLimit={poolLimit}
       winnerCount={winnerCount}
       maximumWinnerCount={maximumWinnerCount}
-      drawOptionCount={drawOptions.length}
       prizes={prizes}
       rewardLabel={rewardLabel}
       drawLabel={drawLabel}
@@ -1326,7 +1354,7 @@ function App() {
       }}
       onReshufflePool={reshufflePool}
       onWinnerCountChange={(value) => {
-        setWinnerCount(maximumWinnerCount === 0 ? 0 : clampInteger(value, 1, maximumWinnerCount));
+        setWinnerCount(maximumWinnerCount === 0 ? Math.max(1, Math.floor(value) || 1) : clampInteger(value, 1, maximumWinnerCount));
         prepareNextRoundSettings();
       }}
       onPresentationChange={(choice) => {
@@ -1347,32 +1375,13 @@ function App() {
         prepareNextRoundSettings();
       }}
       onParticipantWeightChange={updateParticipantWeight}
-      onEditRoster={() => openParticipantEditor('configuring')}
+      onEditRoster={() => openParticipantEditor('configuring', participants.length === 0 ? 'paste' : 'edit')}
       onRestoreExcluded={resetWinnerState}
       onAddPrize={addPrize}
       onUpdatePrize={updatePrize}
       onPrizeWeightChange={updatePrizeWeight}
       onRemovePrize={removePrize}
     />
-  );
-
-  const renderStatusPath = () => (
-    <ol className="raffle-status-path" aria-label="추첨 진행 단계">
-      {[
-        { step: 1, label: '명단' },
-        { step: 2, label: '설정' },
-        { step: 3, label: '추첨' },
-        { step: 4, label: '결과' },
-      ].map((item) => (
-        <li
-          key={item.step}
-          className={item.step === statusMeta.step ? 'is-current' : item.step < statusMeta.step ? 'is-complete' : ''}
-          aria-current={item.step === statusMeta.step ? 'step' : undefined}
-        >
-          <span>{item.step}</span>{item.label}
-        </li>
-      ))}
-    </ol>
   );
 
   const liveStatusDescription = raffleStatus === 'ready'
@@ -1525,128 +1534,148 @@ function App() {
     </aside>
   );
 
-  if (raffleStatus === 'roster') {
+  if (raffleStatus === 'configuring' || raffleStatus === 'roster') {
+    const editorOpen = raffleStatus === 'roster';
+    const preparation = derivePreparationReadiness({
+      target: drawTarget,
+      participantTotal: participants.length,
+      eligibleParticipantCount: eligibleParticipants.length,
+      candidateParticipantCount: candidateParticipants.length,
+      excludedParticipantCount: excludedParticipantIds.length,
+      poolLimit,
+      prizeInventoryCount: availablePrizeCount,
+      drawOptionCount: drawOptions.length,
+      effectiveWinnerCount,
+      useWeights,
+    });
+    const preparationReady = preparation.state === 'ready';
+    const preparationUnit = drawTarget === 'people' ? '명' : '개';
+    const presentationLabel = drawMode === 'marble'
+      ? '마블 레이스'
+      : wheelPresentation === 'dart'
+        ? '다트 복권'
+        : '회전 룰렛';
+    const ruleLabel = useWeights ? '확률 지정' : '동일 확률';
+    const duplicateLabel = drawTarget === 'people'
+      ? removeAfterDraw ? '당첨 후 제외' : '중복 허용'
+      : '재고 차감';
+    const previewNames = editorOpen && drawTarget === 'people'
+      ? participantPreviewDraft.map((participant) => participant.name).filter(Boolean)
+      : drawOptionNames;
+    const previewWeights = editorOpen && drawTarget === 'people'
+      ? useWeights ? participantPreviewDraft.map((participant) => participant.weight) : undefined
+      : drawOptionWeights;
+
+    let preparationAction = startBroadcast;
+
+    if (preparation.state === 'blocked') {
+      switch (preparation.recovery) {
+        case 'open-roster':
+          preparationAction = () => openParticipantEditor('configuring', participants.length === 0 ? 'paste' : 'edit');
+          break;
+        case 'restore-excluded':
+          preparationAction = resetWinnerState;
+          break;
+        case 'use-whole-roster':
+          preparationAction = () => {
+            setPoolLimit(0);
+            setPoolIds([]);
+            prepareNextRoundSettings();
+          };
+          break;
+        case 'use-equal-probability':
+          preparationAction = () => {
+            setUseWeights(false);
+            prepareNextRoundSettings();
+            showToast('동일 확률로 전환했어요.');
+          };
+          break;
+        case 'add-prize':
+          preparationAction = addPrize;
+          break;
+      }
+    }
+
     return (
-      <main className="app-shell app-shell--setup">
+      <main className="app-shell app-shell--preparation">
         <header className="brand-header">
           <div className="brand brand--static" aria-label="Retto Roulette">
             <span className="brand__mark" aria-hidden="true">🍸 💝</span>
             <strong>Retto Roulette</strong>
           </div>
-          <div className="header-status">
-            {renderStatusPath()}
-            <span className="header-pill">{statusMeta.label}</span>
-          </div>
-        </header>
-        <ParticipantSetup
-          key={setupSession}
-          initialParticipants={participants}
-          initialStep={setupStartStep}
-          onClear={participants.length > 0 ? clearParticipantRoster : undefined}
-          onCancel={participants.length > 0 ? cancelParticipantEditor : undefined}
-          onStart={saveParticipants}
-        />
-        {toast && <div className="toast" role="status">{toast}</div>}
-      </main>
-    );
-  }
-
-  if (raffleStatus === 'configuring') {
-    return (
-      <main className="app-shell app-shell--preflight">
-        <header className="brand-header">
-          <div className="brand brand--static" aria-label="Retto Roulette">
-            <span className="brand__mark" aria-hidden="true">🍸 💝</span>
-            <strong>Retto Roulette</strong>
-          </div>
-          <div className="header-status">
-            {renderStatusPath()}
-            <span className="header-pill">{statusMeta.label}</span>
-          </div>
+          <nav className="preparation-phase" aria-label="추첨 진행">
+            <strong aria-current="step">준비</strong>
+            <span>방송</span>
+            <span>결과</span>
+          </nav>
         </header>
 
-        <section className={`preflight-layout${drawOptions.length === 0 ? ' is-blocked' : ''}`} aria-label="추첨 설정">
-          <section className="preflight-setup">
-            <div className="preflight-setup__phase">
-              <span aria-hidden="true">2</span>
+        <section className="preparation-workspace" aria-label="새 추첨 준비" inert={editorOpen} aria-hidden={editorOpen || undefined}>
+          <section className="preparation-rail" aria-labelledby="preparation-title">
+            <header className="preparation-rail__heading">
               <div>
-                <p className="preflight-setup__eyebrow">추첨 설정</p>
-                <h1>이번 추첨을 설계해요.</h1>
+                <p>새 추첨</p>
+                <h1 id="preparation-title">{drawTarget === 'people' ? '당첨자 추첨' : '상품 추첨'}</h1>
               </div>
+            </header>
+            <div className="preparation-rail__controls">
+              {renderRoundSettings()}
             </div>
-            <p className="preflight-setup__copy">추첨 대상과 인원, 방송 연출만 확인하세요. 후보가 없으면 이 자리에서 바로 해결 방법을 안내합니다.</p>
-
-            <section className="preflight-roster preflight-roster--summary" aria-labelledby="preflight-roster-title">
-              <div>
-                <p>준비된 명단</p>
-                <h2 id="preflight-roster-title">전체 {participants.length}명 · 추첨 가능 {eligibleParticipants.length}명</h2>
-                {excludedParticipantIds.length > 0 && <small>이전 당첨 제외 {excludedParticipantIds.length}명</small>}
-              </div>
-              <button className="compact-button" type="button" onClick={() => openParticipantEditor('configuring')}>명단 다듬기</button>
-            </section>
-
-            {renderRoundSettings()}
           </section>
 
-          {drawOptions.length > 0 && <aside className="preflight-preview" aria-label="방송 화면 미리보기">
-            <div className="preflight-preview__heading">
+          <section className="preparation-preview" aria-labelledby="preparation-preview-title">
+            <header className="preparation-preview__heading">
               <div>
-                <p>보조 미리보기</p>
-                <h2>{drawMode === 'wheel' ? wheelPresentation === 'dart' ? '다트 복권으로 진행' : '자동 룰렛으로 진행' : '마블 레이스로 진행'}</h2>
+                <p>방송 캔버스</p>
+                <h2 id="preparation-preview-title">{presentationLabel} 미리보기</h2>
               </div>
-              <span>{drawTarget === 'people' ? `사람 ${effectiveWinnerCount}명` : `상품 ${effectiveWinnerCount}개`}</span>
+              <span>{previewNames.length > 0 ? `${previewNames.length}${preparationUnit}` : '샘플'}</span>
+            </header>
+
+            <div className="preparation-preview__stage">
+              <DrawPreviewDirector
+                names={previewNames}
+                weights={previewWeights}
+                target={drawTarget}
+                mode={drawMode}
+                presentation={wheelPresentation}
+              />
             </div>
-            <div className="preflight-preview__visual">{renderDrawVisual('preview')}</div>
-            <section className="preflight-plan-summary" aria-labelledby="preflight-plan-summary-title">
-              <p>확정 전 요약</p>
-              <h3 id="preflight-plan-summary-title">지금 정한 추첨</h3>
-              <dl>
-                <div>
-                  <dt>목적</dt>
-                  <dd>{drawTarget === 'people'
-                    ? rewardLabel.trim() ? `${rewardLabel.trim()} 당첨자` : '당첨자'
-                    : `${prizes.filter((prize) => prize.name.trim()).length}종 상품`}</dd>
-                </div>
-                <div>
-                  <dt>범위</dt>
-                  <dd>{drawTarget === 'people'
-                    ? `${candidateParticipants.length}명 중 ${effectiveWinnerCount}명`
-                    : `${drawOptions.length}개 재고 중 ${effectiveWinnerCount}개`}</dd>
-                </div>
-                <div>
-                  <dt>연출</dt>
-                  <dd>{drawMode === 'marble' ? '마블 레이스' : wheelPresentation === 'dart' ? '다트 복권' : '회전 룰렛'}</dd>
-                </div>
-                <div>
-                  <dt>규칙</dt>
-                  <dd>{useWeights ? '확률 직접 지정' : '동일 확률'}{drawTarget === 'people' ? removeAfterDraw ? ' · 당첨자 제외' : ' · 중복 허용' : ' · 재고 차감'}</dd>
-                </div>
-              </dl>
-              <p className="preflight-plan-summary__sentence">
-                {drawMode === 'wheel'
-                  ? wheelPresentation === 'dart'
-                    ? '추첨 화면을 열면 원판이 고속 회전하고, 발사 버튼을 누를 때마다 결과 1개가 고정됩니다.'
-                    : '추첨 화면을 열면 원판이 가속해 고속 회전하고, 추첨 버튼을 누르면 결과가 고정되며 감속합니다.'
-                  : '추첨 버튼을 누르면 모든 후보가 동시에 레이스를 시작합니다.'}
-              </p>
-              <button className="primary-button preflight-setup__start" type="button" disabled={drawOptions.length === 0} onClick={startBroadcast}>이 설정으로 추첨 화면 열기</button>
-            </section>
-          </aside>}
+
+            <footer className="preparation-preview__footer">
+              <div className="preparation-preview__summary">
+                <strong>
+                  {preparationReady
+                    ? `${drawOptions.length}${preparationUnit} 중 ${effectiveWinnerCount}${preparationUnit}`
+                    : `${drawTarget === 'people' ? '당첨자' : '상품'} · ${Math.max(1, winnerCount)}${preparationUnit}`}
+                </strong>
+                <span>{presentationLabel} · {ruleLabel} · {duplicateLabel}</span>
+              </div>
+              <div className={`preparation-preview__status${preparationReady ? ' is-ready' : ' is-blocked'}`} role="status">
+                <span aria-hidden="true" />
+                <strong>{preparation.statusLabel}</strong>
+              </div>
+              <button className="preparation-preview__primary" type="button" onClick={preparationAction}>
+                {preparation.ctaLabel}
+              </button>
+            </footer>
+          </section>
         </section>
 
-        <div className="preflight-mobile-action" aria-label="추첨 시작">
-          <span>
-            <small>현재 설정</small>
-            <strong>
-              {drawTarget === 'people'
-                ? `${candidateParticipants.length}명 중 ${effectiveWinnerCount}명`
-                : `${drawOptions.length}개 중 ${effectiveWinnerCount}개`}
-              {' · '}
-              {drawMode === 'marble' ? '마블' : wheelPresentation === 'dart' ? '다트' : '회전 룰렛'}
-            </strong>
-          </span>
-          <button type="button" disabled={drawOptions.length === 0} onClick={startBroadcast}>추첨 화면 열기</button>
-        </div>
+        {editorOpen && (
+          <div className="roster-drawer" role="dialog" aria-modal="true" aria-label="명단 편집">
+            <button className="roster-drawer__scrim" type="button" aria-label="명단 편집 닫기" onClick={cancelParticipantEditor} />
+            <ParticipantSetup
+              key={setupSession}
+              initialParticipants={participants}
+              initialStep={setupStartStep}
+              onClear={participants.length > 0 ? clearParticipantRoster : undefined}
+              onCancel={cancelParticipantEditor}
+              onDraftChange={setParticipantPreviewDraft}
+              onStart={saveParticipants}
+            />
+          </div>
+        )}
 
         {toast && <div className="toast" role="status">{toast}</div>}
       </main>
@@ -1772,7 +1801,7 @@ function App() {
                   { id: 'edit-rules', label: '추첨 설정 수정', onClick: openConfiguration, tone: 'quiet' },
                   { id: 'edit-roster', label: '참여자 명단 수정', onClick: () => openParticipantEditor('ready', 'paste'), tone: 'quiet' },
                   ...(drawTarget === 'people' && excludedParticipantIds.length > 0
-                    ? [{ id: 'restore-excluded', label: `당첨 제외 ${excludedParticipantIds.length}명 초기화`, onClick: resetWinnerState, tone: 'quiet' as const }]
+                    ? [{ id: 'restore-excluded', label: `제외 ${excludedParticipantIds.length}명 복귀`, onClick: resetWinnerState, tone: 'quiet' as const }]
                     : []),
                   ...(drawTarget === 'people' && poolLimit > 0
                     ? [{ id: 'reshuffle-pool', label: '후보 다시 섞기', onClick: reshufflePool, tone: 'quiet' as const }]
@@ -1801,7 +1830,7 @@ function App() {
                   { id: 'edit-rules', label: '규칙 바꾸기', onClick: openConfiguration, tone: 'quiet' },
                   { id: 'edit-roster', label: '명단 바꾸기', onClick: () => openParticipantEditor('completed', 'paste'), tone: 'quiet' },
                   ...(drawTarget === 'people' && excludedParticipantIds.length > 0
-                    ? [{ id: 'restore-excluded', label: `당첨 제외 ${excludedParticipantIds.length}명 초기화`, onClick: resetWinnerState, tone: 'quiet' as const }]
+                    ? [{ id: 'restore-excluded', label: `제외 ${excludedParticipantIds.length}명 복귀`, onClick: resetWinnerState, tone: 'quiet' as const }]
                     : []),
                 ]}
               />

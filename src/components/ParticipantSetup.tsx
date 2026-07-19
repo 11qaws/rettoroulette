@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ClipboardEvent, KeyboardEvent } from 'react';
 
 import { extractNaverCafeCommentAuthors } from '../lib/clipboardCommentParser';
@@ -19,6 +19,8 @@ export interface ParticipantSetupProps {
   onCancel?: () => void;
   /** Clears the saved roster after the parent has confirmed the destructive action. */
   onClear?: () => void;
+  /** Mirrors the unsaved draft into the non-committing stage preview. */
+  onDraftChange?: (participants: Participant[]) => void;
   onStart: (participants: Participant[]) => void;
 }
 
@@ -50,16 +52,12 @@ function parseManualNames(value: string) {
     .filter((name) => !/^(?:답글쓰기|더보기|등록|댓글|프로필 사진)$/u.test(name));
 }
 
-function steps(current: SetupStep) {
-  const order: SetupStep[] = ['paste', 'review', 'edit'];
-  return order.indexOf(current) + 1;
-}
-
 export default function ParticipantSetup({
   initialParticipants,
   initialStep = 'paste',
   onCancel,
   onClear,
+  onDraftChange,
   onStart,
 }: ParticipantSetupProps) {
   const [step, setStep] = useState<SetupStep>(initialStep);
@@ -69,7 +67,43 @@ export default function ParticipantSetup({
   const [parseError, setParseError] = useState('');
   const [editorNotice, setEditorNotice] = useState('');
   const [summary, setSummary] = useState<ParseSummary | null>(null);
+  const rootRef = useRef<HTMLElement>(null);
   const richClipboard = useRef('');
+
+  useEffect(() => {
+    onDraftChange?.(dedupeParticipants(draft));
+  }, [draft, onDraftChange]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      rootRef.current?.querySelector<HTMLElement>('[data-setup-initial-focus]')?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [step]);
+
+  const handleDialogKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!onCancel) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const focusable = [...(rootRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? [])].filter((element) => element.offsetParent !== null);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     event.preventDefault();
@@ -164,18 +198,16 @@ export default function ParticipantSetup({
     onStart(cleaned);
   };
 
-  const currentStep = steps(step);
-
   return (
-    <section className="participant-setup" aria-labelledby="participant-setup-title">
+    <section ref={rootRef} className="participant-setup" aria-labelledby="participant-setup-title" onKeyDown={handleDialogKeyDown}>
       <header className="participant-setup__header">
         <div>
-          <p className="participant-setup__eyebrow">방송 준비</p>
           <h1 id="participant-setup-title">
-            {step === 'paste' && '카페 페이지 붙여넣기'}
-            {step === 'review' && '댓글 명단 확인'}
-            {step === 'edit' && '명단 다듬기'}
+            {step === 'paste' && '명단 추가'}
+            {step === 'review' && '명단 확인'}
+            {step === 'edit' && (initialParticipants.length > 0 ? '명단 편집' : '직접 입력')}
           </h1>
+          <p>{step === 'review' ? `${summary?.total ?? draft.length}명` : `${draft.length}명 저장 전`}</p>
         </div>
         {(onClear || onCancel) && (
           <div className="setup-header-actions">
@@ -189,19 +221,15 @@ export default function ParticipantSetup({
         )}
       </header>
 
-      <ol className="setup-steps" aria-label="명단 준비 단계">
-        {['댓글 찾기', '명단 확인', '필요하면 다듬기'].map((label, index) => (
-          <li key={label} className={index + 1 <= currentStep ? 'is-active' : ''} aria-current={index + 1 === currentStep ? 'step' : undefined}>
-            <span>{index + 1}</span>
-            {label}
-          </li>
-        ))}
-      </ol>
-
       {step === 'paste' && (
         <div className="setup-pane setup-pane--paste">
-          <p className="setup-copy">카페 글을 열고 <strong>Ctrl+A → Ctrl+C</strong> 한 뒤 아래에 붙여넣으세요.</p>
+          <div className="setup-source-tabs" role="tablist" aria-label="명단 입력 방식">
+            <button type="button" role="tab" aria-selected="true">카페 댓글</button>
+            <button type="button" role="tab" aria-selected="false" onClick={() => setStep('edit')}>직접 입력</button>
+          </div>
+          <p className="setup-copy"><strong>Ctrl+A → Ctrl+C → 붙여넣기</strong></p>
           <textarea
+            data-setup-initial-focus
             className="setup-textarea"
             value={pastedPage}
             onChange={(event) => {
@@ -210,15 +238,14 @@ export default function ParticipantSetup({
               setParseError('');
             }}
             onPaste={handlePaste}
-            placeholder="카페 페이지 내용 붙여넣기"
+            placeholder="카페 글 전체 붙여넣기"
             aria-label="카페 페이지 내용"
           />
           {parseError && <p className="setup-message setup-message--error" role="alert">{parseError}</p>}
           <div className="setup-actions">
-            <button className="setup-primary" type="button" onClick={handleParse}>댓글 명단 만들기</button>
-            <button className="setup-secondary" type="button" onClick={() => setStep('edit')}>이름 직접 입력하기</button>
+            <button className="setup-primary" type="button" onClick={handleParse}>작성자 확인</button>
           </div>
-          <p className="setup-privacy">붙여넣은 내용은 이 브라우저 안에서만 확인합니다.</p>
+          <p className="setup-privacy">붙여넣은 내용은 브라우저 안에서만 처리됩니다.</p>
         </div>
       )}
 
@@ -226,15 +253,15 @@ export default function ParticipantSetup({
         <div className="setup-pane">
           <div className="setup-summary">
             <strong>{summary?.total ?? draft.length}명</strong>
-            <span>추첨 명단에 담겼어요{summary && summary.replies > 0 ? ` · 대댓글 ${summary.replies}개는 뺐어요` : ''}</span>
+            <span>{summary && summary.replies > 0 ? `대댓글 ${summary.replies}개 제외` : '댓글 작성자'}</span>
           </div>
           <ol className="setup-review-list">
             {draft.slice(0, 80).map((participant) => <li key={participant.id}>{participant.name}</li>)}
           </ol>
-          {draft.length > 80 && <p className="setup-list-note">처음 80명만 표시했어요. 필요하면 다음 화면에서 전체 명단을 다듬을 수 있어요.</p>}
+          {draft.length > 80 && <p className="setup-list-note">처음 80명 표시 · 전체 {draft.length}명</p>}
           <div className="setup-actions">
-            <button className="setup-primary" type="button" onClick={finishSetup}>이 명단으로 추첨 설정하기</button>
-            <button className="setup-secondary" type="button" onClick={() => setStep('edit')}>명단 다듬기</button>
+            <button data-setup-initial-focus className="setup-primary" type="button" onClick={finishSetup}>이 명단 사용</button>
+            <button className="setup-secondary" type="button" onClick={() => setStep('edit')}>명단 수정</button>
             <button className="setup-link-button" type="button" onClick={() => setStep('paste')}>다시 붙여넣기</button>
           </div>
         </div>
@@ -242,8 +269,13 @@ export default function ParticipantSetup({
 
       {step === 'edit' && (
         <div className="setup-pane">
-          <label className="setup-field-label" htmlFor="manual-names">이름을 한 줄에 한 명씩 입력하세요</label>
+          <div className="setup-source-tabs" role="tablist" aria-label="명단 입력 방식">
+            <button type="button" role="tab" aria-selected="false" onClick={() => setStep('paste')}>카페 댓글</button>
+            <button type="button" role="tab" aria-selected="true">직접 입력</button>
+          </div>
+          <label className="setup-field-label" htmlFor="manual-names">한 줄에 한 명</label>
           <textarea
+            data-setup-initial-focus
             id="manual-names"
             className="setup-textarea setup-textarea--short"
             value={manualNames}
@@ -256,15 +288,12 @@ export default function ParticipantSetup({
           />
           <div className="setup-inline-action">
             <button className="setup-secondary" type="button" onClick={addManualNames}>명단에 추가</button>
-            <span>Enter로도 추가할 수 있어요.</span>
           </div>
 
           <div className="setup-editor-heading">
             <div>
               <strong>참여자 {draft.length}명</strong>
-              <span>순서는 표시용이며 추첨 확률에는 영향을 주지 않아요.</span>
             </div>
-            <button className="setup-link-button" type="button" onClick={() => setStep('paste')}>카페 페이지 다시 붙여넣기</button>
           </div>
           <ol className="setup-editor-list">
             {draft.map((participant, index) => (
@@ -286,7 +315,7 @@ export default function ParticipantSetup({
           {editorNotice && <p className="setup-message" role="status">{editorNotice}</p>}
           <div className="setup-actions setup-actions--finish">
             <button className="setup-primary" type="button" onClick={finishSetup}>
-              {onCancel ? '명단 저장' : '이 명단으로 추첨 설정하기'}
+              명단 저장
             </button>
             {onCancel && <button className="setup-secondary" type="button" onClick={onCancel}>취소</button>}
           </div>
