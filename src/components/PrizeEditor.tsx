@@ -40,6 +40,13 @@ export default function PrizeEditor({
   const headingId = useId();
   const weightHelpId = useId();
   const totalQuantity = prizes.reduce((total, prize) => total + Math.max(0, prize.quantity), 0);
+  const productTypeCount = new Set(
+    prizes
+      .filter((prize) => prize.quantity > 0)
+      .map((prize) => prize.name.trim())
+      .filter(Boolean)
+      .map((name) => name.normalize('NFKC').toLocaleLowerCase('ko-KR')),
+  ).size;
   const drawableQuantity = prizes.reduce((total, prize) => {
     if (!prize.name.trim() || prize.quantity <= 0 || (useWeights && prize.weight <= 0)) return total;
     return total + prize.quantity;
@@ -56,7 +63,7 @@ export default function PrizeEditor({
           <h3 id={headingId}>추첨할 상품</h3>
           <p className="prize-editor__summary">
             {prizes.length > 0
-              ? `${prizes.length}종 · 총 ${totalQuantity}개${drawableQuantity !== totalQuantity ? ` · 추첨 가능 ${drawableQuantity}개` : ''}`
+              ? `${productTypeCount}종 · 총 ${totalQuantity}개${drawableQuantity !== totalQuantity ? ` · 추첨 가능 ${drawableQuantity}개` : ''}`
               : '상품을 추가하면 바로 룰렛 후보가 됩니다.'}
           </p>
         </div>

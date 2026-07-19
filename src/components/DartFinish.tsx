@@ -123,7 +123,6 @@ export default function DartFinish({
         <span className="dart-finish__impact-spark dart-finish__impact-spark--two" />
         <span className="dart-finish__impact-spark dart-finish__impact-spark--three" />
       </span>
-      <span className="dart-finish__boundary-callout">경계선!</span>
     </div>
   );
 }

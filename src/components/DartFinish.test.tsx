@@ -18,6 +18,7 @@ describe('DartFinish', () => {
     expect(markup).not.toContain('dart-finish--launch');
     expect(markup).not.toContain('dart-finish--approach');
     expect(markup).toContain('dart-glyph__shaft');
+    expect(markup).not.toContain('경계선!');
   });
 
   it('uses the same dart silhouette after impact', () => {

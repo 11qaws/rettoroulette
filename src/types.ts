@@ -17,6 +17,17 @@ export interface Prize {
   weight: number;
 }
 
+export type PrizeRecipientSource = 'linked' | 'manual';
+
+/** One prize assignment slot. Duplicate names remain separate slots. */
+export interface PrizeRecipient {
+  id: string;
+  name: string;
+  source: PrizeRecipientSource;
+  sourceSessionId?: string;
+  sourceResultId?: string;
+}
+
 export interface DrawRecord {
   id: string;
   /** Groups consecutive rounds shown in one open broadcast stage. */
@@ -50,8 +61,14 @@ export interface DrawRecord {
   winner: string;
   /** Original configured prize row when the target is a product. */
   prizeId?: string;
-  /** Individual inventory unit consumed by a product draw. */
+  /** Unique marker for the inventory decrement committed by a product draw. */
   prizeUnitId?: string;
   prize?: string;
+  /** Missing on legacy records that used one wheel option per inventory unit. */
+  prizeProbabilityModel?: 'quantity-ratio';
+  /** Stable assignment slot used when winners are handed off to a prize draw. */
+  recipientId?: string;
+  /** Distinguishes an explicit new assignment using the same recipient slots. */
+  prizeAssignmentBatchId?: string;
   recipient?: string;
 }

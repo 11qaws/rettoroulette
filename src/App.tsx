@@ -19,8 +19,20 @@ import {
   createBroadcastSession,
   type BroadcastSession,
 } from './lib/broadcastSession';
-import { csvField } from './lib/csv';
 import { sampleWithoutReplacement } from './lib/draw';
+import { createHistoryCsv } from './lib/historyCsv';
+import { createPrizeDrawOptions } from './lib/prizeDraw';
+import {
+  appendPrizeAssignmentResult,
+  arePrizeRecipientPlansEqual,
+  countAssignedPrizeRecipients,
+  createLinkedPrizeRecipients,
+  findLatestPeopleWinnerResults,
+  findNextPrizeRecipient,
+  reconcileManualPrizeRecipients,
+  retainAssignedPrizeRecipientIds,
+  retainPrizeAssignmentResults,
+} from './lib/prizeRecipients';
 import {
   getRaffleTransition,
   isRaffleActive,
@@ -35,6 +47,12 @@ import {
   PENDING_RAFFLE_KEY,
 } from './lib/pendingRaffle';
 import { derivePreparationReadiness } from './lib/preparation';
+import {
+  createStoredPrizeAssignment,
+  mergePrizeAssignmentResults,
+  parseStoredPrizeAssignment,
+  PRIZE_ASSIGNMENT_KEY,
+} from './lib/prizeAssignmentStorage';
 import {
   isCurrentPresentationCompletion,
   type PresentationRunToken,
@@ -51,7 +69,16 @@ import {
   type RouletteFinishLanding,
   type SpinPhysicalCommit,
 } from './lib/roulette';
-import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize, WheelPresentation } from './types';
+import type {
+  DrawMode,
+  DrawRecord,
+  DrawTarget,
+  Participant,
+  Prize,
+  PrizeRecipient,
+  PrizeRecipientSource,
+  WheelPresentation,
+} from './types';
 
 import './App.css';
 import './styles/rettoRoulette.cinematic.css';
@@ -62,7 +89,7 @@ import './styles/rettoRoulette.liveInfo.css';
 
 type DrawOption = {
   id: string;
-  /** Inventory source for a prize unit; participant options use their own id. */
+  /** Inventory source for a product sector; participant options use their own id. */
   sourceId?: string;
   name: string;
   weight: number;
@@ -87,7 +114,9 @@ type CurrentRound = {
   poolLimit: number;
   removeAfterDraw: boolean;
   useWeights: boolean;
+  recipientId?: string;
   recipient?: string;
+  prizeAssignmentBatchId?: string;
   results: DrawRecord[];
 };
 
@@ -106,6 +135,7 @@ type PlannedPresentation = {
   dartShot?: DartShotPlan;
   /** Rotor/aim impact that physically selected a dart winner at click time. */
   dartCommit?: DartPhysicalCommit;
+  recipientId?: string;
   recipient?: string;
 };
 
@@ -214,8 +244,13 @@ function attachLockedResult(
       winner: chosen.name,
       prize: presentation.target === 'prizes' ? chosen.name : undefined,
       prizeId: presentation.target === 'prizes' ? chosen.sourceId ?? chosen.id : undefined,
-      prizeUnitId: presentation.target === 'prizes' ? chosen.id : undefined,
+      prizeUnitId: presentation.target === 'prizes' ? `${chosen.id}::${round.id}` : undefined,
+      prizeProbabilityModel: presentation.target === 'prizes' ? 'quantity-ratio' : undefined,
+      recipientId: presentation.target === 'prizes' ? presentation.recipientId : undefined,
       recipient: presentation.target === 'prizes' ? presentation.recipient : undefined,
+      prizeAssignmentBatchId: presentation.target === 'prizes'
+        ? round.prizeAssignmentBatchId
+        : undefined,
     },
   };
 }
@@ -233,7 +268,13 @@ function App() {
   const [rewardLabel, setRewardLabel] = useState('');
   const [removeAfterDraw, setRemoveAfterDraw] = useState(true);
   const [weightModes, setWeightModes] = useState<Record<DrawTarget, boolean>>({ people: false, prizes: false });
-  const [recipient, setRecipient] = useState('');
+  const [prizeRecipients, setPrizeRecipients] = useState<PrizeRecipient[]>([]);
+  const [prizeRecipientText, setPrizeRecipientText] = useState('');
+  const [prizeRecipientSource, setPrizeRecipientSource] = useState<PrizeRecipientSource>('manual');
+  const [assignedPrizeRecipientIds, setAssignedPrizeRecipientIds] = useState<string[]>([]);
+  const [prizeAssignmentResults, setPrizeAssignmentResults] = useState<DrawRecord[]>([]);
+  const [prizeAssignmentBatchId, setPrizeAssignmentBatchId] = useState<string | null>(null);
+  const [prizeAssignmentHydrated, setPrizeAssignmentHydrated] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [winnerIndex, setWinnerIndex] = useState<number | null>(null);
   const [spinKey, setSpinKey] = useState(0);
@@ -272,11 +313,13 @@ function App() {
   const dartAimContextRef = useRef<string | null>(null);
   const liveWheelRef = useRef<RouletteWheelHandle>(null);
   const historyStorageWarningShownRef = useRef(false);
+  const prizeAssignmentStorageWarningShownRef = useRef(false);
   const pendingRecoveryNeedsCleanupRef = useRef(false);
   const resolvedRevealIdsRef = useRef(new Set<number>());
-  const useWeights = weightModes[drawTarget];
+  const useWeights = drawTarget === 'people' ? weightModes.people : false;
 
   const setUseWeights = useCallback((value: boolean) => {
+    if (drawTarget !== 'people') return;
     setWeightModes((modes) => ({ ...modes, [drawTarget]: value }));
   }, [drawTarget]);
 
@@ -482,6 +525,78 @@ function App() {
   }, [history, historyHydrated, showToast]);
 
   useEffect(() => {
+    try {
+      const stored = parseStoredPrizeAssignment(localStorage.getItem(PRIZE_ASSIGNMENT_KEY));
+      if (stored) {
+        setPrizeRecipients(stored.recipients);
+        setPrizeRecipientText(stored.recipients.map((recipient) => recipient.name).join('\n'));
+        setPrizeRecipientSource(stored.source);
+        setAssignedPrizeRecipientIds(stored.assignedRecipientIds);
+        setPrizeAssignmentResults(stored.results);
+        setPrizeAssignmentBatchId(stored.batchId);
+      }
+    } catch {
+      // An unavailable browser store must not block a live draw.
+    } finally {
+      setPrizeAssignmentHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!prizeAssignmentHydrated) return;
+    try {
+      if (prizeRecipients.length === 0) {
+        localStorage.removeItem(PRIZE_ASSIGNMENT_KEY);
+        return;
+      }
+      if (!prizeAssignmentBatchId) return;
+      localStorage.setItem(PRIZE_ASSIGNMENT_KEY, JSON.stringify(createStoredPrizeAssignment(
+        prizeAssignmentBatchId,
+        prizeRecipientSource,
+        prizeRecipients,
+        prizeAssignmentResults,
+      )));
+    } catch {
+      if (prizeAssignmentStorageWarningShownRef.current) return;
+      prizeAssignmentStorageWarningShownRef.current = true;
+      showToast('상품 배정 진행을 브라우저에 저장하지 못했어요. 이 탭을 닫기 전에 배정을 마쳐 주세요.');
+    }
+  }, [
+    assignedPrizeRecipientIds,
+    prizeAssignmentBatchId,
+    prizeAssignmentHydrated,
+    prizeAssignmentResults,
+    prizeRecipientSource,
+    prizeRecipients,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (!historyHydrated || !prizeAssignmentHydrated || !prizeAssignmentBatchId) return;
+    const reconciledResults = mergePrizeAssignmentResults(
+      prizeAssignmentBatchId,
+      prizeRecipients,
+      prizeAssignmentResults,
+      history,
+    );
+    const reconciledAssignedIds = reconciledResults.map((result) => result.recipientId as string);
+    if (reconciledResults.map((result) => result.id).join('|') !== prizeAssignmentResults.map((result) => result.id).join('|')) {
+      setPrizeAssignmentResults(reconciledResults);
+    }
+    if (reconciledAssignedIds.join('|') !== assignedPrizeRecipientIds.join('|')) {
+      setAssignedPrizeRecipientIds(reconciledAssignedIds);
+    }
+  }, [
+    assignedPrizeRecipientIds,
+    history,
+    historyHydrated,
+    prizeAssignmentBatchId,
+    prizeAssignmentHydrated,
+    prizeAssignmentResults,
+    prizeRecipients,
+  ]);
+
+  useEffect(() => {
     if (!isRaffleActive(raffleStatus)) return undefined;
 
     const protectActiveRound = (event: BeforeUnloadEvent) => {
@@ -554,17 +669,7 @@ function App() {
           name: participant.name,
           weight: useWeights ? participant.weight : 1,
         }))
-      : prizes
-          .filter((prize) => prize.name.trim() && prize.quantity > 0)
-          .flatMap((prize) => Array.from(
-            { length: Math.max(0, prize.quantity) },
-            (_, unitIndex) => ({
-              id: `${prize.id}::${unitIndex + 1}`,
-              sourceId: prize.id,
-              name: prize.name.trim(),
-              weight: useWeights ? prize.weight : 1,
-            }),
-          ));
+      : createPrizeDrawOptions(prizes);
 
     return useWeights ? options.filter((option) => option.weight > 0) : options;
   }, [candidateParticipants, drawTarget, prizes, useWeights]);
@@ -579,6 +684,24 @@ function App() {
   const displayNames = useMemo(() => displayOptions.map((option) => option.name), [displayOptions]);
   const displayWeights = useMemo(() => displayOptions.map((option) => option.weight), [displayOptions]);
   const availablePrizeCount = prizeTotal(prizes);
+  const recentPeopleWinnerResults = useMemo(
+    () => findLatestPeopleWinnerResults(history),
+    [history],
+  );
+  const recentLinkedPrizeRecipients = useMemo(
+    () => createLinkedPrizeRecipients(recentPeopleWinnerResults),
+    [recentPeopleWinnerResults],
+  );
+  const recentWinnersAlreadyLoaded = prizeRecipientSource === 'linked'
+    && arePrizeRecipientPlansEqual(prizeRecipients, recentLinkedPrizeRecipients);
+  const nextPrizeRecipient = useMemo(
+    () => findNextPrizeRecipient(prizeRecipients, assignedPrizeRecipientIds),
+    [assignedPrizeRecipientIds, prizeRecipients],
+  );
+  const assignedPrizeRecipientCount = useMemo(
+    () => countAssignedPrizeRecipients(prizeRecipients, assignedPrizeRecipientIds),
+    [assignedPrizeRecipientIds, prizeRecipients],
+  );
   const isPresentationLocked = raffleStatus === 'locking' || raffleStatus === 'presenting';
   const isStageLocked = isRaffleActive(raffleStatus);
   const isConfigurationEditable = raffleStatus === 'configuring';
@@ -586,6 +709,7 @@ function App() {
   const buildPresentationPlan = useCallback((
     snapshot: readonly DrawOption[],
     target: DrawTarget,
+    recipientIdSnapshot: string | undefined,
     recipientSnapshot: string | undefined,
     wheelReveal: WheelPresentation,
     spinPhysicalCommit?: SpinPhysicalCommit,
@@ -610,6 +734,7 @@ function App() {
         winnerIndex: dartPhysicalCommit.winnerIndex,
         target,
         selectedAt,
+        recipientId: recipientIdSnapshot,
         recipient: recipientSnapshot,
         candidateFingerprint: fingerprintOptions(options),
         candidateTotalWeight: totalEffectiveWeight(options),
@@ -634,6 +759,7 @@ function App() {
       winnerIndex: spinPhysicalCommit.winnerIndex,
       target,
       selectedAt,
+      recipientId: recipientIdSnapshot,
       recipient: recipientSnapshot,
       candidateFingerprint: fingerprintOptions(options),
       candidateTotalWeight: totalEffectiveWeight(options),
@@ -773,6 +899,13 @@ function App() {
           ? { ...prize, quantity: Math.max(0, prize.quantity - 1) }
           : prize
       )));
+      if (result.recipientId) {
+        const completedRecipientId = result.recipientId;
+        setAssignedPrizeRecipientIds((ids) => (
+          ids.includes(completedRecipientId) ? ids : [...ids, completedRecipientId]
+        ));
+        setPrizeAssignmentResults((items) => appendPrizeAssignmentResult(items, result));
+      }
       setSideTab('history');
     }
 
@@ -835,6 +968,10 @@ function App() {
       showToast(drawTarget === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
       return;
     }
+    if (drawTarget === 'prizes' && prizeRecipients.length > 0 && !nextPrizeRecipient) {
+      showToast('받을 사람 전원의 상품 배정이 끝났어요. 설계 화면에서 배정을 다시 시작해 주세요.');
+      return;
+    }
 
     const spinCommit = wheelPresentation === 'spin' ? capturePhysicalSpin() : undefined;
     const dartCommit = wheelPresentation === 'dart' ? freezePhysicalDart() : undefined;
@@ -848,10 +985,12 @@ function App() {
     }
 
     clearStagePresentation();
-    const recipientSnapshot = drawTarget === 'prizes' ? recipient.trim() || undefined : undefined;
+    const recipientIdSnapshot = drawTarget === 'prizes' ? nextPrizeRecipient?.id : undefined;
+    const recipientSnapshot = drawTarget === 'prizes' ? nextPrizeRecipient?.name : undefined;
     const presentations = buildPresentationPlan(
       drawOptions,
       drawTarget,
+      recipientIdSnapshot,
       recipientSnapshot,
       wheelPresentation,
       spinCommit ?? undefined,
@@ -875,7 +1014,11 @@ function App() {
       poolLimit,
       removeAfterDraw,
       useWeights,
+      recipientId: recipientIdSnapshot,
       recipient: recipientSnapshot,
+      prizeAssignmentBatchId: drawTarget === 'prizes' && recipientIdSnapshot
+        ? prizeAssignmentBatchId ?? undefined
+        : undefined,
       results: [],
     };
     const committedPresentations = presentations.flatMap((presentation, index) => {
@@ -990,6 +1133,13 @@ function App() {
       showToast(drawTarget === 'people' ? '먼저 참여자 명단을 준비해 주세요.' : '먼저 상품을 추가해 주세요.');
       return;
     }
+    if (drawTarget === 'prizes' && prizeRecipients.length > 0 && !nextPrizeRecipient) {
+      showToast('받을 사람 전원의 상품 배정이 끝났어요. 먼저 배정을 다시 시작해 주세요.');
+      return;
+    }
+    if (drawTarget === 'prizes' && prizeRecipients.length > 0 && !prizeAssignmentBatchId) {
+      setPrizeAssignmentBatchId(createId('prize-assignment'));
+    }
     setToolsOpen(false);
     clearCurrentRound();
     if (transitionRaffle('open-stage')) {
@@ -1025,7 +1175,12 @@ function App() {
     setWheelPresentation('spin');
     setDrawLabel('');
     setRewardLabel('');
-    setRecipient('');
+    setPrizeRecipients([]);
+    setPrizeRecipientText('');
+    setPrizeRecipientSource('manual');
+    setAssignedPrizeRecipientIds([]);
+    setPrizeAssignmentResults([]);
+    setPrizeAssignmentBatchId(null);
     setRemoveAfterDraw(true);
     setWeightModes({ people: false, prizes: false });
     setHistory([]);
@@ -1073,6 +1228,20 @@ function App() {
   };
 
   const continueCompletedRound = () => {
+    if (drawTarget === 'prizes' && prizeRecipients.length > 0) {
+      if (!nextPrizeRecipient) {
+        const completedCount = prizeRecipients.length;
+        if (finishBroadcast()) showToast(`${completedCount}명의 상품 배정을 마쳤어요.`);
+        return;
+      }
+      if (drawOptions.length > 0) {
+        beginNextRound();
+        return;
+      }
+      if (finishBroadcast()) showToast(`${nextPrizeRecipient.name}님부터 이어서 배정할 수 있어요. 상품을 보충해 주세요.`);
+      return;
+    }
+
     if (drawOptions.length > 0) {
       beginNextRound();
       return;
@@ -1094,16 +1263,138 @@ function App() {
     finishBroadcast();
   };
 
-  const startPrizeForWinner = (winner: string) => {
+  const applyLinkedPrizeRecipients = (
+    linkedRecipients: readonly PrizeRecipient[],
+    preserveMatchingProgress: boolean,
+  ) => {
+    if (linkedRecipients.length === 0) {
+      showToast('불러올 공개 당첨자가 없어요. 받을 사람을 직접 입력해 주세요.');
+      return 0;
+    }
+
+    const retainedAssignedIds = preserveMatchingProgress
+      ? retainAssignedPrizeRecipientIds(linkedRecipients, assignedPrizeRecipientIds)
+      : [];
+    const currentRecipientIds = new Set(prizeRecipients.map((recipient) => recipient.id));
+    const sharesCurrentSlot = linkedRecipients.some((recipient) => currentRecipientIds.has(recipient.id));
+    setPrizeRecipients([...linkedRecipients]);
+    setPrizeRecipientText(linkedRecipients.map((item) => item.name).join('\n'));
+    setPrizeRecipientSource('linked');
+    setAssignedPrizeRecipientIds(retainedAssignedIds);
+    setPrizeAssignmentResults((items) => (
+      preserveMatchingProgress ? retainPrizeAssignmentResults(items, linkedRecipients) : []
+    ));
+    setPrizeAssignmentBatchId((currentBatchId) => (
+      preserveMatchingProgress && sharesCurrentSlot && currentBatchId
+        ? currentBatchId
+        : createId('prize-assignment')
+    ));
+    prepareNextRoundSettings();
+    return retainedAssignedIds.length;
+  };
+
+  const updatePrizeRecipientText = (value: string) => {
+    if (!isConfigurationEditable) return;
+    if (assignedPrizeRecipientCount > 0) {
+      showToast('배정이 시작된 명단은 잠겨 있어요. 같은 명단으로 새 배정을 시작한 뒤 편집해 주세요.');
+      return;
+    }
+    const manualRecipients = reconcileManualPrizeRecipients(
+      value,
+      prizeRecipients,
+      createId,
+      assignedPrizeRecipientIds,
+    );
+    const retainedIds = new Set(manualRecipients.map((recipient) => recipient.id));
+    const sharesCurrentSlot = prizeRecipients.some((recipient) => retainedIds.has(recipient.id));
+    setPrizeRecipientText(value);
+    setPrizeRecipients(manualRecipients);
+    setPrizeRecipientSource(
+      arePrizeRecipientPlansEqual(manualRecipients, recentLinkedPrizeRecipients) ? 'linked' : 'manual',
+    );
+    setAssignedPrizeRecipientIds((ids) => ids.filter((id) => retainedIds.has(id)));
+    setPrizeAssignmentResults((items) => retainPrizeAssignmentResults(items, manualRecipients));
+    setPrizeAssignmentBatchId((currentBatchId) => {
+      if (manualRecipients.length === 0) return null;
+      return sharesCurrentSlot && currentBatchId ? currentBatchId : createId('prize-assignment');
+    });
+    prepareNextRoundSettings();
+  };
+
+  const loadRecentPeopleWinners = () => {
+    if (!isConfigurationEditable) return;
+    if (assignedPrizeRecipientCount > 0) {
+      showToast('배정이 시작된 명단은 잠겨 있어요. 새 배정을 시작한 뒤 이전 당첨자를 불러와 주세요.');
+      return;
+    }
+    if (recentLinkedPrizeRecipients.length === 0) {
+      showToast('불러올 공개 당첨자가 없어요. 받을 사람을 직접 입력해 주세요.');
+      return;
+    }
+    if (recentWinnersAlreadyLoaded) {
+      showToast('이전 당첨자 명단이 이미 연결되어 있어요. 배정 진행도 그대로 유지됩니다.');
+      return;
+    }
+    if (
+      prizeRecipients.length > 0
+      && !window.confirm(
+        `현재 받을 사람 ${prizeRecipients.length}명을 이전 당첨자 ${recentLinkedPrizeRecipients.length}명으로 교체할까요? 전체 당첨 기록은 유지됩니다.`,
+      )
+    ) return;
+
+    const retainedCount = applyLinkedPrizeRecipients(recentLinkedPrizeRecipients, true);
+    showToast(retainedCount > 0
+      ? `이전 당첨자 ${recentLinkedPrizeRecipients.length}명으로 교체했어요. 같은 당첨자 ${retainedCount}명의 배정은 유지했어요.`
+      : `이전 당첨자 ${recentLinkedPrizeRecipients.length}명을 받을 사람으로 불러왔어요.`);
+  };
+
+  const restartPrizeRecipientAssignments = () => {
+    if (!isConfigurationEditable || prizeRecipients.length === 0) return;
+    if (
+      assignedPrizeRecipientCount > 0
+      && !window.confirm(
+        `같은 ${prizeRecipients.length}명에게 상품을 새로 배정할까요? 이전 당첨 기록은 유지되고, 이 화면의 배정 진행만 0명부터 다시 시작합니다.`,
+      )
+    ) return;
+    setAssignedPrizeRecipientIds([]);
+    setPrizeAssignmentResults([]);
+    setPrizeAssignmentBatchId(createId('prize-assignment'));
+    showToast(`같은 ${prizeRecipients.length}명에게 새 상품 배정을 시작해요.`);
+  };
+
+  const handoffWinnersToPrizeDraw = () => {
+    const revealedWinners = [...sessionResults];
+    const linkedRecipients = createLinkedPrizeRecipients(revealedWinners);
+    if (linkedRecipients.length === 0) {
+      showToast('상품 추첨으로 넘길 공개 당첨자가 없어요.');
+      return;
+    }
+    if (
+      assignedPrizeRecipientCount > 0
+      && !window.confirm(
+        `기존 상품 배정 ${assignedPrizeRecipientCount}명을 이번 당첨자 ${linkedRecipients.length}명으로 교체할까요? 이전 당첨 기록은 유지됩니다.`,
+      )
+    ) return;
     if (!finishBroadcast()) return;
-    setRecipient(winner);
+
+    applyLinkedPrizeRecipients(linkedRecipients, false);
     setDrawLabel('');
     setRewardLabel('');
     setDrawTarget('prizes');
     setSideTab('prizes');
     showToast(availablePrizeCount === 0
-      ? '상품을 추가한 뒤 이 당첨자에게 드릴 선물을 뽑아 주세요.'
-      : `${winner}님에게 드릴 상품을 뽑아 주세요.`);
+      ? `당첨자 ${linkedRecipients.length}명을 연결했어요. 상품을 추가해 주세요.`
+      : `당첨자 ${linkedRecipients.length}명을 받을 사람으로 연결했어요.`);
+  };
+
+  const openPrizeSetup = () => {
+    if (broadcastSession?.target === 'people' && sessionResults.length > 0) {
+      handoffWinnersToPrizeDraw();
+      return;
+    }
+    if (!finishBroadcast()) return;
+    setDrawTarget('prizes');
+    setSideTab('prizes');
   };
 
   const updateParticipantWeight = (id: string, weight: number) => {
@@ -1165,49 +1456,7 @@ function App() {
       showToast('저장할 당첨 기록이 없어요.');
       return;
     }
-    const header = [
-      '선정 시각',
-      '공개 시각',
-      '방송 세션 ID',
-      '회차 제목',
-      '선물·이벤트',
-      '모드',
-      '연출',
-      '추첨 대상',
-      '결과',
-      '수령자',
-      '상품 원본 ID',
-      '상품 재고 단위 ID',
-      '후보 수',
-      '후보 지문',
-      '추첨권 합계',
-      '가중치',
-      '중복 정책',
-    ];
-    const rows = history.map((item) => [
-      new Date(item.createdAt).toLocaleString('ko-KR'),
-      item.revealedAt ? new Date(item.revealedAt).toLocaleString('ko-KR') : '',
-      item.sessionId ?? '',
-      item.roundLabel ?? '',
-      item.rewardLabel ?? '',
-      item.mode === 'wheel' ? '룰렛' : '마블',
-      item.mode === 'wheel' ? item.presentation === 'dart' ? '다트 복권' : '자동' : '마블',
-      item.target === 'people' ? '사람' : '상품',
-      item.winner,
-      item.recipient ?? '',
-      item.prizeId ?? '',
-      item.prizeUnitId ?? '',
-      String(item.candidateCount ?? ''),
-      item.candidateFingerprint ?? '',
-      String(item.candidateTotalWeight ?? ''),
-      typeof item.useWeights === 'boolean' ? item.useWeights ? '적용' : '동일 확률' : '',
-      item.target === 'people'
-        ? item.removeAfterDraw === false ? '중복 허용' : '중복 방지'
-        : '재고 단위',
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map(csvField).join(','))
-      .join('\n');
+    const csv = createHistoryCsv(history);
     const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
@@ -1224,8 +1473,11 @@ function App() {
   };
 
   const sessionResults = broadcastSession?.results ?? [];
-  const latestSessionResult = sessionResults[sessionResults.length - 1] ?? null;
   const roundTarget = currentRound?.target ?? drawTarget;
+  const visibleSessionResults = roundTarget === 'prizes' && prizeRecipients.length > 0
+    ? prizeAssignmentResults
+    : sessionResults;
+  const latestVisibleSessionResult = visibleSessionResults[visibleSessionResults.length - 1] ?? null;
   const roundMode = currentRound?.mode ?? drawMode;
   const roundWheelPresentation = currentRound?.wheelPresentation ?? wheelPresentation;
   const roundPoolLimit = currentRound?.poolLimit ?? poolLimit;
@@ -1234,21 +1486,35 @@ function App() {
   const roundTotalWeight = totalEffectiveWeight(roundPresentationOptions);
   const roundRemovesWinners = currentRound?.removeAfterDraw ?? removeAfterDraw;
   const roundUsesWeights = currentRound?.useWeights ?? useWeights;
-  const roundRecipient = currentRound?.recipient ?? (recipient.trim() || undefined);
+  const roundRecipientId = currentRound?.recipientId ?? nextPrizeRecipient?.id;
+  const roundRecipient = currentRound?.recipient ?? nextPrizeRecipient?.name;
+  const roundRecipientPosition = roundRecipientId
+    ? prizeRecipients.findIndex((item) => item.id === roundRecipientId) + 1
+    : 0;
   const roundRewardLabel = currentRound?.rewardLabel ?? (rewardLabel.trim() || undefined);
   const roundUnit = roundTarget === 'people' ? '명' : '개';
-  const roundUnitSubjectParticle = roundUnit === '명' ? '이' : '가';
+  const roundCandidateUnit = roundTarget === 'people' ? '명' : '종';
+  const resultUnit = roundTarget === 'prizes' && prizeRecipients.length > 0 ? '명' : roundUnit;
+  const resultUnitSubjectParticle = resultUnit === '명' ? '이' : '가';
   const targetLabel = roundTarget === 'people' ? '사람' : '상품';
   const defaultStageTitle = roundTarget === 'people'
     ? '참여자 추첨'
-    : roundRecipient ? `${roundRecipient}님 상품 추첨` : '상품 추첨';
+    : roundRecipient
+      ? `${roundRecipientPosition}/${prizeRecipients.length} · ${roundRecipient}의 상품 추첨`
+      : '상품 추첨';
   const roundLabel = currentRound?.label ?? (drawLabel.trim() || undefined);
-  const stageTitle = roundLabel
-    ?? (roundTarget === 'people' && roundRewardLabel ? `${roundRewardLabel} 당첨자 추첨` : defaultStageTitle);
-  const resultTitle = roundTarget === 'people' ? '전체 당첨자' : '뽑힌 상품';
-  const dynamicFairnessLabel = roundUsesWeights
-    ? `가중치 적용 · 총 ${roundTotalWeight} 추첨권 · ${roundMode === 'wheel' ? '조각 크기는 확률에 비례' : '결과 확률은 가중치에 비례'}`
-    : '동일 확률 · 후보마다 한 번씩 표시';
+  const stageTitle = roundTarget === 'prizes' && roundRecipient
+    ? [defaultStageTitle, roundLabel].filter(Boolean).join(' · ')
+    : roundLabel
+      ?? (roundTarget === 'people' && roundRewardLabel ? `${roundRewardLabel} 당첨자 추첨` : defaultStageTitle);
+  const resultTitle = roundTarget === 'people'
+    ? '전체 당첨자'
+    : prizeRecipients.length > 0 ? '전체 상품 배정' : '뽑힌 상품';
+  const dynamicFairnessLabel = roundTarget === 'prizes'
+    ? `재고 수량 비율 · ${roundCandidateCount}종 · 남은 재고 ${availablePrizeCount}개`
+    : roundUsesWeights
+      ? `가중치 적용 · 총 ${roundTotalWeight} 추첨권 · ${roundMode === 'wheel' ? '조각 크기는 확률에 비례' : '결과 확률은 가중치에 비례'}`
+      : '동일 확률 · 후보마다 한 번씩 표시';
   const fairnessLabel = dynamicFairnessLabel;
   const ruleSummary = [
     roundMode === 'wheel'
@@ -1256,7 +1522,8 @@ function App() {
       : '마블',
     `한 번에 1${roundUnit}`,
     roundTarget === 'people' && roundRewardLabel ? `선물 ${roundRewardLabel}` : null,
-    `후보 ${roundCandidateCount}${roundUnit}`,
+    `후보 ${roundCandidateCount}${roundCandidateUnit}`,
+    roundTarget === 'prizes' ? '남은 수량만큼 칸 넓이' : null,
     roundTarget === 'people' && roundPoolLimit > 0 ? '후보 풀 회차 고정' : null,
     roundTarget === 'people' && roundRemovesWinners ? '중복 당첨 방지' : null,
     roundUsesWeights ? '가중치 적용' : null,
@@ -1286,7 +1553,7 @@ function App() {
           : '추첨 후보를 준비해 주세요'
     : availablePrizeCount === 0
       ? '상품 재고를 추가해 주세요'
-      : '가중치를 조정해 주세요';
+      : '상품 목록을 확인해 주세요';
   const unavailableDrawPrompt = drawTarget === 'people'
     ? participants.length === 0
       ? '참여자 명단을 준비하면 바로 추첨을 시작할 수 있습니다.'
@@ -1297,7 +1564,7 @@ function App() {
           : '설정 바꾸기에서 추첨 후보를 준비하면 바로 추첨을 시작할 수 있습니다.'
     : availablePrizeCount === 0
       ? '상품 재고를 추가하면 바로 추첨을 시작할 수 있습니다.'
-      : '설정 바꾸기에서 상품 가중치를 조정하면 바로 추첨을 시작할 수 있습니다.';
+      : '설정 바꾸기에서 상품 이름과 수량을 확인해 주세요.';
   const drawButtonLabel = raffleStatus === 'locking'
     ? '결과 고정 중…'
     : raffleStatus === 'presenting'
@@ -1309,7 +1576,7 @@ function App() {
     raffleStatus === 'locking' || presentationBeat === 'motion';
   const showWinnerHeroPanel = presentationBeat === 'hero' && winnerHero !== null;
   const showResultsPanel = !isStageOnly && !showWinnerHeroPanel && (
-    sessionResults.length > 0 ||
+    visibleSessionResults.length > 0 ||
     raffleStatus === 'completed' ||
     presentationBeat === 'dock'
   );
@@ -1342,13 +1609,17 @@ function App() {
     raffleStatus === 'completed' ? 'is-completed' : '',
   ].filter(Boolean).join(' ');
   const actionNote = raffleStatus === 'completed'
-    ? '방금 결과가 저장되었습니다. 계속 뽑거나 이번 추첨을 끝내세요.'
+    ? roundTarget === 'prizes' && prizeRecipients.length > 0
+      ? nextPrizeRecipient
+        ? `${assignedPrizeRecipientCount}/${prizeRecipients.length}명 배정 완료 · 다음은 ${nextPrizeRecipient.name}입니다.`
+        : `${prizeRecipients.length}명 전원의 상품 배정이 완료되었습니다.`
+      : '방금 결과가 저장되었습니다. 계속 뽑거나 이번 추첨을 끝내세요.'
     : !rotorReady && raffleStatus === 'ready' && !noAvailableDrawOptions
       ? '원판이 추첨 속도까지 올라가는 중입니다.'
     : noAvailableDrawOptions
         ? unavailableDrawPrompt
         : drawMode === 'wheel' && wheelPresentation === 'dart'
-          ? `발사 순간 후보 ${drawOptions.length}${drawTarget === 'people' ? '명' : '개'} 중 한 결과가 고정됩니다.`
+          ? `발사 순간 후보 ${drawOptions.length}${drawTarget === 'people' ? '명' : '종'} 중 한 결과가 고정됩니다.`
           : drawMode === 'wheel'
             ? '멈추기를 누르는 순간 한 결과가 고정되고 원판이 감속합니다.'
             : '시작을 누르는 순간 한 결과가 고정됩니다.';
@@ -1358,7 +1629,7 @@ function App() {
       : eligibleParticipants.length === 0 && excludedParticipantIds.length > 0
         ? '당첨 제외 초기화'
         : useWeights ? '가중치 조정하기' : '추첨 설정 확인하기'
-    : availablePrizeCount === 0 ? '상품 추가하기' : '가중치 조정하기';
+    : availablePrizeCount === 0 ? '상품 추가하기' : '상품 확인하기';
   const readyPrimaryAction: BroadcastDockAction = {
     id: noAvailableDrawOptions ? 'recover-ready' : 'start-draw',
     label: noAvailableDrawOptions
@@ -1367,15 +1638,19 @@ function App() {
     onClick: noAvailableDrawOptions ? recoverReadyDraw : startDraw,
     disabled: toolsOpen || (!noAvailableDrawOptions && !rotorReady),
   };
-  const completedPrimaryLabel = noAvailableDrawOptions
-    ? drawTarget === 'people'
-      ? eligibleParticipants.length === 0 && excludedParticipantIds.length > 0
-        ? '당첨 제외 초기화 후 다음 추첨'
-        : participants.length === 0 ? '명단 준비하고 다음 추첨' : '규칙 조정하고 다음 추첨'
-      : '상품 보충하고 다음 추첨'
-    : roundTarget === 'people'
-      ? '한 명 더 뽑기'
-      : '하나 더 뽑기';
+  const completedPrimaryLabel = roundTarget === 'prizes' && prizeRecipients.length > 0 && !nextPrizeRecipient
+    ? '상품 배정 마치기'
+    : noAvailableDrawOptions
+      ? drawTarget === 'people'
+        ? eligibleParticipants.length === 0 && excludedParticipantIds.length > 0
+          ? '당첨 제외 초기화 후 다음 추첨'
+          : participants.length === 0 ? '명단 준비하고 다음 추첨' : '규칙 조정하고 다음 추첨'
+        : '상품 보충하고 다음 추첨'
+      : roundTarget === 'people'
+        ? '한 명 더 뽑기'
+        : prizeRecipients.length > 0 && nextPrizeRecipient
+          ? `다음: ${nextPrizeRecipient.name}의 상품 추첨`
+          : '하나 더 뽑기';
   const stagePrompt = raffleStatus === 'locking'
     ? '방금 누른 버튼의 후보와 결과를 고정했습니다. 곧 방송 연출을 시작합니다.'
     : raffleStatus === 'presenting'
@@ -1460,7 +1735,13 @@ function App() {
       prizes={prizes}
       rewardLabel={rewardLabel}
       drawLabel={drawLabel}
-      recipient={recipient}
+      prizeRecipientText={prizeRecipientText}
+      prizeRecipientCount={prizeRecipients.length}
+      assignedPrizeRecipientCount={assignedPrizeRecipientCount}
+      prizeRecipientSource={prizeRecipientSource}
+      recentWinnerCount={recentPeopleWinnerResults.length}
+      recentWinnersAlreadyLoaded={recentWinnersAlreadyLoaded}
+      recentWinnerLabel={recentPeopleWinnerResults[0]?.roundLabel || '최근 당첨자 추첨'}
       removeAfterDraw={removeAfterDraw}
       useWeights={useWeights}
       disabled={!isConfigurationEditable}
@@ -1473,10 +1754,9 @@ function App() {
         setDrawLabel(value);
         prepareNextRoundSettings();
       }}
-      onRecipientChange={(value) => {
-        setRecipient(value);
-        prepareNextRoundSettings();
-      }}
+      onPrizeRecipientTextChange={updatePrizeRecipientText}
+      onLoadRecentWinners={loadRecentPeopleWinners}
+      onRestartPrizeRecipients={restartPrizeRecipientAssignments}
       onPoolLimitChange={(value) => {
         setPoolLimit(Math.max(0, Math.min(eligibleParticipants.length, value)));
         setPoolIds([]);
@@ -1577,11 +1857,11 @@ function App() {
           {broadcastSession?.target === 'people' && sessionResults.length > 0 && (
             <section className="winner-prize-choices" aria-labelledby="winner-prize-choices-title">
               <h3 id="winner-prize-choices-title">당첨자에게 상품 뽑기</h3>
-              <p>이름을 누르면 해당 분의 상품 추첨으로 바뀝니다.</p>
+              <p>공개된 순서대로 한 명씩 상품을 배정합니다.</p>
               <div>
-                {sessionResults.map((result) => (
-                  <button type="button" key={result.id} disabled={isStageLocked} onClick={() => startPrizeForWinner(result.winner)}>{result.winner}님</button>
-                ))}
+                <button type="button" disabled={isStageLocked} onClick={handoffWinnersToPrizeDraw}>
+                  당첨자 {sessionResults.length}명 모두 연결
+                </button>
               </div>
             </section>
           )}
@@ -1590,7 +1870,7 @@ function App() {
               <h2 id="prize-panel-title">상품 수량</h2>
               <p>남은 상품 {availablePrizeCount}개</p>
             </div>
-            <button className="compact-button" type="button" disabled={isStageLocked} onClick={finishBroadcast}>상품 설정</button>
+            <button className="compact-button" type="button" disabled={isStageLocked} onClick={openPrizeSetup}>상품 설정</button>
           </div>
           <div className="live-prize-list">
             {prizes.length === 0 && <p className="live-panel__empty">아직 상품이 없어요. 선물을 추가해 주세요.</p>}
@@ -1641,12 +1921,26 @@ function App() {
                       : item.mode === 'wheel'
                         ? item.presentation === 'dart' ? '다트 복권' : '자동 룰렛'
                         : '마블'}
-                    {item.candidateCount ? ` · 후보 ${item.candidateCount}${item.target === 'people' ? '명' : '개'}` : ''}
-                    {item.candidateTotalWeight ? ` · 총 ${item.candidateTotalWeight}추첨권` : ''}
-                    {item.candidateFingerprint ? ` · 검증 ${item.candidateFingerprint}` : ''}
-                    {typeof item.useWeights === 'boolean'
-                      ? item.useWeights ? ' · 가중치 적용' : ' · 동일 확률'
+                    {item.candidateCount
+                      ? ` · 후보 ${item.candidateCount}${item.target === 'people'
+                        ? '명'
+                        : item.prizeProbabilityModel === 'quantity-ratio' ? '종' : '개'}`
                       : ''}
+                    {item.candidateTotalWeight
+                      ? item.target === 'prizes' && item.prizeProbabilityModel === 'quantity-ratio'
+                        ? ` · 재고 비율 합계 ${item.candidateTotalWeight}`
+                        : ` · 총 ${item.candidateTotalWeight}추첨권`
+                      : ''}
+                    {item.candidateFingerprint ? ` · 검증 ${item.candidateFingerprint}` : ''}
+                    {item.target === 'prizes'
+                      ? item.prizeProbabilityModel === 'quantity-ratio'
+                        ? ' · 수량 비율'
+                        : typeof item.useWeights === 'boolean'
+                          ? item.useWeights ? ' · 가중치 적용' : ' · 동일 확률'
+                          : ''
+                      : typeof item.useWeights === 'boolean'
+                        ? item.useWeights ? ' · 가중치 적용' : ' · 동일 확률'
+                        : ''}
                   </span>
                 </li>
               ))}
@@ -1676,13 +1970,15 @@ function App() {
       excludedParticipantCount: excludedParticipantIds.length,
       poolLimit,
       prizeInventoryCount: availablePrizeCount,
+      prizeRecipientCount: prizeRecipients.length,
+      assignedPrizeRecipientCount,
       drawOptionCount: drawOptions.length,
       useWeights,
     });
     const preparationReady = preparation.state === 'ready';
-    const preparationUnit = drawTarget === 'people' ? '명' : '개';
+    const preparationUnit = drawTarget === 'people' ? '명' : '종';
     const presentationLabel = wheelPresentation === 'dart' ? '다트 복권' : '회전 룰렛';
-    const ruleLabel = useWeights ? '확률 지정' : '동일 확률';
+    const ruleLabel = drawTarget === 'prizes' ? '수량 비율' : useWeights ? '확률 지정' : '동일 확률';
     const duplicateLabel = drawTarget === 'people'
       ? removeAfterDraw ? '당첨 후 제외' : '중복 허용'
       : '재고 차감';
@@ -1692,6 +1988,33 @@ function App() {
     const previewWeights = editorOpen && drawTarget === 'people'
       ? useWeights ? participantPreviewDraft.map((participant) => participant.weight) : undefined
       : drawOptionWeights;
+    const runPreparationAction = () => {
+      if (preparation.state === 'ready') {
+        startBroadcast();
+        return;
+      }
+      switch (preparation.recovery) {
+        case 'open-roster':
+          openParticipantEditor('configuring', participants.length === 0 ? 'paste' : 'edit');
+          break;
+        case 'restore-excluded':
+          resetWinnerState();
+          break;
+        case 'use-whole-roster':
+          setPoolLimit(0);
+          setPoolIds([]);
+          break;
+        case 'use-equal-probability':
+          setUseWeights(false);
+          break;
+        case 'add-prize':
+          addPrize();
+          break;
+        case 'restart-prize-recipients':
+          restartPrizeRecipientAssignments();
+          break;
+      }
+    };
 
     return (
       <main className="app-shell app-shell--preparation">
@@ -1744,7 +2067,9 @@ function App() {
               <div className="preparation-preview__summary">
                 <strong>
                   {preparationReady
-                    ? `${drawOptions.length}${preparationUnit} · 한 번에 1${preparationUnit}`
+                    ? drawTarget === 'people'
+                      ? `${drawOptions.length}명 · 한 번에 1명`
+                      : `${drawOptions.length}종 · 재고 ${availablePrizeCount}개 · 한 번에 1개`
                     : drawTarget === 'people' && participants.length === 0
                       ? '명단 없음'
                       : drawTarget === 'prizes' && availablePrizeCount === 0
@@ -1760,10 +2085,9 @@ function App() {
               <button
                 className="preparation-preview__primary"
                 type="button"
-                disabled={!preparationReady}
-                onClick={startBroadcast}
+                onClick={runPreparationAction}
               >
-                방송 화면 열기
+                {preparationReady ? '방송 화면 열기' : preparation.ctaLabel}
               </button>
             </footer>
           </section>
@@ -1841,7 +2165,7 @@ function App() {
         <BroadcastCandidateRoster
           items={displayNames}
           title={roundTarget === 'people' ? '참여자 명단' : '추첨 상품'}
-          unit={roundUnit}
+          unit={roundCandidateUnit}
         />
 
         <section className="broadcast-focus__stage" aria-labelledby="stage-title">
@@ -1870,31 +2194,30 @@ function App() {
         )}
 
         {showResultsPanel && (
-          <aside className={`broadcast-focus__results${sessionResults.length === 0 ? ' is-empty' : ''}`} aria-label="이 방송의 전체 추첨 결과">
+          <aside className={`broadcast-focus__results${visibleSessionResults.length === 0 ? ' is-empty' : ''}`} aria-label="이 방송의 전체 추첨 결과">
             <CurrentRoundWinners
-              winners={sessionResults.map((result) => ({
+              winners={visibleSessionResults.map((result) => ({
                 id: result.id,
-                name: result.winner,
+                name: result.target === 'prizes' && result.recipient ? result.recipient : result.winner,
                 detail: result.target === 'prizes'
-                  ? result.recipient ? `${result.recipient}님에게 전달` : undefined
+                  ? result.recipient ? `${result.winner} 배정` : undefined
                   : result.rewardLabel ? `${result.rewardLabel} 당첨` : undefined,
               }))}
               pendingCount={0}
-              unit={roundUnit}
-              latestWinnerId={latestSessionResult?.id}
+              unit={resultUnit}
+              latestWinnerId={latestVisibleSessionResult?.id}
               title={resultTitle}
-              announcement={sessionResults.length > 0
+              announcement={visibleSessionResults.length > 0
                 ? raffleStatus === 'presenting'
-                  ? `${resultTitle} 누적 ${sessionResults.length}${roundUnit}${roundUnitSubjectParticle} 확정되었습니다.`
-                  : `${resultTitle} 누적 ${sessionResults.length}${roundUnit}${roundUnitSubjectParticle} 발표되었습니다.`
+                  ? `${resultTitle} 누적 ${visibleSessionResults.length}${resultUnit}${resultUnitSubjectParticle} 확정되었습니다.`
+                  : `${resultTitle} 누적 ${visibleSessionResults.length}${resultUnit}${resultUnitSubjectParticle} 발표되었습니다.`
                 : undefined}
-              removalMessage={sessionResults.length > 0 ? resultRemovalMessage : undefined}
+              removalMessage={visibleSessionResults.length > 0 ? resultRemovalMessage : undefined}
             />
             {raffleStatus === 'completed' && broadcastSession?.target === 'people' && sessionResults.length > 0 && (
-              <button className="broadcast-focus__prize-link" type="button" disabled={isStageLocked} onClick={() => {
-                setSideTab('prizes');
-                setToolsOpen(true);
-              }}>당첨자에게 상품 뽑기</button>
+              <button className="broadcast-focus__prize-link" type="button" disabled={isStageLocked} onClick={handoffWinnersToPrizeDraw}>
+                당첨자 {sessionResults.length}명에게 상품 뽑기
+              </button>
             )}
           </aside>
         )}
@@ -1922,15 +2245,17 @@ function App() {
                 phase="completed"
                 note={actionNote}
                 primaryAction={{ id: 'next-round', label: completedPrimaryLabel, onClick: continueCompletedRound }}
-                secondaryActions={[
-                  {
-                    id: 'finish-draw',
-                    label: '이번 추첨 끝내기 · 설계로',
-                    onClick: finishBroadcast,
-                    tone: 'quiet',
-                    title: '전체 당첨 기록은 유지하고 새 추첨 설계로 돌아갑니다.',
-                  },
-                ]}
+                secondaryActions={roundTarget === 'prizes' && prizeRecipients.length > 0 && !nextPrizeRecipient
+                  ? []
+                  : [
+                    {
+                      id: 'finish-draw',
+                      label: '이번 추첨 끝내기 · 설계로',
+                      onClick: finishBroadcast,
+                      tone: 'quiet',
+                      title: '전체 당첨 기록은 유지하고 새 추첨 설계로 돌아갑니다.',
+                    },
+                  ]}
               />
             )}
           </div>

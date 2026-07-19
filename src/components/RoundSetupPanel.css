@@ -41,7 +41,7 @@
 }
 
 .round-setup__data-slot--prizes {
-  grid-template-rows: var(--round-setup-control-row-size) minmax(0, 1fr);
+  grid-template-rows: 88px minmax(0, 1fr);
 }
 
 .round-setup__data-slot .round-setup__row--source {
@@ -135,6 +135,60 @@
   gap: 6px;
 }
 
+.round-setup__row--recipients {
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  gap: 9px;
+  padding-block: 8px;
+}
+
+.round-setup__recipient-entry {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.round-setup__recipient-entry textarea {
+  width: 100%;
+  min-height: 42px;
+  max-height: 42px;
+  resize: none;
+  padding: 7px 9px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fffdfd;
+  color: var(--ink);
+  font-family: 'Jua', sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.round-setup__recipient-entry > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.round-setup__recipient-actions {
+  display: grid;
+  max-width: 112px;
+}
+
+.round-setup__recipient-actions button {
+  display: grid;
+  min-height: 34px;
+  padding: 5px 7px;
+  line-height: 1.15;
+}
+
+.round-setup__recipient-actions button span,
+.round-setup__recipient-actions button strong {
+  font: inherit;
+  white-space: nowrap;
+}
+
 .round-setup__source-actions button,
 .round-setup__pool-count button {
   min-height: 38px;
@@ -163,15 +217,84 @@
 
 .round-setup__prizes .prize-editor {
   margin: 0;
-  padding: 12px 14px;
+  padding: 8px 12px;
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
 
+.round-setup__prizes .prize-editor__header {
+  align-items: center;
+}
+
+.round-setup__prizes .prize-editor__eyebrow {
+  display: none;
+}
+
+.round-setup__prizes .prize-editor h3 {
+  font-size: 15px;
+}
+
+.round-setup__prizes .prize-editor__summary {
+  margin-top: 1px;
+}
+
+.round-setup__prizes .prize-editor__add {
+  min-height: 34px;
+  padding-block: 5px;
+}
+
 .round-setup__prizes .prize-editor__list {
   max-height: none;
+  gap: 6px;
+  margin-top: 6px;
   overflow: visible;
+}
+
+.round-setup__prizes .prize-editor__list li,
+.round-setup__prizes .prize-editor__list li:not(:has(.prize-editor__number-field + .prize-editor__number-field)) {
+  grid-template-columns: 22px minmax(0, 1fr) 72px 34px;
+  align-items: end;
+  gap: 6px;
+  padding: 6px;
+}
+
+.round-setup__prizes .prize-editor__name,
+.round-setup__prizes .prize-editor__number-field,
+.round-setup__prizes .prize-editor__remove {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+.round-setup__prizes .prize-editor__number-field {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.round-setup__prizes .prize-editor__number,
+.round-setup__prizes .prize-editor__remove {
+  width: 34px;
+  height: 34px;
+}
+
+.round-setup__prizes .prize-editor__number {
+  width: 22px;
+}
+
+.round-setup__prizes .prize-editor__row-status {
+  grid-column: 2 / -1;
+}
+
+@media (min-width: 1180px) and (max-height: 820px) {
+  .round-setup--compact {
+    --round-setup-control-row-size: 56px;
+    --round-setup-data-size: clamp(260px, 38dvh, 276px);
+  }
+
+  .round-setup__row {
+    min-height: 56px;
+    padding-block: 6px;
+  }
 }
 
 .round-setup__fixed-rule {
@@ -244,6 +367,10 @@
   gap: 8px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
+}
+
+.round-setup__advanced-rules--prizes {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .round-setup__advanced:not([open]) > .round-setup__advanced-body {
@@ -389,13 +516,15 @@
 }
 
 .round-setup--compact button:disabled,
-.round-setup--compact input:disabled {
+.round-setup--compact input:disabled,
+.round-setup--compact textarea:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
 .round-setup--compact button:focus-visible,
 .round-setup--compact input:focus-visible,
+.round-setup--compact textarea:focus-visible,
 .round-setup--compact summary:focus-visible {
   outline: 3px solid rgb(255 182 193 / 48%);
   outline-offset: 2px;
@@ -409,6 +538,14 @@
   .round-setup__row--source {
     grid-template-columns: 70px minmax(0, 1fr) auto;
     gap: 7px;
+  }
+
+  .round-setup__row--recipients {
+    grid-template-columns: 66px minmax(0, 1fr) auto;
+  }
+
+  .round-setup__recipient-actions {
+    max-width: 104px;
   }
 
   .round-setup__source-summary span {

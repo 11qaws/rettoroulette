@@ -51,6 +51,30 @@ describe('pending raffle recovery', () => {
     expect(parsed ? mergeRecoveredHistory([], parsed)[0].sessionId : undefined).toBe('session-1');
   });
 
+  it('preserves a product recipient slot and quantity-ratio audit model', () => {
+    const productPending: PendingRaffleLock = {
+      ...PENDING,
+      records: [{
+        ...LOCKED_RESULT,
+        target: 'prizes',
+        winner: '케이크',
+        prize: '케이크',
+        prizeId: 'cake',
+        recipient: '아모레또',
+        recipientId: 'winner-result-1',
+        prizeProbabilityModel: 'quantity-ratio',
+        prizeAssignmentBatchId: 'assignment-1',
+      }],
+    };
+
+    expect(parsePendingRaffleLock(JSON.stringify(productPending))?.records[0]).toMatchObject({
+      recipient: '아모레또',
+      recipientId: 'winner-result-1',
+      prizeProbabilityModel: 'quantity-ratio',
+      prizeAssignmentBatchId: 'assignment-1',
+    });
+  });
+
   it('consumes each result exactly once and removes an empty lock', () => {
     expect(consumePendingRecord(PENDING, 'missing')).toEqual(PENDING);
     expect(consumePendingRecord(PENDING, LOCKED_RESULT.id)).toBeNull();

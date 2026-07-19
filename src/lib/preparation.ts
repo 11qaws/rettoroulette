@@ -6,14 +6,15 @@ export type PreparationIssue =
   | 'people-pool-empty'
   | 'people-all-weights-zero'
   | 'prize-inventory-empty'
-  | 'prize-all-weights-zero';
+  | 'prize-recipients-complete';
 
 export type PreparationRecovery =
   | 'open-roster'
   | 'restore-excluded'
   | 'use-whole-roster'
   | 'use-equal-probability'
-  | 'add-prize';
+  | 'add-prize'
+  | 'restart-prize-recipients';
 
 export type PreparationReadiness = {
   state: 'ready';
@@ -35,6 +36,8 @@ export interface PreparationInput {
   excludedParticipantCount: number;
   poolLimit: number;
   prizeInventoryCount: number;
+  prizeRecipientCount: number;
+  assignedPrizeRecipientCount: number;
   drawOptionCount: number;
   useWeights: boolean;
 }
@@ -96,6 +99,19 @@ export function derivePreparationReadiness(input: PreparationInput): Preparation
       };
     }
   } else {
+    if (
+      input.prizeRecipientCount > 0
+      && input.assignedPrizeRecipientCount >= input.prizeRecipientCount
+    ) {
+      return {
+        state: 'blocked',
+        issue: 'prize-recipients-complete',
+        recovery: 'restart-prize-recipients',
+        statusLabel: '상품 배정 완료',
+        ctaLabel: '같은 명단으로 새 배정',
+      };
+    }
+
     if (input.prizeInventoryCount === 0) {
       return {
         state: 'blocked',
@@ -106,21 +122,14 @@ export function derivePreparationReadiness(input: PreparationInput): Preparation
       };
     }
 
-    if (input.useWeights && input.drawOptionCount === 0) {
-      return {
-        state: 'blocked',
-        issue: 'prize-all-weights-zero',
-        recovery: 'use-equal-probability',
-        statusLabel: '추첨권 0장',
-        ctaLabel: '동일 확률로 전환',
-      };
-    }
   }
 
-  const unit = input.target === 'people' ? '명' : '개';
+  const unit = input.target === 'people' ? '명' : '종';
   return {
     state: 'ready',
     statusLabel: '준비 완료',
-    ctaLabel: `${input.drawOptionCount}${unit} · 한 번에 1${unit} · 방송 화면 열기`,
+    ctaLabel: input.target === 'people'
+      ? `${input.drawOptionCount}${unit} · 한 번에 1명 · 방송 화면 열기`
+      : `${input.drawOptionCount}${unit} · 재고 ${input.prizeInventoryCount}개 · 한 번에 1개 · 방송 화면 열기`,
   };
 }

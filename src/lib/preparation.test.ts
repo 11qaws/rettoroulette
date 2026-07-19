@@ -10,6 +10,8 @@ const BASE: PreparationInput = {
   excludedParticipantCount: 0,
   poolLimit: 0,
   prizeInventoryCount: 0,
+  prizeRecipientCount: 0,
+  assignedPrizeRecipientCount: 0,
   drawOptionCount: 8,
   useWeights: false,
 };
@@ -62,7 +64,39 @@ describe('preparation readiness', () => {
       candidateParticipantCount: 0,
       prizeInventoryCount: 3,
       drawOptionCount: 3,
-    })).toEqual({ state: 'ready', statusLabel: '준비 완료', ctaLabel: '3개 · 한 번에 1개 · 방송 화면 열기' });
+    })).toEqual({ state: 'ready', statusLabel: '준비 완료', ctaLabel: '3종 · 재고 3개 · 한 번에 1개 · 방송 화면 열기' });
+  });
+
+  it('requires an explicit restart after every linked recipient was assigned', () => {
+    expect(derivePreparationReadiness({
+      ...BASE,
+      target: 'prizes',
+      participantTotal: 0,
+      eligibleParticipantCount: 0,
+      candidateParticipantCount: 0,
+      prizeInventoryCount: 4,
+      prizeRecipientCount: 2,
+      assignedPrizeRecipientCount: 2,
+      drawOptionCount: 2,
+    })).toMatchObject({
+      state: 'blocked',
+      issue: 'prize-recipients-complete',
+      recovery: 'restart-prize-recipients',
+    });
+  });
+
+  it('shows assignment completion before asking to replenish the last consumed product', () => {
+    expect(derivePreparationReadiness({
+      ...BASE,
+      target: 'prizes',
+      participantTotal: 0,
+      eligibleParticipantCount: 0,
+      candidateParticipantCount: 0,
+      prizeInventoryCount: 0,
+      prizeRecipientCount: 1,
+      assignedPrizeRecipientCount: 1,
+      drawOptionCount: 0,
+    })).toMatchObject({ state: 'blocked', issue: 'prize-recipients-complete' });
   });
 
   it('adds inventory before opening a prize stage', () => {
