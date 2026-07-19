@@ -31,6 +31,44 @@ type WinnerNameplateStyle = CSSProperties & {
   '--candidate-color': string;
 };
 
+const PROOF_NICKNAME_MAX_LENGTH = 8;
+
+function nicknameGraphemes(name: string) {
+  if (typeof Intl.Segmenter === 'function') {
+    return Array.from(
+      new Intl.Segmenter('ko', { granularity: 'grapheme' }).segment(name),
+      ({ segment }) => segment,
+    );
+  }
+
+  return Array.from(name);
+}
+
+/** One stable proof-card line shared by boundary and interior results. */
+function ProofNickname({ name }: { name: string }) {
+  const fullName = name.trim() || '이름 없음';
+  const characters = nicknameGraphemes(fullName);
+  const isTruncated = characters.length > PROOF_NICKNAME_MAX_LENGTH;
+  const displayName = isTruncated
+    ? `${characters.slice(0, PROOF_NICKNAME_MAX_LENGTH - 1).join('')}…`
+    : fullName;
+  const visibleLength = Math.min(characters.length, PROOF_NICKNAME_MAX_LENGTH);
+  const sizeClass = visibleLength >= 7
+    ? ' boundary-names__text--compact'
+    : visibleLength >= 5
+      ? ' boundary-names__text--medium'
+      : '';
+
+  return (
+    <span
+      className={`boundary-names__text${sizeClass}${isTruncated ? ' is-truncated' : ''}`}
+      title={fullName}
+    >
+      {displayName}
+    </span>
+  );
+}
+
 /**
  * Screen-space flight and impact flash. The projectile is seen head-on: it
  * changes scale at one result-neutral upper-half point instead of entering
@@ -136,12 +174,12 @@ export function BoundaryNames({
     >
       <span className={`boundary-names__candidate boundary-names__candidate--left${winnerSide === 'left' ? ' is-winner' : ''}`}>
         {winnerSide === 'left' && <span className="boundary-names__win">WIN!</span>}
-        <span className="boundary-names__text">{leftName}</span>
+        <ProofNickname name={leftName} />
       </span>
       <span className="boundary-names__marker">경계</span>
       <span className={`boundary-names__candidate boundary-names__candidate--right${winnerSide === 'right' ? ' is-winner' : ''}`}>
         {winnerSide === 'right' && <span className="boundary-names__win">WIN!</span>}
-        <span className="boundary-names__text">{rightName}</span>
+        <ProofNickname name={rightName} />
       </span>
     </div>
   );
@@ -167,7 +205,7 @@ export function WinnerNameplate({ name, color, visible, mode }: WinnerNameplateP
     >
       <span className="boundary-names__candidate is-winner" style={style}>
         <span className="boundary-names__win">WIN!</span>
-        <span className="boundary-names__text">{name}</span>
+        <ProofNickname name={name} />
       </span>
     </div>
   );

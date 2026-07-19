@@ -108,6 +108,33 @@ describe('BoundaryNames', () => {
     expect(isDartBoundaryPhaseVisible('coast')).toBe(true);
     expect(isDartBoundaryPhaseVisible('settled')).toBe(true);
   });
+
+  it('preserves eight graphemes and compacts longer boundary names to one eight-slot label', () => {
+    const markup = renderToStaticMarkup(
+      <BoundaryNames
+        leftName="여덟글자이름맞아"
+        rightName="아주아주긴당첨자이름입니다"
+        leftColor="#ffd166"
+        rightColor="#ffb6c1"
+        visible
+        mode="spin"
+      />,
+    );
+
+    expect(markup).toContain('boundary-names__text boundary-names__text--compact');
+    expect(markup).toContain('title="여덟글자이름맞아">여덟글자이름맞아</span>');
+    expect(markup).toContain('boundary-names__text--compact is-truncated');
+    expect(markup).toContain('title="아주아주긴당첨자이름입니다">아주아주긴당첨…</span>');
+    expect(markup).not.toContain('>아주아주긴당첨자이름입니다</span>');
+  });
+
+  it('does not split a composed emoji while shortening a proof nickname', () => {
+    const markup = renderToStaticMarkup(
+      <WinnerNameplate name="가나다라마바사👩‍💻추가" color="#ffb6c1" visible mode="dart" />,
+    );
+
+    expect(markup).toContain('title="가나다라마바사👩‍💻추가">가나다라마바사…</span>');
+  });
 });
 
 describe('WinnerNameplate', () => {
@@ -129,5 +156,15 @@ describe('WinnerNameplate', () => {
 
     expect(markup).toBe('');
     expect(markup).not.toContain('WIN!');
+  });
+
+  it.each(['spin', 'dart'] as const)('uses the same compact nickname proof in %s mode', (mode) => {
+    const markup = renderToStaticMarkup(
+      <WinnerNameplate name="아주아주긴당첨자이름입니다" color="#ffb6c1" visible mode={mode} />,
+    );
+
+    expect(markup).toContain(`winner-nameplate--${mode} is-visible`);
+    expect(markup).toContain('boundary-names__text--compact is-truncated');
+    expect(markup).toContain('>아주아주긴당첨…</span>');
   });
 });
