@@ -5,6 +5,7 @@ import DartFinish, {
   BoundaryNames,
   EmbeddedDart,
   isDartBoundaryPhaseVisible,
+  WinnerNameplate,
   type DartFinishPhase,
 } from './DartFinish';
 import {
@@ -131,7 +132,6 @@ type SpinPhase =
   | 'auto-brake'
   | 'auto-photo-finish'
   | 'dart-flight'
-  | 'dart-impact-contact'
   | 'dart-attached-proof'
   | 'dart-after-impact'
   | 'stop-hold';
@@ -267,7 +267,6 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   const boundaryEnteredTimer = useRef<number | null>(null);
   const boundaryCrossedTimer = useRef<number | null>(null);
   const dartIdleFrame = useRef<number | null>(null);
-  const dartAttachFrame = useRef<number | null>(null);
   const onSpinEndRef = useRef(onSpinEnd);
   const onRevealPhaseRef = useRef(onRevealPhase);
   const onIdleCruiseRef = useRef(onIdleCruise);
@@ -420,10 +419,6 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     if (boundaryCrossedTimer.current !== null) {
       window.clearTimeout(boundaryCrossedTimer.current);
       boundaryCrossedTimer.current = null;
-    }
-    if (dartAttachFrame.current !== null) {
-      window.cancelAnimationFrame(dartAttachFrame.current);
-      dartAttachFrame.current = null;
     }
   }, []);
 
@@ -894,29 +889,29 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
         if (!isActiveRun(spinKey, runRevealId)) return;
         dartImpactTimer.current = null;
         setDartPhase('coast');
-      }, DART_IMPACT_HIGHLIGHT_DELAY);
-      // Paint the exact contact frame, then let the board carry the embedded
-      // dart on the very next frame. Impact emphasis is visual only; physics
-      // never pauses for a timer.
-      activateRunPhase(spinKey, runRevealId, 'dart-impact-contact');
-      setRotation(finishPlan.impactRotation);
-      dartAttachFrame.current = window.requestAnimationFrame(() => {
-        dartAttachFrame.current = null;
-        if (!isActiveRun(spinKey, runRevealId)) return;
-        rotationRef.current = dartAttachedRotationRef.current;
-        activateRunPhase(
-          spinKey,
-          runRevealId,
-          'dart-attached-proof',
-          DART_ATTACHED_PROOF_SECONDS,
-        );
-        setRotation(dartAttachedRotationRef.current);
         emitRevealPhase('dart-attached', spinKey);
-      });
+      }, window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : DART_IMPACT_HIGHLIGHT_DELAY);
+      // The flight finishes on the exact contact transform. Start the
+      // board-owned linear motion in this same state update so there is no
+      // paused contact frame or second insertion step.
+      rotationRef.current = dartAttachedRotationRef.current;
+      activateRunPhase(
+        spinKey,
+        runRevealId,
+        'dart-attached-proof',
+        DART_ATTACHED_PROOF_SECONDS,
+      );
+      setRotation(dartAttachedRotationRef.current);
       return;
     }
 
     if (run.phase === 'dart-attached-proof') {
+      if (dartImpactTimer.current !== null) {
+        window.clearTimeout(dartImpactTimer.current);
+        dartImpactTimer.current = null;
+        setDartPhase('coast');
+        emitRevealPhase('dart-attached', spinKey);
+      }
       rotationRef.current = finishPlan.finalRotation;
       activateRunPhase(spinKey, runRevealId, 'dart-after-impact', postImpactDuration);
       setRotation(finishPlan.finalRotation);
@@ -1022,12 +1017,12 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     dartPhase === 'settled',
   );
   const showBoundaryNames = participantCount > 1 && validWinner && (
-    (!isDartPresentation && landingBoundaryHit && isBoundaryFocus) ||
+    (!isDartPresentation && landingBoundaryHit && (isBoundaryFocus || showWinner)) ||
     (isDartPresentation && landingBoundaryHit && dartNamesRevealed && isDartBoundaryPhaseVisible(dartPhase))
   );
   const isAutoBoundaryStopped = !isDartPresentation
     && landingBoundaryHit
-    && spinPhase === 'stop-hold';
+    && (spinPhase === 'stop-hold' || showWinner);
   const boundaryWinnerSide =
     isAutoBoundaryStopped || isDartBoundaryStop
       ? currentLandingVisual?.winnerSide ?? undefined
@@ -1040,6 +1035,11 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
       isDartBoundaryStop
     ),
   );
+  const showWinnerNameplate = Boolean(
+    validWinner
+    && !landingBoundaryHit
+    && (spinPhase === 'stop-hold' || showWinner),
+  );
   const rootClassName = [
     'roulette-wheel',
     visuallySpinning ? 'is-spinning' : '',
@@ -1051,7 +1051,6 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     spinPhase === 'auto-brake' ? 'is-auto-brake' : '',
     spinPhase === 'auto-photo-finish' ? 'is-auto-photo-finish' : '',
     spinPhase === 'dart-flight' ? 'is-dart-flight' : '',
-    spinPhase === 'dart-impact-contact' ? 'is-dart-impact-contact' : '',
     spinPhase === 'dart-attached-proof' ? 'is-dart-attached-proof' : '',
     spinPhase === 'dart-after-impact' ? 'is-dart-after-impact' : '',
     isBoundaryFocus ? 'is-boundary-focus' : '',
@@ -1224,6 +1223,14 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
               mode={isDartPresentation ? 'dart' : 'spin'}
               finalPoint={isDartPresentation && dartNamesRevealed}
               winnerSide={boundaryWinnerSide}
+            />
+          )}
+          {validWinner && winnerIndex !== null && (
+            <WinnerNameplate
+              name={participants[winnerIndex]}
+              color={slices[winnerIndex]?.color ?? WHEEL_COLORS[0]}
+              visible={showWinnerNameplate}
+              mode={isDartPresentation ? 'dart' : 'spin'}
             />
           )}
         </div>

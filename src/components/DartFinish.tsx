@@ -27,6 +27,10 @@ type BoundaryNamesStyle = CSSProperties & {
   '--boundary-right-color': string;
 };
 
+type WinnerNameplateStyle = CSSProperties & {
+  '--candidate-color': string;
+};
+
 /**
  * Screen-space flight and impact flash. The projectile is seen head-on: it
  * changes scale at one result-neutral upper-half point instead of entering
@@ -67,6 +71,7 @@ export default function DartFinish({
         <span className="dart-finish__ring dart-finish__ring--three" />
 
         <span className="dart-finish__projectile">
+          <span className="dart-glyph__shaft" />
           <span className="dart-finish__projectile-core" />
           <span className="dart-finish__projectile-fin dart-finish__projectile-fin--north" />
           <span className="dart-finish__projectile-fin dart-finish__projectile-fin--east" />
@@ -130,11 +135,37 @@ export function BoundaryNames({
       aria-hidden="true"
     >
       <span className={`boundary-names__candidate boundary-names__candidate--left${winnerSide === 'left' ? ' is-winner' : ''}`}>
+        {winnerSide === 'left' && <span className="boundary-names__win">WIN!</span>}
         <span className="boundary-names__text">{leftName}</span>
       </span>
       <span className="boundary-names__marker">경계</span>
       <span className={`boundary-names__candidate boundary-names__candidate--right${winnerSide === 'right' ? ' is-winner' : ''}`}>
+        {winnerSide === 'right' && <span className="boundary-names__win">WIN!</span>}
         <span className="boundary-names__text">{rightName}</span>
+      </span>
+    </div>
+  );
+}
+
+export interface WinnerNameplateProps {
+  name: string;
+  color: string;
+  visible: boolean;
+  mode: 'spin' | 'dart';
+}
+
+/** Uses the boundary candidate card as the common proof language for interior stops. */
+export function WinnerNameplate({ name, color, visible, mode }: WinnerNameplateProps) {
+  const style: WinnerNameplateStyle = { '--candidate-color': color };
+
+  return (
+    <div
+      className={`winner-nameplate winner-nameplate--${mode}${visible ? ' is-visible' : ''}`}
+      aria-hidden="true"
+    >
+      <span className="boundary-names__candidate is-winner" style={style}>
+        <span className="boundary-names__win">WIN!</span>
+        <span className="boundary-names__text">{name}</span>
       </span>
     </div>
   );
@@ -168,6 +199,7 @@ export function EmbeddedDart({
       aria-hidden="true"
     >
       <span className="embedded-dart__pin" data-dart-impact-anchor="board">
+        <span className="dart-glyph__shaft" />
         <span className="embedded-dart__core" />
         <span className="embedded-dart__fin embedded-dart__fin--north" />
         <span className="embedded-dart__fin embedded-dart__fin--east" />

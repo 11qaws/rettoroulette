@@ -73,6 +73,7 @@ export interface DrawPreviewDirectorProps {
   target: DrawTarget;
   mode: DrawMode;
   presentation: WheelPresentation;
+  title?: string;
 }
 
 export default function DrawPreviewDirector({
@@ -81,6 +82,7 @@ export default function DrawPreviewDirector({
   target,
   mode,
   presentation,
+  title,
 }: DrawPreviewDirectorProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const wheelRef = useRef<RouletteWheelHandle>(null);
@@ -116,6 +118,7 @@ export default function DrawPreviewDirector({
     [mode, presentation, previewNames, previewWeights, target],
   );
   const active = inViewport && documentVisible;
+  const previewTitle = title?.trim() || (target === 'people' ? '당첨자 추첨' : '상품 추첨');
 
   const clearTimers = useCallback(() => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -298,6 +301,7 @@ export default function DrawPreviewDirector({
 
   return (
     <div ref={rootRef} className={rootClassName} data-preview-signature={signature}>
+      <h3 className="draw-preview-director__title" title={previewTitle}>{previewTitle}</h3>
       <div className="draw-preview-director__badge">
         <strong>미리보기</strong>
         <span>{isSample ? '샘플 명단' : '결과에 반영되지 않음'}</span>

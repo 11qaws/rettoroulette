@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import DartFinish, { BoundaryNames, isDartBoundaryPhaseVisible } from './DartFinish';
+import DartFinish, {
+  BoundaryNames,
+  EmbeddedDart,
+  isDartBoundaryPhaseVisible,
+  WinnerNameplate,
+} from './DartFinish';
 
 describe('DartFinish', () => {
   it('uses one continuous flight phase on one shared impact anchor', () => {
@@ -12,6 +17,15 @@ describe('DartFinish', () => {
     expect(markup).toContain('dart-finish__impact-anchor');
     expect(markup).not.toContain('dart-finish--launch');
     expect(markup).not.toContain('dart-finish--approach');
+    expect(markup).toContain('dart-glyph__shaft');
+  });
+
+  it('uses the same dart silhouette after impact', () => {
+    const markup = renderToStaticMarkup(<EmbeddedDart phase="impact" impactRotation={320} />);
+
+    expect(markup).toContain('embedded-dart--impact');
+    expect(markup).toContain('dart-glyph__shaft');
+    expect(markup).not.toContain('embedded-dart-contact-proof');
   });
 });
 
@@ -49,6 +63,7 @@ describe('BoundaryNames', () => {
 
     expect(markup).toContain('boundary-names__candidate--right is-winner');
     expect(markup).not.toContain('boundary-names__candidate--left is-winner');
+    expect(markup).toContain('WIN!');
   });
 
   it('keeps names hidden while preserving candidate colour cards', () => {
@@ -92,5 +107,18 @@ describe('BoundaryNames', () => {
     expect(isDartBoundaryPhaseVisible('impact')).toBe(false);
     expect(isDartBoundaryPhaseVisible('coast')).toBe(true);
     expect(isDartBoundaryPhaseVisible('settled')).toBe(true);
+  });
+});
+
+describe('WinnerNameplate', () => {
+  it('uses the same winner card language for a non-boundary stop', () => {
+    const markup = renderToStaticMarkup(
+      <WinnerNameplate name="아모레또" color="#ffb6c1" visible mode="spin" />,
+    );
+
+    expect(markup).toContain('winner-nameplate--spin is-visible');
+    expect(markup).toContain('boundary-names__candidate is-winner');
+    expect(markup).toContain('WIN!');
+    expect(markup).toContain('아모레또');
   });
 });

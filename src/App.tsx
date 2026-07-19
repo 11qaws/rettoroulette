@@ -1751,6 +1751,7 @@ function App() {
                 target={drawTarget}
                 mode={drawMode}
                 presentation={wheelPresentation}
+                title={stageTitle}
               />
             </div>
 

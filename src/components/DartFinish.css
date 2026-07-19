@@ -319,26 +319,13 @@
   filter: drop-shadow(0.12rem 0.2rem 0 color-mix(in srgb, var(--ink, #251c32) 38%, transparent));
 }
 
-.embedded-dart__pin::before {
+.dart-glyph__shaft {
   position: absolute;
-  z-index: -1;
-  inset: -18%;
-  content: '';
-  border: 0.12rem solid var(--cream, #fff9e7);
-  border-radius: 50%;
-  box-shadow: 0 0 0 0.12rem color-mix(in srgb, var(--lemon, #ffe45c) 88%, transparent);
-  opacity: 0;
-  transform: scale(0.45);
-}
-
-.embedded-dart__pin::after {
-  position: absolute;
-  z-index: -1;
+  z-index: 0;
   top: 50%;
   left: 50%;
   width: 16%;
   height: clamp(1.05rem, 3.4vw, 1.8rem);
-  content: '';
   border: 0.08rem solid var(--ink, #251c32);
   border-radius: 999px;
   background: linear-gradient(180deg, var(--cream, #fff9e7), var(--sky, #83c9ff));
@@ -353,10 +340,6 @@
 }
 
 .embedded-dart--impact .embedded-dart__pin { animation: none; }
-
-.embedded-dart--impact .embedded-dart__pin::before {
-  animation: embedded-dart-contact-proof 220ms cubic-bezier(0.16, 0.86, 0.24, 1) both;
-}
 
 .embedded-dart.is-boundary-hit .embedded-dart__core {
   box-shadow: 0 0 0 0.18rem var(--hot-pink, #ff4f87), 0 0 0.75rem var(--lemon, #ffe45c);
@@ -390,7 +373,9 @@
 
 .boundary-names__candidate {
   box-sizing: border-box;
+  display: grid;
   min-width: 0;
+  gap: 0.12rem;
   padding: clamp(0.42rem, 1.3vw, 0.66rem) clamp(0.5rem, 1.8vw, 0.82rem);
   border: clamp(0.12rem, 0.35vw, 0.18rem) solid var(--ink, #251c32);
   border-radius: 0.7rem;
@@ -403,6 +388,15 @@
   text-align: center;
   overflow-wrap: anywhere;
   word-break: keep-all;
+}
+
+.boundary-names__win {
+  color: color-mix(in srgb, var(--ink, #251c32) 72%, #b20d45);
+  font-family: 'Fredoka', sans-serif;
+  font-size: clamp(0.56rem, 1.5vw, 0.72rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
 }
 
 .boundary-names__candidate.is-winner {
@@ -461,6 +455,28 @@
   animation: boundary-names-impact 260ms cubic-bezier(0.18, 0.82, 0.2, 1) both;
 }
 
+.winner-nameplate {
+  position: absolute;
+  z-index: 24;
+  top: 8.4%;
+  left: 50%;
+  width: min(46%, 16rem);
+  opacity: 0;
+  transform: translate(-50%, -0.55rem);
+  transition: opacity 120ms ease, transform 180ms cubic-bezier(0.18, 0.82, 0.2, 1);
+  pointer-events: none;
+}
+
+.winner-nameplate--dart {
+  top: max(4.5%, calc(var(--dart-final-y, 14%) - 3.5rem));
+  left: var(--dart-final-x, 50%);
+}
+
+.winner-nameplate.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 @keyframes dart-shot-flash {
   from { opacity: 0.92; transform: translate(-50%, -50%) scale(0.08); }
   to { opacity: 0; transform: translate(-50%, -50%) scale(1.35); }
@@ -515,12 +531,6 @@
   from { opacity: 0; transform: translate(-50%, 0.7rem) scale(0.72); }
   70% { opacity: 1; transform: translate(-50%, 1.5rem) scale(1.06); }
   to { opacity: 1; transform: translate(-50%, 1.35rem) scale(1); }
-}
-
-@keyframes embedded-dart-contact-proof {
-  0% { opacity: 1; transform: scale(0.45); }
-  48% { opacity: 0.92; transform: scale(1.08); }
-  100% { opacity: 0; transform: scale(1.55); }
 }
 
 @keyframes boundary-names-impact {

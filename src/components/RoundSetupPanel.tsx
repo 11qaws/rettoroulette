@@ -94,14 +94,25 @@ export default function RoundSetupPanel({
   const extraSettingCount = [
     poolLimit > 0,
     target === 'people' ? Boolean(rewardLabel.trim()) : Boolean(recipient.trim()),
-    Boolean(drawLabel.trim()),
   ].filter(Boolean).length;
   const [advancedOpen, setAdvancedOpen] = useState(
-    useWeights || poolLimit > 0 || Boolean(rewardLabel.trim() || recipient.trim() || drawLabel.trim()),
+    useWeights || poolLimit > 0 || Boolean(rewardLabel.trim() || recipient.trim()),
   );
 
   return (
     <section className="round-setup round-setup--compact" aria-label="추첨 설정">
+      <label className="round-setup__row round-setup__row--title">
+        <span className="round-setup__label">방송 제목</span>
+        <input
+          value={drawLabel}
+          maxLength={50}
+          disabled={disabled}
+          placeholder="예: 오늘의 선물 추첨"
+          aria-label="방송 제목"
+          onChange={(event) => onDrawLabelChange(event.target.value)}
+        />
+      </label>
+
       <div className="round-setup__row round-setup__row--target">
         <span className="round-setup__label">추첨 대상</span>
         <div className="round-setup__segmented" role="group" aria-label="추첨 대상">
@@ -110,6 +121,18 @@ export default function RoundSetupPanel({
           </button>
           <button type="button" aria-pressed={target === 'prizes'} disabled={disabled} onClick={() => onTargetChange('prizes')}>
             <span aria-hidden="true">🎁</span> 상품
+          </button>
+        </div>
+      </div>
+
+      <div className="round-setup__row round-setup__row--presentation">
+        <span className="round-setup__label">연출</span>
+        <div className="round-setup__segmented" role="group" aria-label="방송 연출">
+          <button type="button" aria-pressed={presentationChoice === 'spin'} disabled={disabled} onClick={() => onPresentationChange('spin')}>
+            <span aria-hidden="true">↻</span> 회전 룰렛
+          </button>
+          <button type="button" aria-pressed={presentationChoice === 'dart'} disabled={disabled} onClick={() => onPresentationChange('dart')}>
+            <span aria-hidden="true">➶</span> 다트 복권
           </button>
         </div>
       </div>
@@ -152,18 +175,6 @@ export default function RoundSetupPanel({
         </div>
       )}
 
-      <div className="round-setup__row round-setup__row--presentation">
-        <span className="round-setup__label">연출</span>
-        <div className="round-setup__segmented" role="group" aria-label="방송 연출">
-          <button type="button" aria-pressed={presentationChoice === 'spin'} disabled={disabled} onClick={() => onPresentationChange('spin')}>
-            <span aria-hidden="true">↻</span> 회전 룰렛
-          </button>
-          <button type="button" aria-pressed={presentationChoice === 'dart'} disabled={disabled} onClick={() => onPresentationChange('dart')}>
-            <span aria-hidden="true">➶</span> 다트 복권
-          </button>
-        </div>
-      </div>
-
       <details
         className="round-setup__advanced"
         open={advancedOpen}
@@ -205,11 +216,6 @@ export default function RoundSetupPanel({
               <input value={recipient} maxLength={40} disabled={disabled} placeholder="예: 첫 번째 당첨자" onChange={(event) => onRecipientChange(event.target.value)} />
             </label>
           )}
-
-          <label className="round-setup__field">
-            <span>방송 제목 <em>선택</em></span>
-            <input value={drawLabel} maxLength={50} disabled={disabled} placeholder="예: 오늘의 버거 3명 추첨" onChange={(event) => onDrawLabelChange(event.target.value)} />
-          </label>
 
           {target === 'people' && eligibleParticipants.length > 0 && (
             <section className="round-setup__pool" aria-label="후보 범위">

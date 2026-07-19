@@ -151,7 +151,6 @@
 
 .roulette-wheel.is-dart-ready .roulette-wheel__disc,
 .roulette-wheel.is-idle-spinning .roulette-wheel__disc,
-.roulette-wheel.is-dart-impact-contact .roulette-wheel__disc,
 .roulette-wheel.is-stop-hold .roulette-wheel__disc {
   transition: none;
 }
@@ -211,7 +210,6 @@
 .roulette-wheel.is-idle-spinning .roulette-wheel__label,
 .roulette-wheel.is-auto-brake .roulette-wheel__label,
 .roulette-wheel.is-dart-flight .roulette-wheel__label,
-.roulette-wheel.is-dart-impact-contact .roulette-wheel__label,
 .roulette-wheel.is-dart-attached-proof .roulette-wheel__label,
 .roulette-wheel.is-dart-after-impact .roulette-wheel__label {
   opacity: 0.16;
