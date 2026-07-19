@@ -784,7 +784,7 @@
   --wheel-size: min(calc(100% - 2rem), 39rem, 53vh);
 }
 
-/* The dart camera needs room for the fixed twelve-o'clock impact point. */
+/* The dart camera needs room for varied upper-half impact points. */
 .broadcast-focus__visual .roulette-wheel.is-dart {
   --wheel-size: min(calc(100% - 2rem), 38rem, 52vh);
   --wheel-stage-padding: clamp(1.5rem, 3.4vw, 2.7rem);

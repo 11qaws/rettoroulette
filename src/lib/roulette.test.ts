@@ -9,10 +9,12 @@ import {
   calculateAutoPhotoFinishTiming,
   calculateDartFlightTiming,
   calculateDartPostImpactDuration,
+  createDartShotPlan,
   getRouletteSliceGeometry,
   isRoulettePhotoFinish,
   nextWheelRotation,
   normalizeRouletteWeights,
+  resolveDartImpactPoint,
   targetWheelRotation,
 } from './roulette';
 
@@ -58,6 +60,39 @@ describe('targetWheelRotation', () => {
 
 const normalized = (angle: number) => ((angle % 360) + 360) % 360;
 const localAngleAtPointer = (rotation: number) => normalized(AUTO_POINTER_ANGLE - rotation);
+const localAngleAt = (screenAngle: number, rotation: number) => normalized(screenAngle - rotation);
+
+describe('dart shot placement', () => {
+  it('keeps generated shots inside the safe upper arc and jitter bounds', () => {
+    const low = createDartShotPlan(() => 0);
+    const high = createDartShotPlan(() => 1);
+
+    expect(low.impactAngleDegrees).toBe(-115);
+    expect(high.impactAngleDegrees).toBe(-65);
+    expect(low.impactRadiusRatio).toBe(0.58);
+    expect(high.impactRadiusRatio).toBeCloseTo(0.8, 10);
+    expect(low.jitterA).toEqual({ xPixels: -7, yPixels: -5 });
+    expect(high.jitterB).toEqual({ xPixels: 7, yPixels: 5 });
+    expect(low.rollDegrees).toBe(-12);
+    expect(high.rollDegrees).toBe(12);
+  });
+
+  it('derives one screen point from the canonical angle and radius', () => {
+    const point = resolveDartImpactPoint({
+      impactAngleDegrees: -90,
+      impactRadiusRatio: 0.72,
+      jitterA: { xPixels: 2, yPixels: -3 },
+      jitterB: { xPixels: -4, yPixels: 5 },
+      rollDegrees: 6,
+    });
+
+    expect(point.xPercent).toBeCloseTo(50, 10);
+    expect(point.yPercent).toBeCloseTo(14, 10);
+    expect(point.finalXPercent).toBe(50);
+    expect(point.finalYPercent).toBeCloseTo(14, 10);
+    expect(point.jitterA).toEqual({ xPixels: 2, yPixels: -3 });
+  });
+});
 
 describe('buildRouletteFinishPlan', () => {
   it('crosses the winning boundary clockwise before landing inside the winner', () => {
@@ -283,15 +318,18 @@ describe('calculateDartFlightTiming', () => {
 });
 
 describe('buildDartRouletteFinishPlan', () => {
-  it('keeps the embedded dart on the same wheel-local point through the coast', () => {
+  it('carries the same wheel-local dart from impact to the twelve-o’clock stop', () => {
     const plan = buildDartRouletteFinishPlan(137, 2, 6, 3, 3, undefined, {
       entryGapDegrees: 4,
       leadDegrees: 3,
     });
 
     expect(plan.impactRotation).toBe(plan.boundaryRotation);
-    expect(plan.finalRotation - plan.impactRotation).toBe(3 * 360);
-    expect(localAngleAtPointer(plan.impactRotation)).toBeCloseTo(plan.landingAngle, 10);
+    expect(plan.finalRotation - plan.impactRotation).toBeGreaterThanOrEqual(3 * 360);
+    expect(localAngleAt(plan.impactAngleDegrees, plan.impactRotation)).toBeCloseTo(
+      plan.landingAngle,
+      10,
+    );
     expect(localAngleAtPointer(plan.finalRotation)).toBeCloseTo(plan.landingAngle, 10);
   });
 
@@ -304,5 +342,46 @@ describe('buildDartRouletteFinishPlan', () => {
     expect(plan.leadDegrees).toBeCloseTo(1.8, 10);
     expect(plan.coastTurns).toBe(2);
     expect(localAngleAtPointer(plan.finalRotation)).toBeCloseTo(plan.landingAngle, 10);
+  });
+
+  it('aligns varied impact angles with the same committed winner and wheel-local point', () => {
+    for (const impactAngleDegrees of [-115, -90, -65]) {
+      const shot = {
+        impactAngleDegrees,
+        impactRadiusRatio: 0.72,
+        jitterA: { xPixels: 3, yPixels: -2 },
+        jitterB: { xPixels: -4, yPixels: 1 },
+        rollDegrees: 5,
+      };
+      const plan = buildDartRouletteFinishPlan(
+        221,
+        2,
+        5,
+        3,
+        2,
+        [1, 2, 1, 3, 1],
+        { entryGapDegrees: 9, leadDegrees: 0.6, boundaryHit: true },
+        shot,
+      );
+
+      expect(plan.impactAngleDegrees).toBe(impactAngleDegrees);
+      expect(localAngleAt(impactAngleDegrees, plan.impactRotation)).toBeCloseTo(
+        normalized(plan.landingAngle),
+        10,
+      );
+      expect(localAngleAt(AUTO_POINTER_ANGLE, plan.finalRotation)).toBeCloseTo(
+        normalized(plan.landingAngle),
+        10,
+      );
+      expect(plan.finalRotation - plan.impactRotation).toBeGreaterThanOrEqual(720);
+    }
+  });
+
+  it('keeps the faster pre-impact wheel linear inside the flight window', () => {
+    const timing = calculateDartFlightTiming(84, 1080);
+
+    expect(timing.duration).toBeGreaterThanOrEqual(1);
+    expect(timing.duration).toBeLessThanOrEqual(1.3);
+    expect(timing.distance / timing.duration).toBeCloseTo(1080, 10);
   });
 });

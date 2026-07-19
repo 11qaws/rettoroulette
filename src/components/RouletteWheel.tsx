@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, TransitionEvent } from 'react';
 
-import DartFinish, { BoundaryNames, EmbeddedDart } from './DartFinish';
+import DartFinish, {
+  BoundaryNames,
+  EmbeddedDart,
+  isDartBoundaryPhaseVisible,
+} from './DartFinish';
 import {
   buildDartRouletteFinishPlan,
   buildRouletteFinishPlan,
@@ -11,6 +15,8 @@ import {
   DART_FLIGHT_DURATION_SECONDS,
   getRouletteSliceGeometry,
   isRoulettePhotoFinish,
+  resolveDartImpactPoint,
+  type DartShotPlan,
   type DartRouletteFinishPlan,
   type RouletteFinishLanding,
   type RouletteFinishPlan,
@@ -34,11 +40,18 @@ export interface RouletteWheelProps {
   presentation?: WheelPresentation;
   /** Visual-only finish placement, generated after the winner is committed. */
   landing?: RouletteFinishLanding;
+  /** One result-neutral, physically shared impact point for a dart reveal. */
+  dartShot?: DartShotPlan;
   /** Physical reveal beats used by the camera, sound, lighting and status UI. */
   onRevealPhase?: (event: RouletteRevealEvent) => void;
   /** Enables the host action only after the live rotor reaches cruise speed. */
   onIdleCruise?: () => void;
-  onSpinEnd: () => void;
+  onSpinEnd: (event: RouletteSpinEndEvent) => void;
+}
+
+export interface RouletteSpinEndEvent {
+  spinKey: number;
+  revealId: number;
 }
 
 export type RouletteRevealPhase =
@@ -78,11 +91,13 @@ const WHEEL_COLORS = [
 ];
 
 const VIEWBOX_CENTER = 300;
-const WHEEL_RADIUS = 258;
-const DART_IMPACT_HIGHLIGHT_DELAY = 440;
+const WHEEL_RADIUS = VIEWBOX_CENTER + 4;
+const DART_IMPACT_HIGHLIGHT_DELAY = 220;
+const DART_CONTACT_HOLD_DELAY = 72;
 const STOP_HOLD_DELAY = 950;
+const DART_STOP_HOLD_DELAY = 1_500;
 const IDLE_SPIN_ACCELERATION_MS = 900;
-const IDLE_SPIN_DEGREES_PER_SECOND = 780;
+const IDLE_SPIN_DEGREES_PER_SECOND = 1080;
 const AUTO_WHIRL_FULL_TURNS = 4;
 const DART_ATTACHED_PROOF_SECONDS = 0.28;
 const DART_ATTACHED_COAST_TURNS = 2;
@@ -100,6 +115,15 @@ type SpinPhase =
 type IdleMotionPhase = 'stopped' | 'spin-up' | 'cruise';
 type BoundaryVisualPhase = 'idle' | 'approach' | 'crossed';
 
+type ActiveWheelRun = {
+  spinKey: number;
+  revealId: number;
+  phase: SpinPhase;
+  transitionSeconds: number;
+  transitionNotBefore: number;
+  completed: boolean;
+};
+
 type RouletteStyle = CSSProperties & {
   '--wheel-rotation': string;
   '--slice-count': number;
@@ -109,6 +133,18 @@ type RouletteStyle = CSSProperties & {
   '--wheel-dart-flight-duration': string;
   '--wheel-dart-attached-duration': string;
   '--wheel-post-impact-duration': string;
+};
+
+type RouletteImpactStyle = CSSProperties & {
+  '--dart-impact-x': string;
+  '--dart-impact-y': string;
+  '--dart-final-x': string;
+  '--dart-final-y': string;
+  '--dart-jitter-a-x': string;
+  '--dart-jitter-a-y': string;
+  '--dart-jitter-b-x': string;
+  '--dart-jitter-b-y': string;
+  '--dart-roll': string;
 };
 
 function polarPoint(angleInDegrees: number, radius = WHEEL_RADIUS) {
@@ -161,6 +197,7 @@ export default function RouletteWheel({
   revealId,
   presentation = 'spin',
   landing,
+  dartShot,
   onRevealPhase,
   onIdleCruise,
   onSpinEnd,
@@ -184,6 +221,7 @@ export default function RouletteWheel({
   const stopHoldTimer = useRef<number | null>(null);
   const dartApproachTimer = useRef<number | null>(null);
   const dartImpactTimer = useRef<number | null>(null);
+  const dartContactTimer = useRef<number | null>(null);
   const boundaryEnteredTimer = useRef<number | null>(null);
   const boundaryCrossedTimer = useRef<number | null>(null);
   const dartIdleFrame = useRef<number | null>(null);
@@ -194,6 +232,7 @@ export default function RouletteWheel({
   const discRef = useRef<HTMLDivElement>(null);
   const rotationRef = useRef(0);
   const activeRevealIdRef = useRef(revealId ?? spinKey);
+  const activeRunRef = useRef<ActiveWheelRun | null>(null);
   const idleAngularVelocityRef = useRef(0);
   const dartAttachedRotationRef = useRef(0);
   const finishPlanRef = useRef<RouletteFinishPlan | DartRouletteFinishPlan | null>(null);
@@ -208,6 +247,7 @@ export default function RouletteWheel({
   const itemNoun = isPrizeDraw ? '상품' : '참가자';
   const countUnit = isPrizeDraw ? '개' : '명';
   const isDartPresentation = presentation === 'dart';
+  const dartImpactPoint = useMemo(() => resolveDartImpactPoint(dartShot), [dartShot]);
   const validWinner =
     winnerIndex !== null && winnerIndex >= 0 && winnerIndex < participantCount;
 
@@ -228,24 +268,7 @@ export default function RouletteWheel({
     onIdleCruiseRef.current = onIdleCruise;
   }, [onIdleCruise]);
 
-  const emitRevealPhase = useCallback((phase: RouletteRevealPhase, revealKey: number) => {
-    if (lastSpinKey.current !== revealKey || emittedRevealPhasesRef.current.has(phase)) return;
-
-    emittedRevealPhasesRef.current.add(phase);
-    onRevealPhaseRef.current?.({
-      revealId: activeRevealIdRef.current,
-      spinKey: revealKey,
-      phase,
-      at: typeof performance === 'undefined' ? Date.now() : performance.now(),
-      metadata: { ...revealMetadataRef.current },
-    });
-  }, []);
-
-  const settleSpin = useCallback((completedKey: number) => {
-    if (completedSpinKey.current === completedKey) return;
-
-    emitRevealPhase('proof-hold-done', completedKey);
-    completedSpinKey.current = completedKey;
+  const clearRunTimers = useCallback(() => {
     if (completionFallbackTimer.current !== null) {
       window.clearTimeout(completionFallbackTimer.current);
       completionFallbackTimer.current = null;
@@ -262,6 +285,10 @@ export default function RouletteWheel({
       window.clearTimeout(dartImpactTimer.current);
       dartImpactTimer.current = null;
     }
+    if (dartContactTimer.current !== null) {
+      window.clearTimeout(dartContactTimer.current);
+      dartContactTimer.current = null;
+    }
     if (boundaryEnteredTimer.current !== null) {
       window.clearTimeout(boundaryEnteredTimer.current);
       boundaryEnteredTimer.current = null;
@@ -274,15 +301,86 @@ export default function RouletteWheel({
       window.cancelAnimationFrame(dartAttachFrame.current);
       dartAttachFrame.current = null;
     }
+  }, []);
+
+  const isActiveRun = useCallback((runSpinKey: number, runRevealId: number) => {
+    const run = activeRunRef.current;
+    return Boolean(
+      run &&
+      !run.completed &&
+      run.spinKey === runSpinKey &&
+      run.revealId === runRevealId,
+    );
+  }, []);
+
+  const activateRunPhase = useCallback((
+    runSpinKey: number,
+    runRevealId: number,
+    phase: SpinPhase,
+    nominalTransitionSeconds = 0,
+  ) => {
+    const run = activeRunRef.current;
+    if (
+      !run ||
+      run.completed ||
+      run.spinKey !== runSpinKey ||
+      run.revealId !== runRevealId
+    ) return false;
+
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const transitionSeconds = reducedMotion && nominalTransitionSeconds > 0
+      ? 0.06
+      : nominalTransitionSeconds;
+    const now = typeof performance === 'undefined' ? Date.now() : performance.now();
+    run.phase = phase;
+    run.transitionSeconds = transitionSeconds;
+    run.transitionNotBefore = now + transitionSeconds * 720;
+    setSpinPhase(phase);
+    return true;
+  }, []);
+
+  const emitRevealPhase = useCallback((phase: RouletteRevealPhase, revealKey: number) => {
+    if (lastSpinKey.current !== revealKey || emittedRevealPhasesRef.current.has(phase)) return;
+
+    emittedRevealPhasesRef.current.add(phase);
+    onRevealPhaseRef.current?.({
+      revealId: activeRevealIdRef.current,
+      spinKey: revealKey,
+      phase,
+      at: typeof performance === 'undefined' ? Date.now() : performance.now(),
+      metadata: { ...revealMetadataRef.current },
+    });
+  }, []);
+
+  const settleSpin = useCallback((completedKey: number, completedRevealId: number) => {
+    const run = activeRunRef.current;
+    if (
+      !run ||
+      run.completed ||
+      run.spinKey !== completedKey ||
+      run.revealId !== completedRevealId ||
+      completedSpinKey.current === completedKey
+    ) return;
+
+    emitRevealPhase('proof-hold-done', completedKey);
+    run.phase = 'idle';
+    run.completed = true;
+    completedSpinKey.current = completedKey;
+    clearRunTimers();
     setIsAnimating(false);
     setSpinPhase('idle');
     setBoundaryVisualPhase('idle');
     finishPlanRef.current = null;
-    onSpinEndRef.current();
-  }, [emitRevealPhase]);
+    onSpinEndRef.current({ spinKey: completedKey, revealId: completedRevealId });
+  }, [clearRunTimers, emitRevealPhase]);
 
-  const beginProofHold = useCallback((revealKey: number, dartReveal: boolean) => {
+  const beginProofHold = useCallback((
+    revealKey: number,
+    runRevealId: number,
+    dartReveal: boolean,
+  ) => {
     if (
+      !isActiveRun(revealKey, runRevealId) ||
       lastSpinKey.current !== revealKey ||
       completedSpinKey.current === revealKey ||
       stopHoldTimer.current !== null
@@ -299,32 +397,20 @@ export default function RouletteWheel({
       boundaryCrossedTimer.current = null;
     }
     if (dartReveal) setDartPhase('settled');
-    setSpinPhase('stop-hold');
+    activateRunPhase(revealKey, runRevealId, 'stop-hold');
     emitRevealPhase('rotation-stopped', revealKey);
+    const proofHoldDelay = dartReveal ? DART_STOP_HOLD_DELAY : STOP_HOLD_DELAY;
     stopHoldTimer.current = window.setTimeout(() => {
       stopHoldTimer.current = null;
-      settleSpin(revealKey);
-    }, STOP_HOLD_DELAY);
-  }, [emitRevealPhase, settleSpin]);
+      if (!isActiveRun(revealKey, runRevealId)) return;
+      settleSpin(revealKey, runRevealId);
+    }, proofHoldDelay);
+  }, [activateRunPhase, emitRevealPhase, isActiveRun, settleSpin]);
 
   useEffect(() => () => {
-    if (completionFallbackTimer.current !== null) {
-      window.clearTimeout(completionFallbackTimer.current);
-    }
-    if (stopHoldTimer.current !== null) window.clearTimeout(stopHoldTimer.current);
-    if (dartApproachTimer.current !== null) window.clearTimeout(dartApproachTimer.current);
-    if (dartImpactTimer.current !== null) window.clearTimeout(dartImpactTimer.current);
-    if (boundaryEnteredTimer.current !== null) window.clearTimeout(boundaryEnteredTimer.current);
-    if (boundaryCrossedTimer.current !== null) window.clearTimeout(boundaryCrossedTimer.current);
+    clearRunTimers();
     if (dartIdleFrame.current !== null) window.cancelAnimationFrame(dartIdleFrame.current);
-    if (dartAttachFrame.current !== null) window.cancelAnimationFrame(dartAttachFrame.current);
-  }, []);
-
-  useEffect(() => {
-    if (spinning || completionFallbackTimer.current === null) return;
-    window.clearTimeout(completionFallbackTimer.current);
-    completionFallbackTimer.current = null;
-  }, [spinning]);
+  }, [clearRunTimers]);
 
   useEffect(() => {
     const shouldIdleSpin = idleSpinning && participantCount > 0 && !spinning && !validWinner;
@@ -411,6 +497,7 @@ export default function RouletteWheel({
       return;
     }
 
+    clearRunTimers();
     lastSpinKey.current = spinKey;
     completedSpinKey.current = null;
     emittedRevealPhasesRef.current = new Set();
@@ -418,7 +505,21 @@ export default function RouletteWheel({
     setIsAnimating(true);
 
     const startingRotation = rotationRef.current;
-    activeRevealIdRef.current = revealId ?? spinKey;
+    const runRevealId = revealId ?? spinKey;
+    activeRevealIdRef.current = runRevealId;
+    activeRunRef.current = {
+      spinKey,
+      revealId: runRevealId,
+      phase: 'idle',
+      transitionSeconds: 0,
+      transitionNotBefore: 0,
+      completed: false,
+    };
+    // The idle rotor writes its current angle directly for 60fps motion.
+    // Re-assert and flush that exact baseline before enabling a new CSS
+    // transition so every consecutive reveal has a real start frame.
+    discRef.current?.style.setProperty('--wheel-rotation', `${startingRotation}deg`);
+    discRef.current?.getBoundingClientRect();
     const candidateBeforeIndex = (winnerIndex + 1) % participantCount;
 
     let plannedAutoWhirlDuration = 4.2;
@@ -437,6 +538,7 @@ export default function RouletteWheel({
         DART_ATTACHED_COAST_TURNS,
         weights,
         landing,
+        dartShot,
       );
       const cruiseVelocity = idleAngularVelocityRef.current > 1
         ? idleAngularVelocityRef.current
@@ -453,6 +555,7 @@ export default function RouletteWheel({
         DART_ATTACHED_COAST_TURNS,
         weights,
         landing,
+        dartShot,
       );
       finishPlan = dartPlan;
       actualBoundaryHit = isRoulettePhotoFinish(landing?.boundaryHit, participantCount, dartPlan);
@@ -519,16 +622,13 @@ export default function RouletteWheel({
     };
     finishPlanRef.current = finishPlan;
 
-    if (completionFallbackTimer.current !== null) {
-      window.clearTimeout(completionFallbackTimer.current);
-    }
-
     const fallbackDelay = isDartPresentation
       ? Math.ceil((
           plannedDartFlightDuration +
+          DART_CONTACT_HOLD_DELAY / 1_000 +
           DART_ATTACHED_PROOF_SECONDS +
           plannedPostImpactDuration +
-          STOP_HOLD_DELAY / 1_000 +
+          DART_STOP_HOLD_DELAY / 1_000 +
           0.8
         ) * 1_000)
       : Math.ceil((
@@ -538,7 +638,7 @@ export default function RouletteWheel({
           + 0.8
         ) * 1_000);
     completionFallbackTimer.current = window.setTimeout(() => {
-      if (lastSpinKey.current !== spinKey || completedSpinKey.current === spinKey) return;
+      if (!isActiveRun(spinKey, runRevealId)) return;
 
       const activePlan = finishPlanRef.current;
       if (!activePlan) return;
@@ -552,30 +652,34 @@ export default function RouletteWheel({
         emitRevealPhase('boundary-entered', spinKey);
         emitRevealPhase('boundary-crossed', spinKey);
       }
-      beginProofHold(spinKey, isDartPresentation);
+      beginProofHold(spinKey, runRevealId, isDartPresentation);
     }, fallbackDelay);
 
     if (isDartPresentation) {
       setDartPhase('launch');
       emitRevealPhase('dart-launched', spinKey);
       dartApproachTimer.current = window.setTimeout(() => {
-        if (lastSpinKey.current === spinKey && completedSpinKey.current !== spinKey) {
+        if (isActiveRun(spinKey, runRevealId)) {
           setDartPhase('approach');
         }
       }, plannedDartFlightDuration * 0.37 * 1_000);
       rotationRef.current = finishPlan.boundaryRotation;
-      setSpinPhase('dart-flight');
+      activateRunPhase(spinKey, runRevealId, 'dart-flight', plannedDartFlightDuration);
       setRotation(finishPlan.boundaryRotation);
       return;
     }
 
     const firstAutoTarget = actualBoundaryHit ? finishPlan.focusRotation : finishPlan.finalRotation;
     rotationRef.current = firstAutoTarget;
-    setSpinPhase('auto-brake');
+    activateRunPhase(spinKey, runRevealId, 'auto-brake', plannedAutoWhirlDuration);
     setRotation(firstAutoTarget);
   }, [
+    activateRunPhase,
     beginProofHold,
+    clearRunTimers,
+    dartShot,
     emitRevealPhase,
+    isActiveRun,
     isDartPresentation,
     landing,
     participantCount,
@@ -591,6 +695,7 @@ export default function RouletteWheel({
   useEffect(() => {
     if (!isDartPresentation) setDartPhase('idle');
     else if (!spinning && validWinner) setDartPhase('settled');
+    else if (!spinning && !validWinner) setDartPhase('idle');
   }, [isDartPresentation, spinning, validWinner]);
 
   const handleTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
@@ -602,10 +707,21 @@ export default function RouletteWheel({
       return;
     }
 
+    const run = activeRunRef.current;
+    const now = typeof performance === 'undefined' ? Date.now() : performance.now();
+    if (
+      !run ||
+      run.completed ||
+      run.spinKey !== spinKey ||
+      run.revealId !== (revealId ?? spinKey) ||
+      now < run.transitionNotBefore
+    ) return;
+
     const finishPlan = finishPlanRef.current;
     if (!finishPlan) return;
+    const runRevealId = run.revealId;
 
-    if (spinPhase === 'dart-flight') {
+    if (run.phase === 'dart-flight') {
       if (!('impactRotation' in finishPlan)) return;
       rotationRef.current = finishPlan.impactRotation;
       setDartPhase('impact');
@@ -614,7 +730,7 @@ export default function RouletteWheel({
       // Impact only answers "did it hit the boundary?". The winner stays
       // hidden while the board coasts, then becomes clear at the final stop.
       dartImpactTimer.current = window.setTimeout(() => {
-        if (lastSpinKey.current !== spinKey || completedSpinKey.current === spinKey) return;
+        if (!isActiveRun(spinKey, runRevealId)) return;
         dartImpactTimer.current = null;
         setDartPhase('coast');
       }, DART_IMPACT_HIGHLIGHT_DELAY);
@@ -622,40 +738,49 @@ export default function RouletteWheel({
       // Two requestAnimationFrame boundaries provide a short hit-stop while
       // keeping the pre-impact rotor at full speed and the embedded dart in
       // the same wheel-local coordinate for every following frame.
-      setSpinPhase('dart-impact-contact');
+      activateRunPhase(spinKey, runRevealId, 'dart-impact-contact');
       setRotation(finishPlan.impactRotation);
       dartAttachFrame.current = window.requestAnimationFrame(() => {
         dartAttachFrame.current = window.requestAnimationFrame(() => {
           dartAttachFrame.current = null;
-          if (lastSpinKey.current !== spinKey || completedSpinKey.current === spinKey) return;
-          rotationRef.current = dartAttachedRotationRef.current;
-          setSpinPhase('dart-attached-proof');
-          setRotation(dartAttachedRotationRef.current);
-          emitRevealPhase('dart-attached', spinKey);
+          if (!isActiveRun(spinKey, runRevealId)) return;
+          dartContactTimer.current = window.setTimeout(() => {
+            dartContactTimer.current = null;
+            if (!isActiveRun(spinKey, runRevealId)) return;
+            rotationRef.current = dartAttachedRotationRef.current;
+            activateRunPhase(
+              spinKey,
+              runRevealId,
+              'dart-attached-proof',
+              DART_ATTACHED_PROOF_SECONDS,
+            );
+            setRotation(dartAttachedRotationRef.current);
+            emitRevealPhase('dart-attached', spinKey);
+          }, DART_CONTACT_HOLD_DELAY);
         });
       });
       return;
     }
 
-    if (spinPhase === 'dart-attached-proof') {
+    if (run.phase === 'dart-attached-proof') {
       rotationRef.current = finishPlan.finalRotation;
-      setSpinPhase('dart-after-impact');
+      activateRunPhase(spinKey, runRevealId, 'dart-after-impact', postImpactDuration);
       setRotation(finishPlan.finalRotation);
       return;
     }
 
-    if (spinPhase === 'dart-after-impact') {
+    if (run.phase === 'dart-after-impact') {
       if (dartImpactTimer.current !== null) {
         window.clearTimeout(dartImpactTimer.current);
         dartImpactTimer.current = null;
       }
-      beginProofHold(spinKey, true);
+      beginProofHold(spinKey, runRevealId, true);
       return;
     }
 
-    if (spinPhase === 'auto-brake') {
+    if (run.phase === 'auto-brake') {
       if (!landingBoundaryHit) {
-        beginProofHold(spinKey, false);
+        beginProofHold(spinKey, runRevealId, false);
         return;
       }
 
@@ -670,25 +795,30 @@ export default function RouletteWheel({
         * (1 - Math.sqrt(1 - boundaryProgress))
         * 1_000;
       boundaryCrossedTimer.current = window.setTimeout(() => {
-        if (lastSpinKey.current !== spinKey || completedSpinKey.current === spinKey) return;
+        if (!isActiveRun(spinKey, runRevealId)) return;
         boundaryCrossedTimer.current = null;
         setBoundaryVisualPhase('crossed');
         emitRevealPhase('boundary-crossed', spinKey);
       }, crossedDelay);
       rotationRef.current = finishPlan.finalRotation;
-      setSpinPhase('auto-photo-finish');
+      activateRunPhase(
+        spinKey,
+        runRevealId,
+        'auto-photo-finish',
+        autoPhotoFinishDuration,
+      );
       setRotation(finishPlan.finalRotation);
       return;
     }
 
-    if (spinPhase === 'auto-photo-finish') {
+    if (run.phase === 'auto-photo-finish') {
       if (boundaryCrossedTimer.current !== null) {
         window.clearTimeout(boundaryCrossedTimer.current);
         boundaryCrossedTimer.current = null;
       }
       setBoundaryVisualPhase('crossed');
       emitRevealPhase('boundary-crossed', spinKey);
-      beginProofHold(spinKey, false);
+      beginProofHold(spinKey, runRevealId, false);
     }
   };
 
@@ -706,9 +836,28 @@ export default function RouletteWheel({
         : spinPhase;
   const boundaryBeforeIndex = validWinner ? (winnerIndex + 1) % participantCount : -1;
   const boundaryAfterIndex = validWinner ? winnerIndex : -1;
+  const isDartBoundaryStop = Boolean(
+    isDartPresentation &&
+    participantCount > 1 &&
+    validWinner &&
+    landingBoundaryHit &&
+    dartPhase === 'settled',
+  );
   const showBoundaryNames = participantCount > 1 && validWinner && (
     (!isDartPresentation && landingBoundaryHit && isBoundaryFocus) ||
-    (isDartPresentation && landingBoundaryHit && dartPhase === 'impact')
+    (isDartPresentation && landingBoundaryHit && isDartBoundaryPhaseVisible(dartPhase))
+  );
+  const boundaryWinnerSide =
+    (!isDartPresentation && boundaryVisualPhase === 'crossed') || isDartBoundaryStop
+      ? 'after'
+      : undefined;
+  const showBoundaryWinnerSlice = Boolean(
+    validWinner &&
+    landingBoundaryHit &&
+    (
+      (!isDartPresentation && boundaryVisualPhase === 'crossed') ||
+      isDartBoundaryStop
+    ),
   );
   const rootClassName = [
     'roulette-wheel',
@@ -728,6 +877,7 @@ export default function RouletteWheel({
     boundaryVisualPhase === 'approach' ? 'is-boundary-approach' : '',
     boundaryVisualPhase === 'crossed' ? 'is-boundary-creep' : '',
     spinPhase === 'stop-hold' ? 'is-stop-hold' : '',
+    isDartBoundaryStop ? 'is-dart-boundary-stop' : '',
     showWinner ? 'has-result' : '',
     participantCount === 0 ? 'is-empty' : '',
   ]
@@ -743,12 +893,27 @@ export default function RouletteWheel({
     '--wheel-dart-attached-duration': `${DART_ATTACHED_PROOF_SECONDS}s`,
     '--wheel-post-impact-duration': `${postImpactDuration}s`,
   };
+  const impactStyle: RouletteImpactStyle = {
+    '--dart-impact-x': `${dartImpactPoint.xPercent}%`,
+    '--dart-impact-y': `${dartImpactPoint.yPercent}%`,
+    '--dart-final-x': `${dartImpactPoint.finalXPercent}%`,
+    '--dart-final-y': `${dartImpactPoint.finalYPercent}%`,
+    '--dart-jitter-a-x': `${dartImpactPoint.jitterA.xPixels}px`,
+    '--dart-jitter-a-y': `${dartImpactPoint.jitterA.yPixels}px`,
+    '--dart-jitter-b-x': `${dartImpactPoint.jitterB.xPixels}px`,
+    '--dart-jitter-b-y': `${dartImpactPoint.jitterB.yPixels}px`,
+    '--dart-roll': `${dartImpactPoint.rollDegrees}deg`,
+  };
 
   return (
     <section
       className={rootClassName}
       data-spin-phase={spinPhase}
+      data-run-phase={activeRunRef.current?.phase ?? 'none'}
       data-motion-phase={motionPhase}
+      data-boundary-hit={landingBoundaryHit ? 'true' : 'false'}
+      data-auto-whirl-duration={autoWhirlDuration.toFixed(3)}
+      data-photo-finish-duration={autoPhotoFinishDuration.toFixed(3)}
       aria-label="Retto Roulette 추첨 룰렛"
     >
       <div className="roulette-wheel__stage">
@@ -760,7 +925,12 @@ export default function RouletteWheel({
           <span className="roulette-wheel__pointer-pin" />
         </div>
 
-        <div className="roulette-wheel__rim">
+        <div
+          className="roulette-wheel__rim"
+          style={impactStyle}
+          data-dart-impact-x={dartImpactPoint.xPercent.toFixed(3)}
+          data-dart-impact-y={dartImpactPoint.yPercent.toFixed(3)}
+        >
           <div
             ref={discRef}
             className="roulette-wheel__disc"
@@ -790,6 +960,10 @@ export default function RouletteWheel({
                         className={`roulette-wheel__slice${
                           showWinner && slice.index === winnerIndex
                             ? ' roulette-wheel__slice--winner'
+                            : ''
+                        }${
+                          showBoundaryWinnerSlice && slice.index === winnerIndex
+                            ? ' roulette-wheel__slice--boundary-winner'
                             : ''
                         }`}
                         d={slice.path}
@@ -851,6 +1025,7 @@ export default function RouletteWheel({
               afterColor={slices[boundaryAfterIndex]?.color ?? WHEEL_COLORS[1]}
               visible={showBoundaryNames}
               mode={isDartPresentation ? 'dart' : 'spin'}
+              winnerSide={boundaryWinnerSide}
             />
           )}
         </div>

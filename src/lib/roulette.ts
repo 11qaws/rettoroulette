@@ -26,6 +26,26 @@ export interface RouletteFinishLanding {
   boundaryHit?: boolean;
 }
 
+export interface DartShotPlan {
+  /** Screen-space angle of the committed impact point; -90 is twelve o'clock. */
+  impactAngleDegrees: number;
+  /** Distance from the wheel centre where 1 reaches the coloured outer edge. */
+  impactRadiusRatio: number;
+  /** Two result-neutral approach offsets that must converge to zero at contact. */
+  jitterA: { xPixels: number; yPixels: number };
+  jitterB: { xPixels: number; yPixels: number };
+  /** Small face-on roll shared by the flying and embedded dart. */
+  rollDegrees: number;
+}
+
+export interface DartImpactPoint extends DartShotPlan {
+  xPercent: number;
+  yPercent: number;
+  /** Where the same board-local dart arrives when the winner stops at twelve. */
+  finalXPercent: number;
+  finalYPercent: number;
+}
+
 export interface RouletteFinishPlan {
   /** Close-up position, still inside the clockwise neighbour of the winner. */
   focusRotation: number;
@@ -53,10 +73,13 @@ export interface AutoPhotoFinishTiming {
 }
 
 export interface DartRouletteFinishPlan extends RouletteFinishPlan {
-  /** Rotation when the fixed, front-facing dart reaches twelve o'clock. */
+  /** Rotation when the fixed, front-facing dart reaches its varied impact point. */
   impactRotation: number;
   /** Whole turns made with the dart physically attached to the board. */
   coastTurns: number;
+  /** The same screen-space point used by the projectile and camera. */
+  impactAngleDegrees: number;
+  impactRadiusRatio: number;
 }
 
 export interface RouletteSliceGeometry {
@@ -77,6 +100,70 @@ function clamp(value: number, minimum: number, maximum: number) {
 
 function finiteNonNegative(value: number, fallback: number) {
   return Number.isFinite(value) ? Math.max(0, value) : fallback;
+}
+
+function finiteClamped(value: number, minimum: number, maximum: number, fallback: number) {
+  return Number.isFinite(value) ? clamp(value, minimum, maximum) : fallback;
+}
+
+function nextUnitRandom(random: () => number) {
+  return finiteClamped(random(), 0, 1, 0.5);
+}
+
+/**
+ * Creates one result-neutral dart shot after the draw winner has been fixed.
+ * Keeping the point on the upper half preserves the readable left/right
+ * boundary direction while making consecutive shots visibly distinct.
+ */
+export function createDartShotPlan(random: () => number = Math.random): DartShotPlan {
+  return {
+    impactAngleDegrees: -115 + nextUnitRandom(random) * 50,
+    impactRadiusRatio: 0.58 + nextUnitRandom(random) * 0.22,
+    jitterA: {
+      xPixels: (nextUnitRandom(random) * 2 - 1) * 7,
+      yPixels: (nextUnitRandom(random) * 2 - 1) * 5,
+    },
+    jitterB: {
+      xPixels: (nextUnitRandom(random) * 2 - 1) * 7,
+      yPixels: (nextUnitRandom(random) * 2 - 1) * 5,
+    },
+    rollDegrees: -12 + nextUnitRandom(random) * 24,
+  };
+}
+
+/** Converts the canonical polar shot into the one shared CSS impact point. */
+export function resolveDartImpactPoint(shot?: DartShotPlan): DartImpactPoint {
+  const impactAngleDegrees = finiteClamped(
+    shot?.impactAngleDegrees ?? DART_IMPACT_ANGLE,
+    -115,
+    -65,
+    DART_IMPACT_ANGLE,
+  );
+  const impactRadiusRatio = finiteClamped(
+    shot?.impactRadiusRatio ?? 0.72,
+    0.58,
+    0.8,
+    0.72,
+  );
+  const angleInRadians = (impactAngleDegrees * Math.PI) / 180;
+
+  return {
+    impactAngleDegrees,
+    impactRadiusRatio,
+    xPercent: 50 + Math.cos(angleInRadians) * impactRadiusRatio * 50,
+    yPercent: 50 + Math.sin(angleInRadians) * impactRadiusRatio * 50,
+    finalXPercent: 50,
+    finalYPercent: 50 - impactRadiusRatio * 50,
+    jitterA: {
+      xPixels: finiteClamped(shot?.jitterA.xPixels ?? 0, -7, 7, 0),
+      yPixels: finiteClamped(shot?.jitterA.yPixels ?? 0, -5, 5, 0),
+    },
+    jitterB: {
+      xPixels: finiteClamped(shot?.jitterB.xPixels ?? 0, -7, 7, 0),
+      yPixels: finiteClamped(shot?.jitterB.yPixels ?? 0, -5, 5, 0),
+    },
+    rollDegrees: finiteClamped(shot?.rollDegrees ?? 0, -12, 12, 0),
+  };
 }
 
 /**
@@ -309,6 +396,7 @@ export function buildRouletteFinishPlan(
     entryGapDegrees: 8,
     leadDegrees: 12,
   },
+  presentationAngle = AUTO_POINTER_ANGLE,
 ): RouletteFinishPlan {
   const safeCurrentRotation = Number.isFinite(currentRotation) ? currentRotation : 0;
   const slices = getRouletteSliceGeometry(participantCount, weights);
@@ -342,7 +430,7 @@ export function buildRouletteFinishPlan(
   const boundaryAngle = winner.endAngle;
   const focusAngle = boundaryAngle + entryGapDegrees;
   const landingAngle = boundaryAngle - leadDegrees;
-  const focusTarget = normalizeAngle(AUTO_POINTER_ANGLE - focusAngle);
+  const focusTarget = normalizeAngle(presentationAngle - focusAngle);
   const currentAngle = normalizeAngle(safeCurrentRotation);
   const alignmentDelta = normalizeAngle(focusTarget - currentAngle);
   const safeTurns = finiteNonNegative(fullTurns, 0);
@@ -365,11 +453,10 @@ export function buildRouletteFinishPlan(
 /**
  * Builds a physically coupled dart finish.
  *
- * The committed winner is already beneath the fixed twelve-o'clock impact
- * point when the dart lands. The board then makes only whole turns, so an
- * embedded dart can live in the board's local coordinate system and return to
- * the same point when the wheel stops. No visual re-aiming is needed after
- * impact and the dart can never drift away from its winning slice.
+ * The committed winner is beneath a varied upper-half impact point when the
+ * dart lands. The board then carries that embedded dart to twelve o'clock,
+ * proving that the projectile and the final winner share one wheel-local
+ * point. The dart never drifts away from its winning slice.
  */
 export function buildDartRouletteFinishPlan(
   currentRotation: number,
@@ -379,7 +466,9 @@ export function buildDartRouletteFinishPlan(
   coastTurns: number,
   weights?: readonly number[],
   landing?: RouletteFinishLanding,
+  shot?: DartShotPlan,
 ): DartRouletteFinishPlan {
+  const impactPoint = resolveDartImpactPoint(shot);
   const landingPlan = buildRouletteFinishPlan(
     currentRotation,
     winnerIndex,
@@ -387,16 +476,28 @@ export function buildDartRouletteFinishPlan(
     flightTurns,
     weights,
     landing,
+    impactPoint.impactAngleDegrees,
   );
   const safeCoastTurns = Math.max(1, Math.floor(finiteNonNegative(coastTurns, 1)));
   const impactRotation = landingPlan.finalRotation;
+  const finalPlan = buildRouletteFinishPlan(
+    impactRotation,
+    winnerIndex,
+    participantCount,
+    safeCoastTurns,
+    weights,
+    landing,
+    AUTO_POINTER_ANGLE,
+  );
 
   return {
     ...landingPlan,
     focusRotation: impactRotation,
     boundaryRotation: impactRotation,
-    finalRotation: impactRotation + safeCoastTurns * 360,
+    finalRotation: finalPlan.finalRotation,
     impactRotation,
     coastTurns: safeCoastTurns,
+    impactAngleDegrees: impactPoint.impactAngleDegrees,
+    impactRadiusRatio: impactPoint.impactRadiusRatio,
   };
 }

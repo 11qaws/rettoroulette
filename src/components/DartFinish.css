@@ -36,9 +36,13 @@
   box-shadow:
     0 0 0 0.16rem color-mix(in srgb, var(--hot-pink, #ff4f87) 82%, transparent),
     0 0 0.8rem color-mix(in srgb, var(--cream, #fff9e7) 70%, transparent);
-  opacity: 0.74;
+  opacity: 0;
   transform: translate(-50%, -50%);
   transition: opacity 120ms ease, transform 160ms ease;
+}
+
+.dart-finish--approach .dart-finish__target {
+  opacity: 0.74;
 }
 
 .dart-finish__target > span {
@@ -49,7 +53,7 @@
 }
 
 .dart-finish--impact .dart-finish__target {
-  animation: dart-target-hit 50ms linear both;
+  animation: dart-target-hit 80ms linear both;
 }
 
 .dart-finish--coast .dart-finish__target,
@@ -115,7 +119,7 @@
   width: var(--dart-face-size);
   aspect-ratio: 1;
   opacity: 0;
-  transform: translate(-50%, -50%) scale(5.8);
+  transform: translate(-50%, -50%) scale(5.8) rotate(var(--dart-roll, 0deg));
   filter: blur(0.22rem) drop-shadow(0 0 0.8rem color-mix(in srgb, var(--lemon, #ffe45c) 70%, transparent));
   will-change: transform, filter, opacity;
 }
@@ -193,7 +197,10 @@
   font-size: clamp(0.68rem, 2vw, 0.9rem);
   line-height: 1;
   opacity: 0;
-  transform: translate(0.8rem, -2.7rem) scale(0.72);
+  transform: translate(-50%, 0.8rem) scale(0.72);
+  transition:
+    left 520ms cubic-bezier(0.16, 0.82, 0.2, 1),
+    top 520ms cubic-bezier(0.16, 0.82, 0.2, 1);
   white-space: nowrap;
 }
 
@@ -226,30 +233,39 @@
 .dart-finish--approach .dart-finish__ring--three { animation: dart-tunnel-ring-approach var(--dart-approach-duration) calc(var(--dart-approach-duration) * 0.34) linear both; }
 
 .dart-finish--impact .dart-finish__flash {
-  animation: dart-impact-flash 360ms ease-out both;
+  animation: dart-impact-flash 240ms ease-out both;
 }
 
 .dart-finish--impact .dart-finish__impact-ring--one {
-  animation: dart-impact-ring 440ms ease-out both;
+  animation: dart-impact-ring 260ms ease-out both;
 }
 
 .dart-finish--impact .dart-finish__impact-ring--two {
-  animation: dart-impact-ring 440ms 55ms ease-out both;
+  animation: dart-impact-ring 260ms ease-out both;
 }
 
 .dart-finish--impact .dart-finish__impact-spark {
-  animation: dart-impact-spark 360ms cubic-bezier(0.18, 0.86, 0.24, 1) both;
+  animation: dart-impact-spark 240ms cubic-bezier(0.18, 0.86, 0.24, 1) both;
 }
 
-.dart-finish--impact .dart-finish__impact-spark--two { animation-delay: 45ms; }
-.dart-finish--impact .dart-finish__impact-spark--three { animation-delay: 80ms; }
-
 .dart-finish--impact .dart-finish__projectile {
-  animation: dart-projectile-handoff 100ms linear both;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(1) rotate(var(--dart-roll, 0deg));
 }
 
 .dart-finish--impact.is-boundary-hit .dart-finish__boundary-callout {
-  animation: dart-boundary-callout 430ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+  animation: dart-boundary-callout 260ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+}
+
+.dart-finish--coast.is-boundary-hit .dart-finish__boundary-callout,
+.dart-finish--settled.is-boundary-hit .dart-finish__boundary-callout {
+  opacity: 1;
+  transform: translate(-50%, 1.35rem) scale(1);
+}
+
+.dart-finish--settled.is-boundary-hit .dart-finish__boundary-callout {
+  left: var(--dart-final-x, 50%);
+  top: var(--dart-final-y, 14%);
 }
 
 /* The physical dart is in rotor space and therefore inherits every turn. */
@@ -269,7 +285,7 @@
   left: var(--dart-impact-x);
   width: var(--dart-face-size);
   aspect-ratio: 1;
-  transform: translate(-50%, -50%) scale(1);
+  transform: translate(-50%, -50%) scale(1) rotate(var(--dart-roll, 0deg));
   filter: drop-shadow(0.12rem 0.2rem 0 color-mix(in srgb, var(--ink, #251c32) 38%, transparent));
 }
 
@@ -307,11 +323,11 @@
 }
 
 .embedded-dart--impact .embedded-dart__pin {
-  animation: embedded-dart-bite 300ms cubic-bezier(0.16, 0.86, 0.24, 1) both;
+  animation: embedded-dart-bite 140ms cubic-bezier(0.16, 0.86, 0.24, 1) both;
 }
 
 .embedded-dart--impact .embedded-dart__pin::before {
-  animation: embedded-dart-contact-proof 300ms cubic-bezier(0.16, 0.86, 0.24, 1) both;
+  animation: embedded-dart-contact-proof 220ms cubic-bezier(0.16, 0.86, 0.24, 1) both;
 }
 
 .embedded-dart.is-boundary-hit .embedded-dart__core {
@@ -331,7 +347,11 @@
   gap: clamp(0.3rem, 1.6vw, 0.72rem);
   opacity: 0;
   transform: translate(-50%, -0.55rem);
-  transition: opacity 120ms ease, transform 180ms cubic-bezier(0.18, 0.82, 0.2, 1);
+  transition:
+    opacity 120ms ease,
+    transform 180ms cubic-bezier(0.18, 0.82, 0.2, 1),
+    left 520ms cubic-bezier(0.16, 0.82, 0.2, 1),
+    top 520ms cubic-bezier(0.16, 0.82, 0.2, 1);
   pointer-events: none;
 }
 
@@ -355,6 +375,12 @@
   text-align: center;
   overflow-wrap: anywhere;
   word-break: keep-all;
+}
+
+.boundary-names__candidate.is-winner {
+  position: relative;
+  z-index: 2;
+  animation: boundary-winner-confirm 820ms cubic-bezier(0.16, 0.86, 0.2, 1) both;
 }
 
 .boundary-names__candidate--before {
@@ -381,11 +407,18 @@
 }
 
 .boundary-names--dart {
-  top: 9.2%;
+  top: max(4.5%, calc(var(--dart-impact-y) - 3.5rem));
+  left: clamp(34%, var(--dart-impact-x), 66%);
+  width: min(64%, 28rem);
+}
+
+.boundary-names--dart.is-final {
+  top: max(4.5%, calc(var(--dart-final-y, 14%) - 3.5rem));
+  left: var(--dart-final-x, 50%);
 }
 
 .boundary-names--dart.is-visible {
-  animation: boundary-names-impact 440ms cubic-bezier(0.18, 0.82, 0.2, 1) both;
+  animation: boundary-names-impact 260ms cubic-bezier(0.18, 0.82, 0.2, 1) both;
 }
 
 @keyframes dart-shot-flash {
@@ -410,20 +443,17 @@
 }
 
 @keyframes dart-front-launch {
-  from { opacity: 0; transform: translate(-50%, -50%) scale(6.2); filter: blur(0.3rem); }
+  from { opacity: 0; transform: translate(-50%, -50%) scale(6.2) rotate(var(--dart-roll, 0deg)); filter: blur(0.3rem); }
   12% { opacity: 1; }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(2.15); filter: blur(0.08rem); }
+  52% { opacity: 1; transform: translate(calc(-50% + var(--dart-jitter-a-x, 0px)), calc(-50% + var(--dart-jitter-a-y, 0px))) scale(3.8) rotate(var(--dart-roll, 0deg)); }
+  to { opacity: 1; transform: translate(calc(-50% + var(--dart-jitter-b-x, 0px)), calc(-50% + var(--dart-jitter-b-y, 0px))) scale(2.15) rotate(var(--dart-roll, 0deg)); filter: blur(0.08rem); }
 }
 
 @keyframes dart-front-approach {
-  from { opacity: 1; transform: translate(-50%, -50%) scale(2.15); filter: blur(0.08rem); }
-  78% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); filter: blur(0); }
-  to { opacity: 0.34; transform: translate(-50%, -50%) scale(1); filter: blur(0); }
-}
-
-@keyframes dart-projectile-handoff {
-  from { opacity: 0.34; transform: translate(-50%, -50%) scale(1); filter: blur(0); }
-  to { opacity: 0; transform: translate(-50%, -50%) scale(0.96); filter: blur(0); }
+  from { opacity: 1; transform: translate(calc(-50% + var(--dart-jitter-b-x, 0px)), calc(-50% + var(--dart-jitter-b-y, 0px))) scale(2.15) rotate(var(--dart-roll, 0deg)); filter: blur(0.08rem); }
+  34% { opacity: 1; transform: translate(calc(-50% + var(--dart-jitter-a-x, 0px)), calc(-50% + var(--dart-jitter-a-y, 0px))) scale(1.62) rotate(var(--dart-roll, 0deg)); }
+  68% { opacity: 1; transform: translate(calc(-50% + var(--dart-jitter-b-x, 0px)), calc(-50% + var(--dart-jitter-b-y, 0px))) scale(1.24) rotate(var(--dart-roll, 0deg)); filter: blur(0); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(var(--dart-roll, 0deg)); filter: blur(0); }
 }
 
 @keyframes dart-target-hit {
@@ -454,15 +484,15 @@
 }
 
 @keyframes dart-boundary-callout {
-  from { opacity: 0; transform: translate(0.8rem, -2.2rem) scale(0.72); }
-  28%, 72% { opacity: 1; transform: translate(1rem, -2.9rem) scale(1); }
-  to { opacity: 0; transform: translate(1.05rem, -3.1rem) scale(0.92); }
+  from { opacity: 0; transform: translate(-50%, 0.7rem) scale(0.72); }
+  70% { opacity: 1; transform: translate(-50%, 1.5rem) scale(1.06); }
+  to { opacity: 1; transform: translate(-50%, 1.35rem) scale(1); }
 }
 
 @keyframes embedded-dart-bite {
-  from { transform: translate(-50%, -50%) scale(1.05); }
-  45% { transform: translate(-50%, -50%) scale(0.9); }
-  to { transform: translate(-50%, -50%) scale(1); }
+  from { transform: translate(-50%, -50%) scale(1.14) rotate(var(--dart-roll, 0deg)); }
+  45% { transform: translate(-50%, -50%) scale(0.92) rotate(var(--dart-roll, 0deg)); }
+  to { transform: translate(-50%, -50%) scale(1) rotate(var(--dart-roll, 0deg)); }
 }
 
 @keyframes embedded-dart-contact-proof {
@@ -473,8 +503,26 @@
 
 @keyframes boundary-names-impact {
   0% { opacity: 0; transform: translate(-50%, -0.45rem) scale(0.96); }
-  22%, 82% { opacity: 1; transform: translate(-50%, 0) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, 0.15rem) scale(0.985); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes boundary-winner-confirm {
+  0%, 40%, 72% {
+    opacity: 0.78;
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  20%, 56% {
+    opacity: 1;
+    filter: brightness(1.2) saturate(1.22);
+    transform: scale(1.065);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1.13) saturate(1.15);
+    transform: scale(1.045);
+    box-shadow: 0 0.32rem 0 var(--ink, #251c32), 0 0 1.15rem var(--lemon, #ffe45c);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

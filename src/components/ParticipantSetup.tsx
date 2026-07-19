@@ -288,7 +288,10 @@ export default function ParticipantSetup({
             <button type="button" aria-pressed="false" onClick={() => setStep('paste')}>카페 댓글</button>
             <button type="button" aria-pressed="true">직접 입력</button>
           </div>
-          <label className="setup-field-label" htmlFor="manual-names">한 줄에 한 명</label>
+          <label className="setup-field-label" htmlFor="manual-names">
+            <span>한 줄에 한 명</span>
+            <span className="setup-field-shortcut">Shift+Enter로 한 번에 추가</span>
+          </label>
           <textarea
             data-setup-initial-focus
             id="manual-names"
@@ -298,7 +301,19 @@ export default function ParticipantSetup({
               setManualNames(event.target.value);
               setEditorNotice('');
             }}
-            placeholder={'티얀키\n사악한고래밥\nSeioon'}
+            onKeyDown={(event) => {
+              if (
+                event.key === 'Enter' &&
+                event.shiftKey &&
+                !event.repeat &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                addManualNames();
+              }
+            }}
+            aria-keyshortcuts="Shift+Enter"
+            placeholder={'아모레또\n유레카\n세나\n코코\n망징이'}
           />
           <div className="setup-inline-action">
             <button className="setup-secondary" type="button" onClick={addManualNames}>명단에 추가</button>

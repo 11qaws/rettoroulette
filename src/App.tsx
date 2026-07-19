@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 import BroadcastActionDock, { type BroadcastDockAction } from './components/BroadcastActionDock';
 import CurrentRoundWinners from './components/CurrentRoundWinners';
@@ -36,7 +37,16 @@ import {
   PENDING_RAFFLE_KEY,
 } from './lib/pendingRaffle';
 import { derivePreparationReadiness } from './lib/preparation';
-import type { RouletteFinishLanding } from './lib/roulette';
+import {
+  isCurrentPresentationCompletion,
+  type PresentationRunToken,
+} from './lib/presentationRun';
+import {
+  createDartShotPlan,
+  resolveDartImpactPoint,
+  type DartShotPlan,
+  type RouletteFinishLanding,
+} from './lib/roulette';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize, WheelPresentation } from './types';
 
 import './App.css';
@@ -88,6 +98,8 @@ type PlannedPresentation = {
   candidateTotalWeight: number;
   /** Changes only where the committed result stops inside its slice. */
   landing: RouletteFinishLanding;
+  /** Result-neutral physical coordinates fixed once for a dart reveal. */
+  dartShot?: DartShotPlan;
   recipient?: string;
 };
 
@@ -104,6 +116,15 @@ type ActivePresentation = CommittedPresentation & {
 type PresentationBeat = 'idle' | 'motion' | 'hero' | 'dock';
 type CinematicRevealPhase = 'idle' | 'result-committed' | 'motion-started' | RouletteRevealPhase;
 type RevealContinuation = 'continue-auto' | 'await-next-dart' | 'complete-round';
+
+type PresentationCompletion = PresentationRunToken;
+
+type CinematicCameraStyle = CSSProperties & {
+  '--cinematic-impact-x': string;
+  '--cinematic-impact-y': string;
+  '--cinematic-final-x': string;
+  '--cinematic-final-y': string;
+};
 
 type WinnerHeroState = {
   revealId: number;
@@ -602,6 +623,7 @@ function App() {
         candidateFingerprint: fingerprintOptions(options),
         candidateTotalWeight: totalEffectiveWeight(options),
         landing: createFinishLanding(wheelReveal),
+        dartShot: wheelReveal === 'dart' ? createDartShotPlan() : undefined,
       }));
     }
 
@@ -621,6 +643,7 @@ function App() {
         candidateFingerprint: fingerprintOptions(candidateSnapshot),
         candidateTotalWeight: totalEffectiveWeight(candidateSnapshot),
         landing: createFinishLanding(wheelReveal),
+        dartShot: wheelReveal === 'dart' ? createDartShotPlan() : undefined,
       };
       remaining.splice(winnerIndex, 1);
       return [presentation];
@@ -722,7 +745,7 @@ function App() {
     prepareNextRoundSettings();
   };
 
-  const completeDraw = (revealId?: number) => {
+  const completeDraw = (completion: PresentationCompletion) => {
     const presentation = activePresentation;
     const activeRound = currentRound;
     if (
@@ -730,8 +753,12 @@ function App() {
       !spinning ||
       !presentation ||
       !activeRound ||
-      revealId !== presentation.revealId ||
-      revealId !== presentationRunRef.current
+      !isCurrentPresentationCompletion(
+        completion,
+        spinKeyRef.current,
+        presentationRunRef.current,
+        presentation.revealId,
+      )
     ) {
       return;
     }
@@ -1346,6 +1373,15 @@ function App() {
     presentationBeat === 'dock' ? 'is-result-docking' : '',
     raffleStatus === 'completed' ? 'is-round-complete' : '',
   ].filter(Boolean).join(' ');
+  const cinematicImpactPoint = resolveDartImpactPoint(
+    roundWheelPresentation === 'dart' ? activePresentation?.dartShot : undefined,
+  );
+  const cinematicCameraStyle: CinematicCameraStyle = {
+    '--cinematic-impact-x': `${cinematicImpactPoint.xPercent}%`,
+    '--cinematic-impact-y': `${cinematicImpactPoint.yPercent}%`,
+    '--cinematic-final-x': `${cinematicImpactPoint.finalXPercent}%`,
+    '--cinematic-final-y': `${cinematicImpactPoint.finalYPercent}%`,
+  };
   const broadcastFocusClassName = [
     'broadcast-focus',
     `reveal-phase--${cinematicRevealPhase}`,
@@ -1471,9 +1507,10 @@ function App() {
         presentation={presentation}
         revealId={preview ? undefined : activePresentation?.revealId}
         landing={preview ? undefined : activePresentation?.landing}
+        dartShot={preview ? undefined : activePresentation?.dartShot}
         onRevealPhase={preview ? undefined : handleRouletteRevealPhase}
         onIdleCruise={preview ? undefined : () => setRotorReady(true)}
-        onSpinEnd={preview ? () => undefined : () => completeDraw(activePresentation?.revealId)}
+        onSpinEnd={preview ? () => undefined : completeDraw}
       />
     ) : (
       <MarbleRace
@@ -1482,7 +1519,11 @@ function App() {
         winnerIndex={activeWinnerIndex}
         racing={activeSpin}
         raceKey={spinKey}
-        onRaceEnd={preview ? () => undefined : () => completeDraw(activePresentation?.revealId)}
+        onRaceEnd={preview ? () => undefined : () => {
+          if (activePresentation) {
+            completeDraw({ spinKey, revealId: activePresentation.revealId });
+          }
+        }}
       />
     );
   };
@@ -1887,7 +1928,9 @@ function App() {
           <p className="broadcast-focus__fairness">{fairnessLabel}</p>
 
           <div className={broadcastVisualClassName}>
-            <div className="broadcast-focus__camera">{renderDrawVisual('live')}</div>
+            <div className="broadcast-focus__camera" style={cinematicCameraStyle}>
+              {renderDrawVisual('live')}
+            </div>
           </div>
 
           <p className="broadcast-focus__prompt">{stagePrompt}</p>

@@ -30,8 +30,8 @@ type BoundaryNamesStyle = CSSProperties & {
 
 /**
  * Screen-space flight and impact flash. The projectile is seen head-on: it
- * stays on the twelve-o'clock axis and changes scale instead of entering from
- * a fake diagonal direction.
+ * changes scale at one result-neutral upper-half point instead of entering
+ * from a fake diagonal direction.
  */
 export default function DartFinish({
   phase,
@@ -93,6 +93,12 @@ export interface BoundaryNamesProps {
   afterColor: string;
   visible: boolean;
   mode: 'spin' | 'dart';
+  /** Remains neutral until the physical stop proves which side won. */
+  winnerSide?: 'before' | 'after';
+}
+
+export function isDartBoundaryPhaseVisible(phase: DartFinishPhase) {
+  return phase === 'impact' || phase === 'coast' || phase === 'settled';
 }
 
 /**
@@ -106,6 +112,7 @@ export function BoundaryNames({
   afterColor,
   visible,
   mode,
+  winnerSide,
 }: BoundaryNamesProps) {
   const style: BoundaryNamesStyle = {
     '--boundary-before-color': beforeColor,
@@ -114,15 +121,15 @@ export function BoundaryNames({
 
   return (
     <div
-      className={`boundary-names boundary-names--${mode}${visible ? ' is-visible' : ''}`}
+      className={`boundary-names boundary-names--${mode}${visible ? ' is-visible' : ''}${winnerSide ? ' is-final' : ''}`}
       style={style}
       aria-hidden="true"
     >
-      <span className="boundary-names__candidate boundary-names__candidate--after">
+      <span className={`boundary-names__candidate boundary-names__candidate--after${winnerSide === 'after' ? ' is-winner' : ''}`}>
         {afterName}
       </span>
       <span className="boundary-names__marker">경계</span>
-      <span className="boundary-names__candidate boundary-names__candidate--before">
+      <span className={`boundary-names__candidate boundary-names__candidate--before${winnerSide === 'before' ? ' is-winner' : ''}`}>
         {beforeName}
       </span>
     </div>
@@ -131,7 +138,7 @@ export function BoundaryNames({
 
 export interface EmbeddedDartProps {
   phase: DartFinishPhase;
-  /** Absolute rotor angle at the instant the dart hit twelve o'clock. */
+  /** Absolute rotor angle at the instant the dart hit its varied screen point. */
   impactRotation: number;
   boundaryHit?: boolean;
 }

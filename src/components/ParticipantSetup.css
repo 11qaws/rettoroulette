@@ -138,7 +138,7 @@
 }
 
 .setup-textarea--short {
-  min-height: 94px;
+  min-height: 130px;
 }
 
 .setup-textarea:focus,
@@ -255,10 +255,20 @@
 }
 
 .setup-field-label {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 7px;
   font-family: 'Jua', sans-serif;
   font-size: 13px;
+}
+
+.setup-field-shortcut {
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .setup-inline-action {

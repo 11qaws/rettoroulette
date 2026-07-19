@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { BoundaryNames } from './DartFinish';
+import { BoundaryNames, isDartBoundaryPhaseVisible } from './DartFinish';
 
 describe('BoundaryNames', () => {
   it('renders the winner on the visual left and the approaching neighbour on the right', () => {
@@ -20,5 +20,30 @@ describe('BoundaryNames', () => {
     expect(markup.indexOf('경계')).toBeLessThan(markup.indexOf('이웃 후보'));
     expect(markup).toContain('boundary-names__candidate--after');
     expect(markup).toContain('boundary-names__candidate--before');
+  });
+
+  it('marks only the proven winner side after the stop', () => {
+    const markup = renderToStaticMarkup(
+      <BoundaryNames
+        beforeName="이웃 후보"
+        afterName="당첨자"
+        beforeColor="#ffd166"
+        afterColor="#ffb6c1"
+        visible
+        mode="dart"
+        winnerSide="after"
+      />,
+    );
+
+    expect(markup).toContain('boundary-names__candidate--after is-winner');
+    expect(markup).not.toContain('boundary-names__candidate--before is-winner');
+  });
+
+  it('keeps a real dart boundary visible from impact through the final stop', () => {
+    expect(isDartBoundaryPhaseVisible('launch')).toBe(false);
+    expect(isDartBoundaryPhaseVisible('approach')).toBe(false);
+    expect(isDartBoundaryPhaseVisible('impact')).toBe(true);
+    expect(isDartBoundaryPhaseVisible('coast')).toBe(true);
+    expect(isDartBoundaryPhaseVisible('settled')).toBe(true);
   });
 });

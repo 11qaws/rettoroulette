@@ -1,17 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { DrawMode, DrawTarget, WheelPresentation } from '../types';
+import { createDartShotPlan, type DartShotPlan } from '../lib/roulette';
 import type { RouletteRevealEvent, RouletteRevealPhase } from './RouletteWheel';
 import MarbleRace from './MarbleRace';
 import RouletteWheel from './RouletteWheel';
 
 import './DrawPreviewDirector.css';
 
-const SAMPLE_PEOPLE = ['참가자 A', '참가자 B', '참가자 C', '참가자 D', '참가자 E', '참가자 F'];
+const SAMPLE_PEOPLE = ['아모레또', '유레카', '세나', '코코', '망징이'];
 const SAMPLE_PRIZES = ['선물 A', '선물 B', '선물 C', '선물 D', '선물 E', '선물 F'];
 const PREVIEW_CRUISE_DELAY = 900;
 const PREVIEW_RESULT_HOLD = 900;
 const PREVIEW_RESTART_GAP = 220;
+
+function createPreviewRandom(seed: number) {
+  let state = (seed + 1) * 0x9e3779b1;
+  return () => {
+    state = Math.imul(state ^ (state >>> 16), 0x21f0aaad);
+    state = Math.imul(state ^ (state >>> 15), 0x735a2d97);
+    state ^= state >>> 15;
+    return (state >>> 0) / 0x1_0000_0000;
+  };
+}
 
 type PreviewPhase = 'idle' | 'cruise' | 'motion' | 'hold' | RouletteRevealPhase;
 
@@ -39,6 +50,7 @@ export default function DrawPreviewDirector({
   const [spinKey, setSpinKey] = useState(0);
   const [visualRunId, setVisualRunId] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState<number | null>(null);
+  const [dartShot, setDartShot] = useState<DartShotPlan>(() => createDartShotPlan(() => 0.5));
   const [moving, setMoving] = useState(false);
   const [phase, setPhase] = useState<PreviewPhase>('idle');
   const [inViewport, setInViewport] = useState(true);
@@ -86,6 +98,7 @@ export default function DrawPreviewDirector({
       const nextWinner = sampleIndexRef.current % previewNames.length;
       sampleIndexRef.current += 1;
       spinKeyRef.current += 1;
+      setDartShot(createDartShotPlan(createPreviewRandom(sampleIndexRef.current)));
       setWinnerIndex(nextWinner);
       setSpinKey(spinKeyRef.current);
       setPhase('motion');
@@ -181,6 +194,7 @@ export default function DrawPreviewDirector({
             revealId={spinKey}
             presentation={presentation}
             landing={{ entryGapDegrees: 14, leadDegrees: 0.55, boundaryHit: true }}
+            dartShot={presentation === 'dart' ? dartShot : undefined}
             onRevealPhase={handleRevealPhase}
             onSpinEnd={() => finishCycle(visualRunId)}
           />

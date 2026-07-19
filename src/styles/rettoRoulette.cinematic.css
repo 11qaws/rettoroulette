@@ -75,7 +75,9 @@
       0
     )
     scale(var(--cinematic-camera-scale));
-  transform-origin: 50% 14%;
+  transform-origin:
+    var(--cinematic-impact-x, 50%)
+    var(--cinematic-impact-y, 14%);
   transition:
     opacity var(--cinematic-ui-duration) ease,
     filter var(--cinematic-camera-duration) ease,
@@ -115,8 +117,10 @@
   .is-boundary-creep,
   .is-stop-hold,
   .is-dart-flight,
-  .is-dart-after-impact
+  .is-dart-after-impact,
+  .is-dart-boundary-stop
 ) .roulette-wheel__rim {
+  animation: none;
   transform: none;
 }
 
@@ -147,7 +151,7 @@
 }
 
 /* Dart lottery: the board must remain at speed. The camera closes distance
-   slowly at first, then surges into the twelve-o'clock impact point. */
+   slowly at first, then surges into the committed, varied impact point. */
 .broadcast-focus.reveal-phase--dart-launched .broadcast-focus__camera {
   animation: cinematic-dart-pov 1150ms cubic-bezier(0.22, 0.58, 0.18, 1) both;
 }
@@ -180,9 +184,21 @@
 }
 
 .broadcast-focus.reveal-phase--rotation-stopped:has(.roulette-wheel.is-dart) {
-  --cinematic-camera-scale: 1.2;
-  --cinematic-camera-y: 0;
-  --cinematic-camera-duration: 460ms;
+  --cinematic-camera-scale: 1.38;
+  --cinematic-camera-y: 0.25%;
+  --cinematic-camera-duration: 520ms;
+}
+
+.broadcast-focus.reveal-phase--rotation-stopped:has(.roulette-wheel.is-dart) .broadcast-focus__camera {
+  transform-origin:
+    var(--cinematic-final-x, 50%)
+    var(--cinematic-final-y, 14%);
+}
+
+/* The rim owns the exact wheel-local close-up; the outer camera only frames it. */
+.broadcast-focus.reveal-phase--rotation-stopped .roulette-wheel.is-dart-boundary-stop .roulette-wheel__rim {
+  transform-origin: var(--dart-final-x, 50%) var(--dart-final-y, 14%);
+  animation: roulette-dart-boundary-stop 620ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
 }
 
 .broadcast-focus.reveal-phase--proof-hold-done {

@@ -1,6 +1,7 @@
 .roulette-wheel {
   --wheel-size: min(86vw, 42rem);
   --wheel-stage-padding: clamp(2.25rem, 7vw, 4rem);
+  --wheel-rim-border: clamp(0.55rem, 1.8vw, 0.9rem);
   --wheel-spin-duration: 3.6s;
   position: relative;
   width: 100%;
@@ -80,7 +81,7 @@
   width: var(--wheel-size);
   max-width: 100%;
   aspect-ratio: 1;
-  border: clamp(0.55rem, 1.8vw, 0.9rem) solid var(--ink, #251c32);
+  border: var(--wheel-rim-border) solid var(--ink, #251c32);
   border-radius: 50%;
   background: var(--cream, #fff9e7);
   box-shadow:
@@ -102,13 +103,15 @@
 }
 
 .roulette-wheel.is-boundary-focus .roulette-wheel__stage::before,
-.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__stage::before {
+.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__stage::before,
+.roulette-wheel.is-dart-boundary-stop .roulette-wheel__stage::before {
   opacity: 0.78;
   animation: roulette-finale-rays 1.36s cubic-bezier(0.16, 0.76, 0.18, 1) both;
 }
 
 .roulette-wheel.is-boundary-focus .roulette-wheel__rim,
-.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__rim {
+.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__rim,
+.roulette-wheel.is-dart-boundary-stop .roulette-wheel__rim {
   box-shadow:
     0 0 0 clamp(0.2rem, 0.7vw, 0.35rem) var(--cream, #fff9e7),
     0 0 0 clamp(0.35rem, 1vw, 0.55rem) var(--ink, #251c32),
@@ -124,6 +127,11 @@
 .roulette-wheel.is-dart-attached-proof .roulette-wheel__rim,
 .roulette-wheel.is-dart-after-impact .roulette-wheel__rim {
   filter: saturate(1.12) brightness(1.035);
+}
+
+.roulette-wheel.is-dart-boundary-stop .roulette-wheel__rim {
+  transform-origin: var(--dart-final-x, 50%) var(--dart-final-y, 14%);
+  animation: roulette-dart-boundary-stop 620ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
 }
 
 .roulette-wheel.is-idle-spinning .roulette-wheel__rim {
@@ -202,9 +210,11 @@
 .roulette-wheel.is-idle-spinning .roulette-wheel__label,
 .roulette-wheel.is-auto-brake .roulette-wheel__label,
 .roulette-wheel.is-dart-flight .roulette-wheel__label,
+.roulette-wheel.is-dart-impact-contact .roulette-wheel__label,
+.roulette-wheel.is-dart-attached-proof .roulette-wheel__label,
 .roulette-wheel.is-dart-after-impact .roulette-wheel__label {
-  opacity: 0.34;
-  filter: blur(1.15px);
+  opacity: 0.16;
+  filter: blur(1.9px);
 }
 
 .roulette-wheel.is-auto-photo-finish .roulette-wheel__label {
@@ -255,7 +265,7 @@
   --pointer-height: clamp(2.5rem, calc(var(--wheel-size) * 0.09), 3.8rem);
   position: absolute;
   z-index: 8;
-  top: calc(50% - var(--wheel-size) / 2 - var(--pointer-height) + 0.45rem);
+  top: calc(50% - var(--wheel-size) / 2 - var(--pointer-height) + var(--wheel-rim-border) + 0.08rem);
   left: 50%;
   width: var(--pointer-width);
   height: var(--pointer-height);
@@ -380,6 +390,11 @@
   animation: roulette-winner-glow 720ms ease-in-out 2 alternate;
 }
 
+.roulette-wheel__slice--boundary-winner {
+  filter: saturate(1.48) brightness(1.16) drop-shadow(0 0 12px var(--lemon, #ffe45c));
+  animation: roulette-boundary-winner-pulse 780ms cubic-bezier(0.16, 0.86, 0.2, 1) both;
+}
+
 .roulette-wheel.has-result .roulette-wheel__spark {
   animation: roulette-spark-pop 620ms cubic-bezier(0.2, 1.6, 0.4, 1) 2 alternate;
 }
@@ -493,6 +508,27 @@
   }
 }
 
+@keyframes roulette-boundary-winner-pulse {
+  0%, 38%, 72% {
+    filter: saturate(1.16) brightness(1.02) drop-shadow(0 0 2px transparent);
+  }
+  20%, 56%, 100% {
+    filter: saturate(1.56) brightness(1.2) drop-shadow(0 0 14px var(--lemon, #ffe45c));
+  }
+}
+
+@keyframes roulette-dart-boundary-stop {
+  from {
+    transform: scale(1);
+  }
+  58% {
+    transform: scale(1.09);
+  }
+  to {
+    transform: scale(1.075);
+  }
+}
+
 @keyframes roulette-spark-pop {
   from {
     opacity: 0.45;
@@ -523,12 +559,18 @@
   .roulette-wheel.is-spinning .roulette-wheel__pointer,
   .roulette-wheel.is-spinning .roulette-wheel__hub,
   .roulette-wheel.has-result .roulette-wheel__slice--winner,
+  .roulette-wheel__slice--boundary-winner,
   .roulette-wheel.has-result .roulette-wheel__spark,
   .roulette-wheel.is-boundary-focus .roulette-wheel__stage::before,
   .roulette-wheel.is-boundary-focus .roulette-wheel__rim,
   .roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__stage::before,
   .roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__rim {
     animation: none;
+  }
+
+  .roulette-wheel.is-dart-boundary-stop .roulette-wheel__rim {
+    animation: none;
+    transform: scale(1.035);
   }
 
   .roulette-wheel.is-dart-flight .roulette-wheel__disc,
