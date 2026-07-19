@@ -1,5 +1,11 @@
 # Development Log
 
+## 0.10.1 — Linux CI 잠금 파일 정합성
+
+- GitHub Actions의 Node 22/npm 10 환경에서 Rolldown WASM fallback의 선택적 peer dependency가 잠금 파일에 없다고 판정되어 `npm ci`가 중단됐다. Windows 로컬 빌드와 Pages 산출물에는 영향이 없었지만 배포 검증을 실패 상태로 남길 수 없어 패치 릴리스로 분리했다.
+- `@emnapi/core`와 `@emnapi/runtime`을 명시적인 개발 의존성으로 고정해 운영체제별 선택 의존성 해석 차이를 제거했다. 제품 코드와 방송 화면, 저장 스키마, 공개 URL은 변경하지 않는다.
+- 깨끗한 `npm ci`, Vitest, Pages 생산 빌드·산출물 검증을 다시 실행하고 GitHub Actions 성공과 실제 Pages 자산 해시 전환을 확인한다.
+
 ## 0.10.0 — 포토피니시 추첨 무대와 방송 세션 결과 복구
 
 ### 문제와 원인
