@@ -263,6 +263,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   const completionFallbackTimer = useRef<number | null>(null);
   const stopHoldTimer = useRef<number | null>(null);
   const dartImpactTimer = useRef<number | null>(null);
+  const dartAttachFrame = useRef<number | null>(null);
   const dartNameRevealTimer = useRef<number | null>(null);
   const boundaryEnteredTimer = useRef<number | null>(null);
   const boundaryCrossedTimer = useRef<number | null>(null);
@@ -407,6 +408,10 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     if (dartImpactTimer.current !== null) {
       window.clearTimeout(dartImpactTimer.current);
       dartImpactTimer.current = null;
+    }
+    if (dartAttachFrame.current !== null) {
+      window.cancelAnimationFrame(dartAttachFrame.current);
+      dartAttachFrame.current = null;
     }
     if (dartNameRevealTimer.current !== null) {
       window.clearTimeout(dartNameRevealTimer.current);
@@ -791,9 +796,23 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
         ) * 1_000);
     completionFallbackTimer.current = window.setTimeout(() => {
       if (!isActiveRun(spinKey, runRevealId)) return;
+      completionFallbackTimer.current = null;
 
       const activePlan = finishPlanRef.current;
       if (!activePlan) return;
+      if (isDartPresentation) {
+        // A throttled tab can let this safety fallback beat the two-frame
+        // contact paint. Retire every pending impact callback before forcing
+        // the final pose so an old frame cannot rewind the same active run.
+        if (dartAttachFrame.current !== null) {
+          window.cancelAnimationFrame(dartAttachFrame.current);
+          dartAttachFrame.current = null;
+        }
+        if (dartImpactTimer.current !== null) {
+          window.clearTimeout(dartImpactTimer.current);
+          dartImpactTimer.current = null;
+        }
+      }
       rotationRef.current = activePlan.finalRotation;
       setRotation(activePlan.finalRotation);
       if (isDartPresentation) {
@@ -880,6 +899,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     if (run.phase === 'dart-flight') {
       if (!('impactRotation' in finishPlan)) return;
       rotationRef.current = finishPlan.impactRotation;
+      setRotation(finishPlan.impactRotation);
       setDartPhase('impact');
       emitRevealPhase('dart-impacted', spinKey);
       if (dartImpactTimer.current !== null) window.clearTimeout(dartImpactTimer.current);
@@ -891,17 +911,34 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
         setDartPhase('coast');
         emitRevealPhase('dart-attached', spinKey);
       }, window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : DART_IMPACT_HIGHLIGHT_DELAY);
-      // The flight finishes on the exact contact transform. Start the
-      // board-owned linear motion in this same state update so there is no
-      // paused contact frame or second insertion step.
-      rotationRef.current = dartAttachedRotationRef.current;
-      activateRunPhase(
-        spinKey,
-        runRevealId,
-        'dart-attached-proof',
-        DART_ATTACHED_PROOF_SECONDS,
-      );
-      setRotation(dartAttachedRotationRef.current);
+      // Commit one real painted contact frame before the board carries the
+      // embedded dart onward. Starting both targets in this transitionend
+      // batch can skip the exact impact colour at compositor speed. Two rAFs
+      // guarantee one paint without restoring a second insertion animation.
+      dartAttachFrame.current = window.requestAnimationFrame(() => {
+        if (
+          !isActiveRun(spinKey, runRevealId) ||
+          activeRunRef.current?.phase !== 'dart-flight'
+        ) {
+          dartAttachFrame.current = null;
+          return;
+        }
+        dartAttachFrame.current = window.requestAnimationFrame(() => {
+          dartAttachFrame.current = null;
+          if (
+            !isActiveRun(spinKey, runRevealId) ||
+            activeRunRef.current?.phase !== 'dart-flight'
+          ) return;
+          rotationRef.current = dartAttachedRotationRef.current;
+          activateRunPhase(
+            spinKey,
+            runRevealId,
+            'dart-attached-proof',
+            DART_ATTACHED_PROOF_SECONDS,
+          );
+          setRotation(dartAttachedRotationRef.current);
+        });
+      });
       return;
     }
 
@@ -1161,6 +1198,8 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
                             ? ' roulette-wheel__slice--boundary-winner'
                             : ''
                         }`}
+                        data-slice-index={slice.index}
+                        data-slice-color={slice.color}
                         d={slice.path}
                         fill={slice.color}
                       />

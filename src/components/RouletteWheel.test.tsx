@@ -23,4 +23,24 @@ describe('RouletteWheel timing contract', () => {
     expect(rootTag).not.toContain('--wheel-rotation');
     expect(markup).toContain('class="roulette-wheel__disc" style="--wheel-rotation:0deg"');
   });
+
+  it('publishes stable slice and palette indices for visual impact verification', () => {
+    const markup = renderToStaticMarkup(
+      <RouletteWheel
+        participants={['아모레또', '유레카', '세나']}
+        winnerIndex={null}
+        spinning={false}
+        spinKey={0}
+        presentation="dart"
+        onSpinEnd={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('data-slice-index="0"');
+    expect(markup).toContain('data-slice-index="1"');
+    expect(markup).toContain('data-slice-index="2"');
+    expect(markup).toContain('data-slice-color="var(--hot-pink, #ffb6c1)"');
+    expect(markup).toContain('data-slice-color="var(--lemon, #ffd166)"');
+    expect(markup).toContain('data-slice-color="var(--mint, #34e0a8)"');
+  });
 });

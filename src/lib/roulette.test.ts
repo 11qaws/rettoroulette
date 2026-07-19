@@ -624,6 +624,55 @@ describe('physical dart commit', () => {
     }
   });
 
+  it('keeps the impact and final palette index identical across shot and weight extremes', () => {
+    const geometries = [
+      { participantCount: 5, weights: undefined },
+      { participantCount: 5, weights: [1, 4, 2, 3, 1] },
+      { participantCount: 5, weights: [0.05, 10, 0.05, 2, 0.3] },
+    ] as const;
+
+    for (const impactAngleDegrees of [-115, -100, -90, -77, -65]) {
+      for (const impactRadiusRatio of [0.58, 0.72, 0.8]) {
+        const variedShot = { ...shot, impactAngleDegrees, impactRadiusRatio };
+        for (const { participantCount, weights } of geometries) {
+          for (const rotation of [0, 37, 122, 244, 359]) {
+            const commit = createDartPhysicalCommit(
+              rotation,
+              1080,
+              participantCount,
+              weights,
+              variedShot,
+            );
+            expect(commit).not.toBeNull();
+            if (!commit) continue;
+
+            const impactPaletteIndex = getRouletteSliceIndexAtScreenAngle(
+              commit.impactRotation,
+              participantCount,
+              weights,
+              impactAngleDegrees,
+            );
+            const plan = buildCommittedDartRouletteFinishPlan(
+              commit,
+              participantCount,
+              2,
+              weights,
+              commit.impactRotation + 721,
+            );
+            const finalPaletteIndex = getRouletteSliceIndexAtScreenAngle(
+              plan.finalRotation,
+              participantCount,
+              weights,
+            );
+
+            expect(impactPaletteIndex).toBe(commit.winnerIndex);
+            expect(finalPaletteIndex).toBe(impactPaletteIndex);
+          }
+        }
+      }
+    }
+  });
+
   it('adds result-neutral whole turns when rendering starts after the committed impact', () => {
     const commit = createDartPhysicalCommit(10, 1080, 5, undefined, shot);
     expect(commit).not.toBeNull();

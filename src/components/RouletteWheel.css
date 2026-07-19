@@ -180,6 +180,13 @@
   transition-timing-function: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
 }
 
+/* The screen-space projectile owns only the flight and exact contact frame.
+   Once the board moves again, only the embedded dart may mark the hit; leaving
+   a fixed flash here makes unrelated slice colours pass under the old point. */
+.roulette-wheel:is(.is-dart-attached-proof, .is-dart-after-impact) .dart-finish__impact-anchor {
+  opacity: 0;
+}
+
 .roulette-wheel__disc svg {
   display: block;
   width: 100%;
