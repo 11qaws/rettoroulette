@@ -15,19 +15,15 @@
 }
 
 .roulette-wheel.is-dart-flight {
-  --wheel-spin-duration: 1.15s;
+  --wheel-spin-duration: var(--wheel-dart-flight-duration, 1.15s);
+}
+
+.roulette-wheel.is-dart-attached-proof {
+  --wheel-spin-duration: var(--wheel-dart-attached-duration, 0.28s);
 }
 
 .roulette-wheel.is-dart-after-impact {
   --wheel-spin-duration: var(--wheel-post-impact-duration, 1.55s);
-}
-
-.roulette-wheel.is-boundary-approach {
-  --wheel-spin-duration: 580ms;
-}
-
-.roulette-wheel.is-boundary-creep {
-  --wheel-spin-duration: 780ms;
 }
 
 .roulette-wheel__stage {
@@ -85,8 +81,7 @@
     0 0 0 clamp(0.35rem, 1vw, 0.55rem) var(--ink, #251c32),
     0 1.15rem 0 color-mix(in srgb, var(--ink, #251c32) 17%, transparent),
     0 1.55rem 2.8rem color-mix(in srgb, var(--ink, #251c32) 30%, transparent);
-  transform-origin: 50% 14%;
-  transition: transform 580ms cubic-bezier(0.16, 0.82, 0.2, 1), box-shadow 360ms ease;
+  transition: box-shadow 360ms ease, filter 280ms ease;
 }
 
 .roulette-wheel__rim::before {
@@ -115,34 +110,17 @@
     0 1.55rem 3.3rem color-mix(in srgb, var(--hot-pink, #ff4f87) 34%, transparent);
 }
 
-.roulette-wheel.is-boundary-approach .roulette-wheel__rim {
-  transform: scale(1.13);
-}
-
-.roulette-wheel.is-boundary-creep .roulette-wheel__rim,
-.roulette-wheel.is-stop-hold:not(.is-dart) .roulette-wheel__rim {
-  transform: scale(1.19);
-  transition-duration: 780ms;
-}
-
 .roulette-wheel.is-dart-flight .roulette-wheel__rim {
-  transform: scale(1.16);
-  transition-duration: 1.15s;
-  transition-timing-function: cubic-bezier(0.12, 0.72, 0.18, 1);
+  filter: saturate(1.06) brightness(1.02);
 }
 
+.roulette-wheel.is-dart-attached-proof .roulette-wheel__rim,
 .roulette-wheel.is-dart-after-impact .roulette-wheel__rim {
-  transform: scale(1.04);
-  transition-duration: var(--wheel-post-impact-duration, 1.55s);
-  transition-timing-function: cubic-bezier(0.2, 0.7, 0.22, 1);
+  filter: saturate(1.12) brightness(1.035);
 }
 
 .roulette-wheel.is-idle-spinning .roulette-wheel__rim {
   animation: roulette-ready-engage 900ms cubic-bezier(0.16, 0.78, 0.2, 1) both;
-}
-
-.roulette-wheel.has-result:not(.is-dart) .roulette-wheel__rim {
-  transform: scale(1.035);
 }
 
 .roulette-wheel__disc {
@@ -171,17 +149,14 @@
   transition-timing-function: linear;
 }
 
+.roulette-wheel.is-dart-attached-proof .roulette-wheel__disc {
+  /* The embedded dart proves its coupling before braking begins. */
+  transition-timing-function: linear;
+}
+
 .roulette-wheel.is-dart-after-impact .roulette-wheel__disc {
   /* p(t)=2t-t²: velocity decreases continuously from impact to zero. */
   transition-timing-function: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
-}
-
-.roulette-wheel.is-boundary-approach .roulette-wheel__disc {
-  transition-timing-function: cubic-bezier(0.22, 0.72, 0.2, 1);
-}
-
-.roulette-wheel.is-boundary-creep .roulette-wheel__disc {
-  transition-timing-function: cubic-bezier(0.12, 0.62, 0.16, 1);
 }
 
 .roulette-wheel__disc svg {
@@ -540,9 +515,9 @@
   }
 
   .roulette-wheel.is-dart-flight .roulette-wheel__disc,
+  .roulette-wheel.is-dart-attached-proof .roulette-wheel__disc,
   .roulette-wheel.is-dart-after-impact .roulette-wheel__disc,
-  .roulette-wheel.is-boundary-approach .roulette-wheel__disc,
-  .roulette-wheel.is-boundary-creep .roulette-wheel__disc {
+  .roulette-wheel.is-auto-whirl .roulette-wheel__disc {
     transition-duration: 60ms;
     transition-timing-function: linear;
   }

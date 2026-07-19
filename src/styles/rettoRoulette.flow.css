@@ -1,0 +1,140 @@
+/* Retto Roulette setup-flow corrections. Keep these out of rettoStock.css. v0.8 */
+
+/* The four-step route sits on the brown RettoStock header in roster/setup.
+   Text that reused the ink token disappeared into that background. */
+.brand-header .raffle-status-path li {
+  color: #f1d9de;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 24%);
+}
+
+.brand-header .raffle-status-path li:not(:last-child)::after {
+  color: #dcaeb8;
+}
+
+.brand-header .raffle-status-path .is-complete,
+.brand-header .raffle-status-path .is-current {
+  color: #fff;
+}
+
+.brand-header .raffle-status-path .is-complete > span {
+  border-color: #fff;
+  background: #fff1f4;
+  color: var(--magenta);
+}
+
+.brand-header .raffle-status-path .is-current > span {
+  border-color: #fff;
+  background: var(--hot-pink);
+  color: var(--ink);
+}
+
+.preflight-layout.is-blocked {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.preflight-layout.is-blocked .preflight-setup {
+  inline-size: min(100%, 980px);
+  margin-inline: auto;
+}
+
+/* Before the first result there is no reason to reserve an empty side rail.
+   Give the ready wheel the stage and keep the single primary action beneath it. */
+.broadcast-focus.has-no-results-panel:not(.is-stage-only) {
+  grid-template-areas:
+    'stage'
+    'action';
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.broadcast-focus.has-no-results-panel:not(.is-stage-only) .broadcast-focus__visual .roulette-wheel,
+.broadcast-focus.has-no-results-panel:not(.is-stage-only) .broadcast-focus__visual .roulette-wheel.is-dart {
+  --wheel-size: min(68vw, 44rem, 58vh);
+}
+
+/* Never leave the final syllable of “확정” stranded in the completed title. */
+@media (min-width: 901px) {
+  .app-shell--live .broadcast-focus.is-completed .broadcast-focus__stage > .broadcast-focus__heading {
+    width: min(205px, 28%);
+  }
+
+  .app-shell--live .broadcast-focus.is-completed .broadcast-focus__heading h1 {
+    overflow-wrap: normal;
+    font-size: 28px;
+    word-break: keep-all;
+  }
+}
+
+@media (max-width: 720px) {
+  .preflight-layout.is-blocked .preflight-setup {
+    inline-size: 100%;
+  }
+}
+
+/* A streamer commonly prepares the draw in a 720p capture window. Keep the
+   sticky summary and its decisive action inside that viewport. */
+@media (min-width: 901px) and (max-height: 780px) {
+  .preflight-preview {
+    padding: 12px;
+  }
+
+  .preflight-preview__visual {
+    min-height: 205px;
+  }
+
+  .preflight-preview__visual .roulette-wheel {
+    --wheel-size: min(21vw, 13rem);
+    --wheel-stage-padding: 1rem;
+  }
+
+  .preflight-plan-summary {
+    padding: 10px 12px;
+  }
+
+  .preflight-plan-summary dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 14px;
+    margin-top: 6px;
+  }
+
+  .preflight-plan-summary dl > div {
+    grid-template-columns: 45px minmax(0, 1fr);
+    padding-block: 5px;
+  }
+
+  .preflight-plan-summary__sentence {
+    display: none;
+  }
+
+  .preflight-plan-summary .preflight-setup__start {
+    min-height: 48px;
+    margin-top: 8px;
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) {
+    height: calc(100dvh - 178px);
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__visual .roulette-wheel,
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__visual .roulette-wheel.is-dart {
+    --wheel-size: clamp(390px, 60vh, 430px);
+    --wheel-stage-padding: 0.85rem;
+  }
+
+  .app-shell--live .broadcast-focus.is-completed .broadcast-focus__stage > .broadcast-focus__heading {
+    width: min(190px, 28%);
+  }
+
+  .app-shell--live .broadcast-focus.is-completed .broadcast-focus__heading h1 {
+    font-size: 25px;
+  }
+}
+
+@media (min-width: 1500px) and (min-height: 900px) {
+  .app-shell--live .broadcast-focus.is-completed .broadcast-focus__stage > .broadcast-focus__heading {
+    width: min(205px, 28%);
+  }
+
+  .app-shell--live .broadcast-focus.is-completed .broadcast-focus__heading h1 {
+    font-size: 28px;
+  }
+}

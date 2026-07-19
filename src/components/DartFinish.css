@@ -1,6 +1,8 @@
 .dart-finish {
   --dart-impact-x: 50%;
   --dart-impact-y: 14%;
+  --dart-launch-duration: 0.43s;
+  --dart-approach-duration: 0.72s;
   position: absolute;
   z-index: 20;
   inset: 0;
@@ -168,28 +170,28 @@
 }
 
 .dart-finish--launch .dart-finish__speed-field {
-  animation: dart-speed-field-launch 430ms cubic-bezier(0.12, 0.74, 0.2, 1) both;
+  animation: dart-speed-field-launch var(--dart-launch-duration) cubic-bezier(0.12, 0.74, 0.2, 1) both;
 }
 
 .dart-finish--launch .dart-finish__projectile {
-  animation: dart-front-launch 430ms cubic-bezier(0.14, 0.66, 0.2, 1) both;
+  animation: dart-front-launch var(--dart-launch-duration) cubic-bezier(0.14, 0.66, 0.2, 1) both;
 }
 
-.dart-finish--launch .dart-finish__ring--one { animation: dart-tunnel-ring 420ms 0ms ease-out both; }
-.dart-finish--launch .dart-finish__ring--two { animation: dart-tunnel-ring 420ms 85ms ease-out both; }
-.dart-finish--launch .dart-finish__ring--three { animation: dart-tunnel-ring 420ms 170ms ease-out both; }
+.dart-finish--launch .dart-finish__ring--one { animation: dart-tunnel-ring var(--dart-launch-duration) 0ms ease-out both; }
+.dart-finish--launch .dart-finish__ring--two { animation: dart-tunnel-ring var(--dart-launch-duration) calc(var(--dart-launch-duration) * 0.2) ease-out both; }
+.dart-finish--launch .dart-finish__ring--three { animation: dart-tunnel-ring var(--dart-launch-duration) calc(var(--dart-launch-duration) * 0.4) ease-out both; }
 
 .dart-finish--approach .dart-finish__speed-field {
-  animation: dart-speed-field-approach 720ms linear both;
+  animation: dart-speed-field-approach var(--dart-approach-duration) linear both;
 }
 
 .dart-finish--approach .dart-finish__projectile {
-  animation: dart-front-approach 720ms cubic-bezier(0.22, 0.68, 0.22, 1) both;
+  animation: dart-front-approach var(--dart-approach-duration) cubic-bezier(0.22, 0.68, 0.22, 1) both;
 }
 
-.dart-finish--approach .dart-finish__ring--one { animation: dart-tunnel-ring-approach 640ms 0ms linear both; }
-.dart-finish--approach .dart-finish__ring--two { animation: dart-tunnel-ring-approach 640ms 120ms linear both; }
-.dart-finish--approach .dart-finish__ring--three { animation: dart-tunnel-ring-approach 640ms 240ms linear both; }
+.dart-finish--approach .dart-finish__ring--one { animation: dart-tunnel-ring-approach var(--dart-approach-duration) 0ms linear both; }
+.dart-finish--approach .dart-finish__ring--two { animation: dart-tunnel-ring-approach var(--dart-approach-duration) calc(var(--dart-approach-duration) * 0.17) linear both; }
+.dart-finish--approach .dart-finish__ring--three { animation: dart-tunnel-ring-approach var(--dart-approach-duration) calc(var(--dart-approach-duration) * 0.34) linear both; }
 
 .dart-finish--impact .dart-finish__flash {
   animation: dart-impact-flash 360ms ease-out both;
@@ -236,6 +238,21 @@
   filter: drop-shadow(0.12rem 0.2rem 0 color-mix(in srgb, var(--ink, #251c32) 38%, transparent));
 }
 
+.embedded-dart__pin::after {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 50%;
+  width: 16%;
+  height: clamp(1.05rem, 3.4vw, 1.8rem);
+  content: '';
+  border: 0.08rem solid var(--ink, #251c32);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--cream, #fff9e7), var(--sky, #83c9ff));
+  transform: translate(-50%, -4%);
+  transform-origin: 50% 0;
+}
+
 .embedded-dart--impact,
 .embedded-dart--coast,
 .embedded-dart--settled {
@@ -248,6 +265,76 @@
 
 .embedded-dart.is-boundary-hit .embedded-dart__core {
   box-shadow: 0 0 0 0.18rem var(--hot-pink, #ff4f87), 0 0 0.75rem var(--lemon, #ffe45c);
+}
+
+/* Full names are screen-space evidence, not labels painted onto the rotor. */
+.boundary-names {
+  position: absolute;
+  z-index: 24;
+  top: 8.4%;
+  left: 50%;
+  width: min(96%, 34rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(0.3rem, 1.6vw, 0.72rem);
+  opacity: 0;
+  transform: translate(-50%, -0.55rem);
+  transition: opacity 120ms ease, transform 180ms cubic-bezier(0.18, 0.82, 0.2, 1);
+  pointer-events: none;
+}
+
+.boundary-names.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.boundary-names__candidate {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: clamp(0.42rem, 1.3vw, 0.66rem) clamp(0.5rem, 1.8vw, 0.82rem);
+  border: clamp(0.12rem, 0.35vw, 0.18rem) solid var(--ink, #251c32);
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, var(--candidate-color) 86%, var(--cream, #fff9e7));
+  box-shadow: 0 0.26rem 0 var(--ink, #251c32), 0 0.48rem 1rem color-mix(in srgb, var(--ink, #251c32) 24%, transparent);
+  color: var(--ink, #251c32);
+  font-family: 'Jua', 'Noto Sans KR', sans-serif;
+  font-size: clamp(0.72rem, 2.4vw, 1.05rem);
+  line-height: 1.08;
+  text-align: center;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.boundary-names__candidate--before {
+  --candidate-color: var(--boundary-before-color);
+}
+
+.boundary-names__candidate--after {
+  --candidate-color: var(--boundary-after-color);
+}
+
+.boundary-names__marker {
+  display: grid;
+  place-items: center;
+  width: clamp(2.25rem, 7.6vw, 3.1rem);
+  aspect-ratio: 1;
+  border: 0.16rem solid var(--ink, #251c32);
+  border-radius: 50%;
+  background: var(--lemon, #ffe45c);
+  box-shadow: 0 0.2rem 0 var(--ink, #251c32);
+  color: var(--ink, #251c32);
+  font-family: 'Jua', sans-serif;
+  font-size: clamp(0.62rem, 1.9vw, 0.8rem);
+  transform: rotate(-5deg);
+}
+
+.boundary-names--dart {
+  top: 9.2%;
+}
+
+.boundary-names--dart.is-visible {
+  animation: boundary-names-impact 440ms cubic-bezier(0.18, 0.82, 0.2, 1) both;
 }
 
 @keyframes dart-shot-flash {
@@ -317,13 +404,21 @@
   to { transform: translate(-50%, -50%) scale(1); }
 }
 
+@keyframes boundary-names-impact {
+  0% { opacity: 0; transform: translate(-50%, -0.45rem) scale(0.96); }
+  22%, 82% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, 0.15rem) scale(0.985); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dart-finish *,
   .dart-finish *::before,
   .dart-finish *::after,
   .embedded-dart *,
   .embedded-dart *::before,
-  .embedded-dart *::after {
+  .embedded-dart *::after,
+  .boundary-names,
+  .boundary-names * {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;

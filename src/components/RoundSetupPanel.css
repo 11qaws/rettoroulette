@@ -49,6 +49,12 @@
   white-space: nowrap;
 }
 
+.round-setup__header > strong.is-blocked {
+  border-color: var(--orange);
+  background: #fff8ef;
+  color: #a34f17;
+}
+
 .round-setup__steps {
   margin: 0;
   padding: 0;
@@ -211,6 +217,250 @@
   margin-top: 13px;
   padding: 14px;
   background: var(--cream);
+}
+
+.round-setup__step--candidate {
+  padding-block: 16px;
+  background: #fffafc;
+}
+
+.round-setup__candidate-card {
+  overflow: hidden;
+  border: 1px solid var(--hot-pink);
+  border-radius: 13px;
+  background: #fff;
+}
+
+.round-setup__candidate-card.is-blocked {
+  border-color: var(--orange);
+}
+
+.round-setup__candidate-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+}
+
+.round-setup__candidate-main p,
+.round-setup__candidate-main h3,
+.round-setup__candidate-main small {
+  margin: 0;
+}
+
+.round-setup__candidate-main p {
+  color: var(--magenta);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.round-setup__candidate-main h3 {
+  margin-top: 2px;
+  color: var(--ink);
+  font-family: 'Jua', sans-serif;
+  font-size: 19px;
+  font-weight: 400;
+}
+
+.round-setup__candidate-main small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.round-setup__candidate-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.round-setup__candidate-actions > button {
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--hot-pink);
+  border-radius: 10px;
+  background: var(--cream);
+  color: var(--magenta);
+  font-family: 'Jua', sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.round-setup__candidate-actions > .round-setup__quiet-button {
+  min-height: 40px;
+  background: #fff;
+}
+
+.round-setup__candidate-advanced {
+  border-top: 1px solid var(--line);
+}
+
+.round-setup__candidate-advanced summary,
+.round-setup__display-options summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  color: var(--ink);
+  font-family: 'Jua', sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.round-setup__candidate-advanced summary::-webkit-details-marker,
+.round-setup__display-options summary::-webkit-details-marker {
+  display: none;
+}
+
+.round-setup__candidate-advanced summary::before,
+.round-setup__display-options summary::before {
+  content: '＋';
+  color: var(--magenta);
+  font-family: sans-serif;
+  font-size: 15px;
+}
+
+.round-setup__candidate-advanced[open] summary::before,
+.round-setup__display-options[open] summary::before {
+  content: '−';
+}
+
+.round-setup__candidate-advanced summary > span {
+  margin-right: auto;
+}
+
+.round-setup__candidate-advanced summary > em,
+.round-setup__display-options summary > span {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--cream);
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.round-setup__candidate-advanced-body {
+  padding: 0 14px 14px;
+}
+
+.round-setup__candidate-advanced-body > p {
+  margin: 0 0 9px;
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.round-setup__step--blocked {
+  padding: 16px 18px 20px;
+  background: #fffaf4;
+}
+
+.round-setup__recovery {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 16px;
+  border: 2px solid var(--orange);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 5px 0 rgb(255 157 84 / 18%);
+}
+
+.round-setup__recovery-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--lemon);
+  color: var(--ink);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 20px;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.round-setup__recovery p,
+.round-setup__recovery h3,
+.round-setup__recovery small {
+  margin: 0;
+}
+
+.round-setup__recovery p {
+  color: #a34f17;
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.round-setup__recovery h3 {
+  margin-top: 3px;
+  color: var(--ink);
+  font-family: 'Jua', sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.round-setup__recovery small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.round-setup__recovery-actions {
+  display: flex;
+  grid-column: 2;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.round-setup__recovery-actions button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--hot-pink-strong);
+  border-radius: 10px;
+  background: var(--hot-pink);
+  color: var(--ink);
+  font-family: 'Jua', sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.round-setup__recovery-actions button.is-secondary {
+  border-color: var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.round-setup__display-options > p {
+  margin: 0;
+  padding: 0 14px;
+  color: var(--muted);
+  font-family: 'Fredoka', 'Jua', sans-serif;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.round-setup__display-options .round-setup__text-field {
+  margin: 10px 14px 14px;
 }
 
 .round-setup__metrics {
@@ -576,6 +826,39 @@
 
   .round-setup__header > strong {
     justify-self: start;
+  }
+
+  .round-setup__candidate-main {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .round-setup__candidate-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .round-setup__candidate-actions > button {
+    flex: 1 1 132px;
+  }
+
+  .round-setup__recovery {
+    grid-template-columns: 36px minmax(0, 1fr);
+    padding: 13px;
+  }
+
+  .round-setup__recovery-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 17px;
+  }
+
+  .round-setup__recovery-actions {
+    grid-column: 1 / -1;
+  }
+
+  .round-setup__recovery-actions button {
+    flex: 1 1 150px;
   }
 
   .round-setup__choice-grid--two,

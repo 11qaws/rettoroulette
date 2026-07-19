@@ -6,6 +6,7 @@ import {
   DART_FLIGHT_DURATION_SECONDS,
   buildDartRouletteFinishPlan,
   buildRouletteFinishPlan,
+  calculateDartFlightTiming,
   calculateDartPostImpactDuration,
   getRouletteSliceGeometry,
   nextWheelRotation,
@@ -177,6 +178,66 @@ describe('calculateDartPostImpactDuration', () => {
       const firstCoastVelocity = (2 * coastDistance) / duration;
 
       expect(firstCoastVelocity).toBeLessThanOrEqual(incomingVelocity + 1e-10);
+    }
+  });
+
+  it('matches a caller-supplied constant flight duration at impact', () => {
+    const flightDistance = 936;
+    const flightDuration = 1.2;
+    const coastDistance = 624;
+    const duration = calculateDartPostImpactDuration(
+      flightDistance,
+      coastDistance,
+      flightDuration,
+    );
+    const incomingVelocity = flightDistance / flightDuration;
+    const firstCoastVelocity = (2 * coastDistance) / duration;
+
+    expect(firstCoastVelocity).toBeCloseTo(incomingVelocity, 10);
+  });
+
+  it('never reaccelerates even when continuity needs a longer brake', () => {
+    const flightDistance = 360;
+    const flightDuration = 1.2;
+    const coastDistance = 720;
+    const duration = calculateDartPostImpactDuration(
+      flightDistance,
+      coastDistance,
+      flightDuration,
+    );
+    const incomingVelocity = flightDistance / flightDuration;
+    const firstCoastVelocity = (2 * coastDistance) / duration;
+
+    expect(duration).toBeGreaterThan(2.35);
+    expect(firstCoastVelocity).toBeLessThanOrEqual(incomingVelocity);
+  });
+});
+
+describe('calculateDartFlightTiming', () => {
+  it('selects whole turns without changing the requested cruise speed', () => {
+    const timing = calculateDartFlightTiming(84, 780);
+
+    expect(timing.fullTurns).toBe(2);
+    expect(timing.duration).toBeGreaterThanOrEqual(1);
+    expect(timing.duration).toBeLessThanOrEqual(1.3);
+    expect(timing.distance / timing.duration).toBeCloseTo(780, 10);
+  });
+
+  it('chooses the closest possible timing when no whole-turn option fits', () => {
+    const timing = calculateDartFlightTiming(350, 120, 1, 1.3, 1);
+
+    expect(timing.fullTurns).toBe(0);
+    expect(timing.duration).toBeCloseTo(350 / 120, 10);
+    expect(timing.angularVelocity).toBe(120);
+  });
+
+  it('keeps representative landing offsets inside the flight window', () => {
+    for (const baseDistance of [60, 84, 179, 280, 455]) {
+      const timing = calculateDartFlightTiming(baseDistance, 780);
+
+      expect(timing.duration).toBeGreaterThanOrEqual(1);
+      expect(timing.duration).toBeLessThanOrEqual(1.3);
+      expect(timing.distance / timing.duration).toBeCloseTo(780, 10);
     }
   });
 });

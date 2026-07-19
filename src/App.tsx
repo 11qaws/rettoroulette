@@ -4,7 +4,10 @@ import BroadcastActionDock, { type BroadcastDockAction } from './components/Broa
 import CurrentRoundWinners from './components/CurrentRoundWinners';
 import MarbleRace from './components/MarbleRace';
 import ParticipantSetup from './components/ParticipantSetup';
-import RouletteWheel from './components/RouletteWheel';
+import RouletteWheel, {
+  type RouletteRevealEvent,
+  type RouletteRevealPhase,
+} from './components/RouletteWheel';
 import RoundSetupPanel from './components/RoundSetupPanel';
 import WinnerHero from './components/WinnerHero';
 import { csvField } from './lib/csv';
@@ -24,6 +27,8 @@ import type { RouletteFinishLanding } from './lib/roulette';
 import type { DrawMode, DrawRecord, DrawTarget, Participant, Prize, WheelPresentation } from './types';
 
 import './App.css';
+import './styles/rettoRoulette.cinematic.css';
+import './styles/rettoRoulette.flow.css';
 
 type DrawOption = {
   id: string;
@@ -77,6 +82,7 @@ type ActivePresentation = PlannedPresentation & {
 };
 
 type PresentationBeat = 'idle' | 'motion' | 'hero' | 'dock';
+type CinematicRevealPhase = 'idle' | 'result-committed' | 'motion-started' | RouletteRevealPhase;
 type RevealContinuation = 'continue-auto' | 'await-next-dart' | 'complete-round';
 
 type WinnerHeroState = {
@@ -178,6 +184,7 @@ function App() {
   const [presentedOptions, setPresentedOptions] = useState<DrawOption[]>([]);
   const [activePresentation, setActivePresentation] = useState<ActivePresentation | null>(null);
   const [presentationBeat, setPresentationBeat] = useState<PresentationBeat>('idle');
+  const [cinematicRevealPhase, setCinematicRevealPhase] = useState<CinematicRevealPhase>('idle');
   const [winnerHero, setWinnerHero] = useState<WinnerHeroState | null>(null);
   const [currentRound, setCurrentRound] = useState<CurrentRound | null>(null);
   const [history, setHistory] = useState<DrawRecord[]>([]);
@@ -193,6 +200,8 @@ function App() {
   const toolsDrawerRef = useRef<HTMLElement>(null);
   const raffleStatusRef = useRef<RaffleStatus>('roster');
   const presentationRunRef = useRef(0);
+  const spinKeyRef = useRef(0);
+  const presentationStartTimerRef = useRef<number | null>(null);
   const winnerHeroTimerRef = useRef<number | null>(null);
   const winnerDockTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -206,6 +215,16 @@ function App() {
   const setUseWeights = useCallback((value: boolean) => {
     setWeightModes((modes) => ({ ...modes, [drawTarget]: value }));
   }, [drawTarget]);
+
+  const handleRouletteRevealPhase = useCallback((event: RouletteRevealEvent) => {
+    // Animation callbacks can arrive after a round was reset. Only the wheel
+    // run that is currently on air may move the cinematic camera/state.
+    if (
+      event.spinKey !== spinKeyRef.current ||
+      event.revealId !== presentationRunRef.current
+    ) return;
+    setCinematicRevealPhase(event.phase);
+  }, []);
 
   const transitionRaffle = useCallback((event: RaffleEvent) => {
     const nextStatus = getRaffleTransition(raffleStatusRef.current, event);
@@ -225,6 +244,10 @@ function App() {
   }, []);
 
   const cancelWinnerRevealTimers = useCallback(() => {
+    if (presentationStartTimerRef.current !== null) {
+      window.clearTimeout(presentationStartTimerRef.current);
+      presentationStartTimerRef.current = null;
+    }
     if (winnerHeroTimerRef.current !== null) {
       window.clearTimeout(winnerHeroTimerRef.current);
       winnerHeroTimerRef.current = null;
@@ -390,13 +413,22 @@ function App() {
 
   // People can repeat only when the broadcaster deliberately allows it.
   // Inventory and duplicate-prevention modes are always capped by candidates.
-  const maximumWinnerCount = Math.max(
-    1,
-    drawTarget === 'people' && !removeAfterDraw ? 99 : drawOptions.length,
-  );
-  const effectiveWinnerCount = Math.min(winnerCount, maximumWinnerCount);
+  const maximumWinnerCount = drawOptions.length === 0
+    ? 0
+    : drawTarget === 'people' && !removeAfterDraw
+      ? 99
+      : drawOptions.length;
+  const effectiveWinnerCount = Math.min(Math.max(0, winnerCount), maximumWinnerCount);
 
   useEffect(() => {
+    if (maximumWinnerCount === 0 && winnerCount !== 0) {
+      setWinnerCount(0);
+      return;
+    }
+    if (maximumWinnerCount > 0 && winnerCount < 1) {
+      setWinnerCount(1);
+      return;
+    }
     if (winnerCount > maximumWinnerCount) setWinnerCount(maximumWinnerCount);
   }, [maximumWinnerCount, winnerCount]);
 
@@ -475,11 +507,28 @@ function App() {
     presentationRunRef.current = revealId;
     setActivePresentation({ ...presentation, revealId });
     setPresentedOptions(presentation.options);
-    setWinnerIndex(presentation.winnerIndex);
-    setSpinning(true);
+    // Keep the committed winner out of the visual component until motion
+    // begins. This preserves the high-speed ready wheel during the lock badge
+    // and prevents a one-frame winner highlight before the reveal.
+    setWinnerIndex(null);
+    setSpinning(false);
     setPresentationBeat('motion');
-    setSpinKey((value) => value + 1);
-    transitionRaffle('start-presentation');
+    setCinematicRevealPhase('result-committed');
+
+    // Keep one short, visible frame between "the result is fixed" and the
+    // presentation. The wheel continues its idle high-speed rotation in this
+    // phase, so the pause proves ordering without killing momentum.
+    presentationStartTimerRef.current = window.setTimeout(() => {
+      if (presentationRunRef.current !== revealId) return;
+      presentationStartTimerRef.current = null;
+      const nextSpinKey = spinKeyRef.current + 1;
+      spinKeyRef.current = nextSpinKey;
+      setSpinKey(nextSpinKey);
+      setWinnerIndex(presentation.winnerIndex);
+      setCinematicRevealPhase('motion-started');
+      setSpinning(true);
+      transitionRaffle('start-presentation');
+    }, 140);
 
     return true;
   }, [cancelWinnerRevealTimers, transitionRaffle]);
@@ -512,6 +561,7 @@ function App() {
     setActivePresentation(null);
     setWinnerHero(null);
     setPresentationBeat('idle');
+    setCinematicRevealPhase('idle');
   };
 
   const clearCurrentRound = () => {
@@ -632,13 +682,14 @@ function App() {
       if (presentationRunRef.current !== presentation.revealId) return;
 
       winnerHeroTimerRef.current = null;
-      setWinnerHero(null);
       setPresentationBeat('dock');
       winnerDockTimerRef.current = window.setTimeout(() => {
         if (presentationRunRef.current !== presentation.revealId) return;
 
         winnerDockTimerRef.current = null;
+        setWinnerHero(null);
         setPresentationBeat('idle');
+        setCinematicRevealPhase('idle');
         if (continuation === 'complete-round') {
           transitionRaffle('complete-round');
           return;
@@ -648,7 +699,7 @@ function App() {
         // multi-draws instead continue through their already committed queue.
         clearStagePresentation();
         if (continuation === 'await-next-dart') transitionRaffle('await-next-dart');
-      }, 620);
+      }, 760);
     }, 2_200);
   };
 
@@ -1086,20 +1137,27 @@ function App() {
     : noAvailableDrawOptions
       ? unavailableDrawLabel
       : upcomingDrawLabel;
+  const isStageOnly =
+    raffleStatus === 'locking' || presentationBeat === 'motion' || presentationBeat === 'hero';
+  const showResultsPanel = !isStageOnly && (
+    currentRoundResults.length > 0 ||
+    raffleStatus === 'completed' ||
+    presentationBeat === 'dock'
+  );
   const broadcastVisualClassName = [
     'broadcast-focus__visual',
+    `reveal-phase--${cinematicRevealPhase}`,
     isDartRound && spinning ? 'is-dart-flying' : '',
     roundMode === 'wheel' && roundWheelPresentation === 'spin' && spinning ? 'is-auto-spinning' : '',
     presentationBeat === 'hero' ? 'is-winner-hero' : '',
     presentationBeat === 'dock' ? 'is-result-docking' : '',
     raffleStatus === 'completed' ? 'is-round-complete' : '',
   ].filter(Boolean).join(' ');
-  const isStageOnly =
-    raffleStatus === 'locking' || presentationBeat === 'motion' || presentationBeat === 'hero';
-  const showResultsPanel = !isStageOnly;
   const broadcastFocusClassName = [
     'broadcast-focus',
+    `reveal-phase--${cinematicRevealPhase}`,
     isStageOnly ? 'is-stage-only' : '',
+    showResultsPanel ? 'has-results-panel' : 'has-no-results-panel',
     presentationBeat === 'hero' ? 'is-winner-hero' : '',
     presentationBeat === 'dock' ? 'is-result-docking' : '',
     raffleStatus === 'completed' ? 'is-completed' : '',
@@ -1203,10 +1261,17 @@ function App() {
         itemType={target === 'prizes' ? 'prize' : 'participant'}
         winnerIndex={activeWinnerIndex}
         spinning={activeSpin}
-        idleSpinning={!preview && (raffleStatus === 'ready' || raffleStatus === 'awaiting-dart')}
+        idleSpinning={!preview && (
+          raffleStatus === 'ready' ||
+          raffleStatus === 'awaiting-dart' ||
+          raffleStatus === 'locking' ||
+          (raffleStatus === 'presenting' && presentationBeat === 'idle')
+        )}
         spinKey={spinKey}
         presentation={presentation}
+        revealId={preview ? undefined : activePresentation?.revealId}
         landing={preview ? undefined : activePresentation?.landing}
+        onRevealPhase={preview ? undefined : handleRouletteRevealPhase}
         onSpinEnd={preview ? () => undefined : () => completeDraw(activePresentation?.revealId)}
       />
     ) : (
@@ -1261,7 +1326,7 @@ function App() {
       }}
       onReshufflePool={reshufflePool}
       onWinnerCountChange={(value) => {
-        setWinnerCount(clampInteger(value, 1, maximumWinnerCount));
+        setWinnerCount(maximumWinnerCount === 0 ? 0 : clampInteger(value, 1, maximumWinnerCount));
         prepareNextRoundSettings();
       }}
       onPresentationChange={(choice) => {
@@ -1283,6 +1348,7 @@ function App() {
       }}
       onParticipantWeightChange={updateParticipantWeight}
       onEditRoster={() => openParticipantEditor('configuring')}
+      onRestoreExcluded={resetWinnerState}
       onAddPrize={addPrize}
       onUpdatePrize={updatePrize}
       onPrizeWeightChange={updatePrizeWeight}
@@ -1499,7 +1565,7 @@ function App() {
           </div>
         </header>
 
-        <section className="preflight-layout" aria-label="추첨 설정">
+        <section className={`preflight-layout${drawOptions.length === 0 ? ' is-blocked' : ''}`} aria-label="추첨 설정">
           <section className="preflight-setup">
             <div className="preflight-setup__phase">
               <span aria-hidden="true">2</span>
@@ -1508,7 +1574,7 @@ function App() {
                 <h1>이번 추첨을 설계해요.</h1>
               </div>
             </div>
-            <p className="preflight-setup__copy">무엇을, 누구 중에서, 몇 개, 어떤 연출로 뽑을지 위에서 아래로 정합니다. 결과는 추첨 버튼을 누르기 전까지 확정되지 않아요.</p>
+            <p className="preflight-setup__copy">추첨 대상과 인원, 방송 연출만 확인하세요. 후보가 없으면 이 자리에서 바로 해결 방법을 안내합니다.</p>
 
             <section className="preflight-roster preflight-roster--summary" aria-labelledby="preflight-roster-title">
               <div>
@@ -1522,7 +1588,7 @@ function App() {
             {renderRoundSettings()}
           </section>
 
-          <aside className="preflight-preview" aria-label="방송 화면 미리보기">
+          {drawOptions.length > 0 && <aside className="preflight-preview" aria-label="방송 화면 미리보기">
             <div className="preflight-preview__heading">
               <div>
                 <p>보조 미리보기</p>
@@ -1565,7 +1631,7 @@ function App() {
               </p>
               <button className="primary-button preflight-setup__start" type="button" disabled={drawOptions.length === 0} onClick={startBroadcast}>이 설정으로 추첨 화면 열기</button>
             </section>
-          </aside>
+          </aside>}
         </section>
 
         <div className="preflight-mobile-action" aria-label="추첨 시작">
@@ -1648,7 +1714,7 @@ function App() {
 
           <div className={broadcastVisualClassName}>
             <div className="broadcast-focus__camera">{renderDrawVisual('live')}</div>
-            {winnerHero && presentationBeat === 'hero' ? (
+            {winnerHero && (presentationBeat === 'hero' || presentationBeat === 'dock') ? (
               <WinnerHero
                 key={winnerHero.revealId}
                 className="broadcast-focus__winner-hero"
@@ -1705,6 +1771,9 @@ function App() {
                 secondaryActions={[
                   { id: 'edit-rules', label: '추첨 설정 수정', onClick: openConfiguration, tone: 'quiet' },
                   { id: 'edit-roster', label: '참여자 명단 수정', onClick: () => openParticipantEditor('ready', 'paste'), tone: 'quiet' },
+                  ...(drawTarget === 'people' && excludedParticipantIds.length > 0
+                    ? [{ id: 'restore-excluded', label: `당첨 제외 ${excludedParticipantIds.length}명 초기화`, onClick: resetWinnerState, tone: 'quiet' as const }]
+                    : []),
                   ...(drawTarget === 'people' && poolLimit > 0
                     ? [{ id: 'reshuffle-pool', label: '후보 다시 섞기', onClick: reshufflePool, tone: 'quiet' as const }]
                     : []),
@@ -1731,6 +1800,9 @@ function App() {
                 secondaryActions={[
                   { id: 'edit-rules', label: '규칙 바꾸기', onClick: openConfiguration, tone: 'quiet' },
                   { id: 'edit-roster', label: '명단 바꾸기', onClick: () => openParticipantEditor('completed', 'paste'), tone: 'quiet' },
+                  ...(drawTarget === 'people' && excludedParticipantIds.length > 0
+                    ? [{ id: 'restore-excluded', label: `당첨 제외 ${excludedParticipantIds.length}명 초기화`, onClick: resetWinnerState, tone: 'quiet' as const }]
+                    : []),
                 ]}
               />
             )}

@@ -4,6 +4,17 @@ export const DART_FLIGHT_DURATION_SECONDS = 1.15;
 export const DART_POST_IMPACT_MIN_SECONDS = 1.05;
 export const DART_POST_IMPACT_MAX_SECONDS = 2.35;
 
+export interface DartFlightTiming {
+  /** Whole turns added before the selected local landing reaches twelve. */
+  fullTurns: number;
+  /** Total positive rotor travel before impact. */
+  distance: number;
+  /** Exact time needed to keep the requested cruise velocity. */
+  duration: number;
+  /** Constant pre-impact angular velocity. */
+  angularVelocity: number;
+}
+
 export interface RouletteFinishLanding {
   /** How far outside the winning slice the close-up begins. */
   entryGapDegrees: number;
@@ -61,23 +72,85 @@ function finiteNonNegative(value: number, fallback: number) {
 
 /**
  * Matches the first velocity of a p(t)=2t-t² coast to the incoming linear
- * flight. Clamping can only make that first coast velocity slower, never
- * faster, for the supported one-turn-plus-half-slice finish distance.
+ * flight. A minimum duration can only make that first coast velocity slower;
+ * there is deliberately no upper clamp that could reaccelerate the rotor.
  */
 export function calculateDartPostImpactDuration(
   flightDistance: number,
   coastDistance: number,
+  flightDuration = DART_FLIGHT_DURATION_SECONDS,
 ) {
   const safeFlightDistance = Math.max(1, finiteNonNegative(flightDistance, 1));
   const safeCoastDistance = finiteNonNegative(coastDistance, 0);
-  const impactVelocity = safeFlightDistance / DART_FLIGHT_DURATION_SECONDS;
+  const safeFlightDuration = Math.max(
+    0.001,
+    finiteNonNegative(flightDuration, DART_FLIGHT_DURATION_SECONDS),
+  );
+  const impactVelocity = safeFlightDistance / safeFlightDuration;
   const matchedDuration = (2 * safeCoastDistance) / impactVelocity;
 
-  return clamp(
-    matchedDuration,
-    DART_POST_IMPACT_MIN_SECONDS,
-    DART_POST_IMPACT_MAX_SECONDS,
+  // A minimum may make the brake gentler. An upper clamp could make its first
+  // frame faster than impact, so continuity wins over a hard maximum.
+  return Math.max(DART_POST_IMPACT_MIN_SECONDS, matchedDuration);
+}
+
+/**
+ * Picks the visible whole-turn count, then derives time from distance/speed.
+ * The rotor therefore keeps its cruise velocity all the way to impact instead
+ * of slowing down or accelerating to satisfy a hard-coded animation length.
+ */
+export function calculateDartFlightTiming(
+  baseImpactDistance: number,
+  cruiseVelocity: number,
+  minimumDuration = 1,
+  maximumDuration = 1.3,
+  maximumAdditionalTurns = 4,
+): DartFlightTiming {
+  const safeBaseDistance = finiteNonNegative(baseImpactDistance, 0);
+  const safeVelocity = Math.max(1, finiteNonNegative(cruiseVelocity, 1));
+  const safeMinimum = Math.max(0, finiteNonNegative(minimumDuration, 1));
+  const safeMaximum = Math.max(
+    safeMinimum,
+    finiteNonNegative(maximumDuration, 1.3),
   );
+  const targetDuration = (safeMinimum + safeMaximum) / 2;
+  const lastTurn = Math.max(
+    0,
+    Math.floor(finiteNonNegative(maximumAdditionalTurns, 4)),
+  );
+
+  let best: DartFlightTiming | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let fullTurns = 0; fullTurns <= lastTurn; fullTurns += 1) {
+    const distance = safeBaseDistance + fullTurns * 360;
+    const duration = distance / safeVelocity;
+    const outsideWindow = duration < safeMinimum
+      ? safeMinimum - duration
+      : duration > safeMaximum
+        ? duration - safeMaximum
+        : 0;
+    // Staying inside the requested window matters more than proximity to its
+    // centre. The secondary score keeps the shot close to the 1.15s target.
+    const score = outsideWindow * 100 + Math.abs(duration - targetDuration);
+
+    if (score < bestScore) {
+      bestScore = score;
+      best = {
+        fullTurns,
+        distance,
+        duration,
+        angularVelocity: safeVelocity,
+      };
+    }
+  }
+
+  return best ?? {
+    fullTurns: 0,
+    distance: safeBaseDistance,
+    duration: safeBaseDistance / safeVelocity,
+    angularVelocity: safeVelocity,
+  };
 }
 
 /**

@@ -1,0 +1,1049 @@
+/*
+ * Broadcast reveal choreography for Retto Roulette.
+ *
+ * This file intentionally contains only state-based overrides. The shared
+ * RettoStock skin remains the source of palette, typography, and controls.
+ */
+
+/* The status path sits on RettoStock's dark header. Keep every live-state
+   label readable, including the quieter completed steps. */
+.app-shell--live .raffle-status-path li {
+  color: #f1d9de;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 24%);
+}
+
+.app-shell--live .raffle-status-path li:not(:last-child)::after {
+  color: #dcaeb8;
+}
+
+.app-shell--live .raffle-status-path .is-complete,
+.app-shell--live .raffle-status-path .is-current {
+  color: #fff;
+}
+
+.app-shell--live .raffle-status-path .is-complete > span {
+  border-color: #fff;
+  background: #fff1f4;
+  color: var(--magenta);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 12%);
+}
+
+.app-shell--live .raffle-status-path .is-current > span {
+  border-color: #fff;
+  background: var(--hot-pink-strong);
+  color: #4e342e;
+  box-shadow: 0 0 0 3px rgb(255 182 193 / 28%);
+}
+
+/* Prevent the live shell's outer margin from collapsing through #root and
+   creating an otherwise invisible 20px page scroll in a capture viewport. */
+@supports selector(#root:has(> .app-shell--live)) {
+  #root:has(> .app-shell--live) {
+    display: flow-root;
+    min-height: 100dvh;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Camera rig
+   -------------------------------------------------------------------------- */
+
+.broadcast-focus {
+  --cinematic-camera-scale: 1;
+  --cinematic-camera-x: 0;
+  --cinematic-camera-y: 0;
+  --cinematic-camera-duration: 300ms;
+  --cinematic-camera-ease: cubic-bezier(0.16, 0.82, 0.2, 1);
+  --cinematic-ui-duration: 180ms;
+}
+
+.broadcast-focus:is(
+  .reveal-phase--result-committed,
+  .reveal-phase--motion-started,
+  .reveal-phase--boundary-entered,
+  .reveal-phase--boundary-crossed,
+  .reveal-phase--dart-launched,
+  .reveal-phase--dart-impacted,
+  .reveal-phase--dart-attached,
+  .reveal-phase--rotation-stopped,
+  .reveal-phase--proof-hold-done
+) .broadcast-focus__camera {
+  opacity: 1;
+  transform: translate3d(
+      var(--cinematic-camera-x),
+      var(--cinematic-camera-y),
+      0
+    )
+    scale(var(--cinematic-camera-scale));
+  transform-origin: 50% 14%;
+  transition:
+    opacity var(--cinematic-ui-duration) ease,
+    filter var(--cinematic-camera-duration) ease,
+    transform var(--cinematic-camera-duration) var(--cinematic-camera-ease);
+  will-change: transform, filter;
+}
+
+/* App.css previously supplied one fixed finale animation. Phase classes now
+   own the external camera, while the wheel component owns rotor velocity. */
+.broadcast-focus:is(
+  .reveal-phase--result-committed,
+  .reveal-phase--motion-started,
+  .reveal-phase--boundary-entered,
+  .reveal-phase--boundary-crossed,
+  .reveal-phase--dart-launched,
+  .reveal-phase--dart-impacted,
+  .reveal-phase--dart-attached,
+  .reveal-phase--rotation-stopped,
+  .reveal-phase--proof-hold-done
+) .broadcast-focus__visual.is-auto-spinning .broadcast-focus__camera {
+  animation: none;
+}
+
+/* The outer rig performs the close-up. Neutralise the older nested rim zooms
+   so boundary shots do not compound into an unreadable crop. */
+.broadcast-focus:is(
+  .reveal-phase--motion-started,
+  .reveal-phase--boundary-entered,
+  .reveal-phase--boundary-crossed,
+  .reveal-phase--dart-launched,
+  .reveal-phase--dart-impacted,
+  .reveal-phase--dart-attached,
+  .reveal-phase--rotation-stopped,
+  .reveal-phase--proof-hold-done
+) .roulette-wheel:is(
+  .is-boundary-approach,
+  .is-boundary-creep,
+  .is-stop-hold,
+  .is-dart-flight,
+  .is-dart-after-impact
+) .roulette-wheel__rim {
+  transform: none;
+}
+
+.broadcast-focus.reveal-phase--result-committed {
+  --cinematic-camera-scale: 1.015;
+  --cinematic-camera-duration: 140ms;
+  --cinematic-camera-ease: cubic-bezier(0.2, 0.86, 0.26, 1);
+}
+
+.broadcast-focus.reveal-phase--motion-started {
+  --cinematic-camera-scale: 1.1;
+  --cinematic-camera-duration: 1050ms;
+  --cinematic-camera-ease: cubic-bezier(0.18, 0.78, 0.2, 1);
+}
+
+.broadcast-focus.reveal-phase--boundary-entered {
+  --cinematic-camera-scale: 1.35;
+  --cinematic-camera-y: 0.35%;
+  --cinematic-camera-duration: 580ms;
+  --cinematic-camera-ease: cubic-bezier(0.16, 0.8, 0.18, 1);
+}
+
+.broadcast-focus.reveal-phase--boundary-crossed {
+  --cinematic-camera-scale: 1.66;
+  --cinematic-camera-y: 0.6%;
+  --cinematic-camera-duration: 420ms;
+  --cinematic-camera-ease: cubic-bezier(0.11, 0.75, 0.12, 1);
+}
+
+/* Dart lottery: the board must remain at speed. The camera closes distance
+   slowly at first, then surges into the twelve-o'clock impact point. */
+.broadcast-focus.reveal-phase--dart-launched .broadcast-focus__camera {
+  animation: cinematic-dart-pov 1150ms cubic-bezier(0.22, 0.58, 0.18, 1) both;
+}
+
+.broadcast-focus.reveal-phase--dart-impacted {
+  --cinematic-camera-scale: 1.72;
+  --cinematic-camera-y: 0.75%;
+  --cinematic-camera-duration: 80ms;
+}
+
+.broadcast-focus.reveal-phase--dart-impacted .broadcast-focus__camera {
+  animation: cinematic-dart-impact 230ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+}
+
+/* After impact, pull back enough to prove that the dart stays attached while
+   the still-rotating board carries it to twelve o'clock. */
+.broadcast-focus.reveal-phase--dart-attached {
+  --cinematic-camera-scale: 1.25;
+  --cinematic-camera-y: 0.2%;
+  --cinematic-camera-duration: 720ms;
+  --cinematic-camera-ease: cubic-bezier(0.2, 0.7, 0.22, 1);
+}
+
+/* Auto-wheel proof holds the close boundary. Dart proof shows the whole
+   board-and-dart relationship; neither state is allowed to hide the disc. */
+.broadcast-focus.reveal-phase--rotation-stopped {
+  --cinematic-camera-scale: 1.62;
+  --cinematic-camera-y: 0.55%;
+  --cinematic-camera-duration: 260ms;
+}
+
+.broadcast-focus.reveal-phase--rotation-stopped:has(.roulette-wheel.is-dart) {
+  --cinematic-camera-scale: 1.2;
+  --cinematic-camera-y: 0;
+  --cinematic-camera-duration: 460ms;
+}
+
+.broadcast-focus.reveal-phase--proof-hold-done {
+  --cinematic-camera-scale: 1.16;
+  --cinematic-camera-y: 0;
+  --cinematic-camera-duration: 480ms;
+  --cinematic-camera-ease: cubic-bezier(0.16, 0.82, 0.2, 1);
+}
+
+.broadcast-focus.reveal-phase--result-committed .broadcast-focus__stage::after {
+  position: absolute;
+  z-index: 14;
+  top: clamp(8px, 1.4vw, 16px);
+  right: clamp(8px, 1.4vw, 16px);
+  padding: 7px 11px;
+  border: 1px solid rgb(255 255 255 / 84%);
+  border-radius: 999px;
+  background: rgb(78 52 46 / 88%);
+  box-shadow: 0 5px 18px rgb(78 52 46 / 22%);
+  color: #fff;
+  content: '결과 고정 · 클릭 순간 확정';
+  font-family: 'Jua', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  animation: cinematic-result-lock 560ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+}
+
+/* --------------------------------------------------------------------------
+   Broadcast focus during motion
+   -------------------------------------------------------------------------- */
+
+.broadcast-focus:is(
+  .reveal-phase--motion-started,
+  .reveal-phase--boundary-entered,
+  .reveal-phase--boundary-crossed,
+  .reveal-phase--dart-launched,
+  .reveal-phase--dart-impacted,
+  .reveal-phase--dart-attached,
+  .reveal-phase--rotation-stopped,
+  .reveal-phase--proof-hold-done
+) :is(
+  .broadcast-focus__heading,
+  .broadcast-focus__fairness,
+  .broadcast-focus__prompt,
+  .broadcast-focus__results,
+  .broadcast-focus__action
+) {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--cinematic-ui-duration) ease,
+    visibility 0s linear var(--cinematic-ui-duration);
+}
+
+/* Keep the live count, but quiet everything that competes with the wheel. */
+@supports selector(.app-shell:has(.broadcast-focus)) {
+  .app-shell--live:has(
+    .broadcast-focus:is(
+      .reveal-phase--motion-started,
+      .reveal-phase--boundary-entered,
+      .reveal-phase--boundary-crossed,
+      .reveal-phase--dart-launched,
+      .reveal-phase--dart-impacted,
+      .reveal-phase--dart-attached,
+      .reveal-phase--rotation-stopped,
+      .reveal-phase--proof-hold-done
+    )
+  ) .broadcast-header :is(.brand, .broadcast-tools-lock, button) {
+    opacity: 0.24;
+    filter: saturate(0.35);
+    pointer-events: none;
+  }
+
+  .app-shell--live:has(
+    .broadcast-focus:is(
+      .reveal-phase--motion-started,
+      .reveal-phase--boundary-entered,
+      .reveal-phase--boundary-crossed,
+      .reveal-phase--dart-launched,
+      .reveal-phase--dart-impacted,
+      .reveal-phase--dart-attached,
+      .reveal-phase--rotation-stopped,
+      .reveal-phase--proof-hold-done
+    )
+  ) .broadcast-phase-bar > p {
+    opacity: 0.16;
+  }
+
+  .app-shell--live:has(
+    .broadcast-focus:is(
+      .reveal-phase--motion-started,
+      .reveal-phase--boundary-entered,
+      .reveal-phase--boundary-crossed,
+      .reveal-phase--dart-launched,
+      .reveal-phase--dart-impacted,
+      .reveal-phase--dart-attached,
+      .reveal-phase--rotation-stopped,
+      .reveal-phase--proof-hold-done
+    )
+  ) .broadcast-phase-bar {
+    border-color: rgb(255 182 193 / 22%);
+    background: rgb(255 250 252 / 46%);
+    box-shadow: none;
+  }
+
+  .app-shell--live:has(
+    .broadcast-focus:is(
+      .reveal-phase--motion-started,
+      .reveal-phase--boundary-entered,
+      .reveal-phase--boundary-crossed,
+      .reveal-phase--dart-launched,
+      .reveal-phase--dart-impacted,
+      .reveal-phase--dart-attached,
+      .reveal-phase--rotation-stopped,
+      .reveal-phase--proof-hold-done
+    )
+  ) .broadcast-phase-bar__status {
+    opacity: 0.82;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Winner ribbon and result docking
+   -------------------------------------------------------------------------- */
+
+/* The proof wheel remains visible under the announcement. */
+.broadcast-focus.is-winner-hero .broadcast-focus__camera,
+.broadcast-focus__visual.is-winner-hero .broadcast-focus__camera {
+  opacity: 1;
+  filter: saturate(0.86) brightness(0.91);
+  transform: translate3d(-2.5%, -0.5%, 0) scale(1.06);
+  transition:
+    opacity 180ms ease,
+    filter 320ms ease,
+    transform 180ms cubic-bezier(0.16, 0.82, 0.2, 1);
+}
+
+.winner-hero.broadcast-focus__winner-hero {
+  z-index: 12;
+  display: block;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+  isolation: isolate;
+  animation: none;
+}
+
+.winner-hero.broadcast-focus__winner-hero::before,
+.winner-hero.broadcast-focus__winner-hero::after {
+  display: none;
+}
+
+.broadcast-focus__winner-hero .winner-hero__burst {
+  z-index: 0;
+  top: auto;
+  right: clamp(30px, 7vw, 110px);
+  bottom: clamp(-110px, -8vw, -45px);
+  left: auto;
+  width: clamp(260px, 34vw, 520px);
+  opacity: 0.32;
+  transform: none;
+}
+
+.broadcast-focus__winner-hero .winner-hero__card {
+  position: absolute;
+  z-index: 2;
+  right: clamp(12px, 2.6vw, 38px);
+  bottom: clamp(12px, 2.6vh, 28px);
+  display: grid;
+  width: min(72%, 700px);
+  min-height: 104px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: start;
+  gap: 8px clamp(12px, 1.5vw, 22px);
+  padding: clamp(13px, 1.7vw, 20px) clamp(16px, 2vw, 26px);
+  overflow: hidden;
+  border: 2px solid var(--hot-pink);
+  border-left-width: 9px;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 93%);
+  box-shadow:
+    0 7px 0 var(--hot-pink-strong),
+    0 18px 38px rgb(78 52 46 / 28%);
+  text-align: left;
+  backdrop-filter: blur(12px);
+  transform-origin: 100% 50%;
+  animation: cinematic-winner-ribbon-in 560ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.broadcast-focus__winner-hero .winner-hero__brand {
+  display: none;
+}
+
+.broadcast-focus__winner-hero .winner-hero__result-heading {
+  grid-column: 1;
+  grid-row: 1;
+  justify-content: flex-start;
+}
+
+.broadcast-focus__winner-hero .winner-hero__target {
+  font-size: clamp(14px, 1.45vw, 20px);
+  white-space: nowrap;
+}
+
+.broadcast-focus__winner-hero .winner-hero__count {
+  font-size: 11px;
+}
+
+.broadcast-focus__winner-hero .winner-hero__name,
+.broadcast-focus__winner-hero.is-long-name .winner-hero__name,
+.broadcast-focus__winner-hero.is-very-long-name .winner-hero__name {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: stretch;
+  font-size: clamp(32px, 4.4vw, 60px);
+  line-height: 0.98;
+  text-align: center;
+  animation: cinematic-winner-name 620ms 80ms cubic-bezier(0.2, 1, 0.3, 1) both;
+}
+
+.broadcast-focus__winner-hero.is-long-name .winner-hero__name {
+  font-size: clamp(28px, 3.7vw, 50px);
+}
+
+.broadcast-focus__winner-hero.is-very-long-name .winner-hero__name {
+  font-size: clamp(23px, 3vw, 40px);
+}
+
+.broadcast-focus__winner-hero .winner-hero__details {
+  grid-column: 3;
+  grid-row: 1;
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.broadcast-focus__winner-hero .winner-hero__details div {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+}
+
+.broadcast-focus__winner-hero .winner-hero__details dt {
+  font-size: 10px;
+}
+
+.broadcast-focus__winner-hero .winner-hero__details dd {
+  max-width: 180px;
+  font-size: clamp(13px, 1.45vw, 18px);
+}
+
+/* The ribbon physically travels across the stage/result gap. The result rail
+   enters beneath it and receives the latest row at the end of the move. */
+.broadcast-focus.is-result-docking {
+  overflow: visible;
+}
+
+.broadcast-focus.is-result-docking .broadcast-focus__stage,
+.broadcast-focus.is-result-docking .broadcast-focus__visual {
+  overflow: visible;
+}
+
+.broadcast-focus.is-result-docking .broadcast-focus__visual {
+  z-index: 4;
+}
+
+.broadcast-focus.is-result-docking .broadcast-focus__camera {
+  opacity: 0.72;
+  filter: saturate(0.72) brightness(0.93);
+  transform: translate3d(-7%, 0, 0) scale(0.9);
+  transition:
+    opacity 420ms ease,
+    filter 420ms ease,
+    transform 620ms cubic-bezier(0.16, 0.82, 0.2, 1);
+}
+
+.broadcast-focus.is-result-docking .broadcast-focus__winner-hero .winner-hero__card {
+  animation: cinematic-winner-dock 640ms cubic-bezier(0.4, 0, 0.18, 1) both;
+}
+
+.broadcast-focus.is-result-docking .broadcast-focus__winner-hero .winner-hero__burst {
+  animation: cinematic-burst-dock 420ms ease both;
+}
+
+.broadcast-focus.is-result-docking .broadcast-focus__results {
+  position: relative;
+  z-index: 5;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  animation: cinematic-result-rail-in 560ms 100ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+}
+
+.broadcast-focus.is-result-docking .current-round-winners__list li.is-latest {
+  animation: cinematic-result-row-receive 520ms 360ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+}
+
+.broadcast-focus.is-result-docking .broadcast-focus__action {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   Completed broadcast board
+   -------------------------------------------------------------------------- */
+
+.broadcast-focus.is-completed {
+  min-height: 0;
+  grid-template-areas:
+    'stage results'
+    'action results';
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 31vw, 520px);
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.broadcast-focus.is-completed .broadcast-focus__stage,
+.broadcast-focus.is-completed .broadcast-focus__visual,
+.broadcast-focus.is-completed .broadcast-focus__camera {
+  min-width: 0;
+  min-height: 0;
+}
+
+.broadcast-focus.is-completed .broadcast-focus__visual {
+  height: 100%;
+  overflow: visible;
+}
+
+.broadcast-focus.is-completed .broadcast-focus__camera {
+  opacity: 1;
+  filter: none;
+  transform: none;
+  animation: none;
+}
+
+.broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel,
+.broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel.is-dart {
+  --wheel-size: min(43vw, 48vh, 42rem);
+  --wheel-stage-padding: clamp(0.8rem, 1.7vw, 1.5rem);
+}
+
+.broadcast-focus.is-completed .broadcast-focus__results {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
+  overflow: hidden;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.broadcast-focus.is-completed .current-round-winners {
+  height: 100%;
+  max-block-size: none;
+}
+
+.broadcast-focus.is-completed .broadcast-focus__action {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Before the first result there is no result rail to reserve. Let the wheel
+   and the primary broadcast action use the complete canvas instead of leaving
+   a blank right column. Stage-only motion/hero states already own their grid. */
+.broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) {
+  grid-template-areas:
+    'stage'
+    'action';
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__action {
+  width: min(100%, 1000px);
+  margin-top: 0;
+}
+
+/* A 720p stream capture has no spare vertical scroll. Keep a 360-420px wheel,
+   a visible 340-400px result rail, and one compact action row. */
+@media (min-width: 901px) and (max-height: 780px) {
+  .app-shell.app-shell--live:has(.broadcast-focus.is-completed) {
+    width: calc(100% - 48px);
+    height: calc(100dvh - 48px);
+    min-height: 0;
+    margin: 24px auto;
+    padding: 16px 20px;
+    overflow: hidden;
+  }
+
+  .app-shell--live:has(.broadcast-focus.is-completed) .broadcast-header {
+    min-height: 44px;
+    margin-bottom: 8px;
+    padding-block: 7px;
+  }
+
+  .app-shell--live:has(.broadcast-focus.is-completed) .broadcast-phase-bar {
+    margin: -2px 0 8px;
+    padding-block: 6px;
+  }
+
+  .broadcast-focus.is-completed {
+    height: calc(100dvh - 174px);
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 31vw, 400px);
+    grid-template-rows: minmax(0, 1fr) 50px;
+    gap: 12px 16px;
+    padding: 8px 12px;
+    overflow: hidden;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__stage {
+    height: 100%;
+    overflow: visible;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__heading {
+    width: min(270px, 44%);
+    padding: 5px 8px;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__heading h1 {
+    font-size: clamp(19px, 2.2vw, 28px);
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__visual,
+  .broadcast-focus.is-completed .broadcast-focus__visual.is-round-complete {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel,
+  .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel.is-dart,
+  .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
+    --wheel-size: clamp(360px, 51vh, 420px);
+    --wheel-stage-padding: 0.65rem;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__results {
+    gap: 7px;
+  }
+
+  .broadcast-focus.is-completed .current-round-winners {
+    padding: 12px;
+    border-width: 2px;
+    box-shadow:
+      0 5px 0 var(--hot-pink-strong),
+      0 9px 20px rgb(255 159 176 / 24%);
+  }
+
+  .broadcast-focus.is-completed .current-round-winners__header {
+    margin-bottom: 6px;
+  }
+
+  .broadcast-focus.is-completed .current-round-winners__list {
+    gap: 4px;
+  }
+
+  .broadcast-focus.is-completed .current-round-winners__list li {
+    min-height: 40px;
+    padding-block: 5px;
+  }
+
+  .broadcast-focus.is-completed .current-round-winners__identity strong {
+    font-size: clamp(16px, 1.6vw, 20px);
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__prize-link {
+    min-height: 32px;
+    padding-block: 4px;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__action {
+    width: 100%;
+    height: 50px;
+    margin: 0;
+    align-self: end;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock {
+    height: 50px;
+    gap: 0;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock__note {
+    display: none;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock--completed .broadcast-action-dock__controls {
+    height: 50px;
+    grid-template-columns: minmax(190px, 1.25fr) minmax(280px, 1fr);
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock--completed .broadcast-action-dock__secondary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock--completed .broadcast-action-dock__button--primary,
+  .broadcast-focus.is-completed .broadcast-action-dock--completed .broadcast-action-dock__secondary {
+    height: 46px;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock__button {
+    min-height: 42px;
+    padding-block: 7px;
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__visual .roulette-wheel,
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__visual .roulette-wheel.is-dart {
+    --wheel-size: clamp(340px, 48vh, 384px);
+    --wheel-stage-padding: 0.75rem;
+  }
+}
+
+/* 1080p broadcast canvas: ~1220px left stage plus a 480-540px result rail. */
+@media (min-width: 1500px) and (min-height: 900px) {
+  .app-shell.app-shell--live {
+    width: min(calc(100% - 80px), 1840px);
+    height: calc(100dvh - 40px);
+    min-height: calc(100dvh - 40px);
+    margin: 20px auto;
+    padding: 24px;
+    overflow: hidden;
+  }
+
+  .broadcast-focus.is-completed {
+    height: calc(100dvh - 192px);
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) clamp(480px, 27vw, 540px);
+    grid-template-rows: minmax(0, 1fr) 58px;
+    gap: 18px 28px;
+    padding: 14px 24px 18px;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel,
+  .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel.is-dart,
+  .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
+    --wheel-size: clamp(580px, min(39vw, 68vh), 760px);
+    --wheel-stage-padding: 1.35rem;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__stage {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+    overflow: visible;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__heading {
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    left: 0;
+    width: min(380px, 38%);
+    max-width: none;
+    padding: 8px 10px;
+    border: 1px solid rgb(255 182 193 / 38%);
+    border-radius: 11px;
+    background: rgb(255 250 252 / 82%);
+    backdrop-filter: blur(8px);
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__heading > span,
+  .broadcast-focus.is-completed .broadcast-focus__fairness,
+  .broadcast-focus.is-completed .broadcast-focus__prompt {
+    display: none;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__visual,
+  .broadcast-focus.is-completed .broadcast-focus__visual.is-round-complete {
+    height: 100%;
+    min-height: 0;
+    grid-row: 1;
+  }
+
+  .broadcast-focus.is-completed .broadcast-focus__action {
+    width: min(100%, 980px);
+    margin-top: 0;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock {
+    width: 100%;
+    gap: 0;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock__note {
+    display: none;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock--completed .broadcast-action-dock__controls {
+    height: 52px;
+    grid-template-columns: minmax(260px, 1.15fr) minmax(0, 1.85fr);
+    align-items: stretch;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock--completed .broadcast-action-dock__button--primary {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock--completed .broadcast-action-dock__secondary {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .broadcast-focus.is-completed .broadcast-action-dock__button {
+    min-height: 48px;
+    padding-block: 8px;
+  }
+
+  .app-shell.app-shell--live:has(
+    .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed)
+  ) {
+    height: calc(100dvh - 40px);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) {
+    height: calc(100dvh - 192px);
+    min-height: 0;
+    gap: 18px;
+    overflow: hidden;
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__stage {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    align-content: stretch;
+    overflow: hidden;
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__visual {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__visual .roulette-wheel,
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-focus__visual .roulette-wheel.is-dart {
+    --wheel-size: min(56vw, 39rem, 52vh);
+    --wheel-stage-padding: clamp(1rem, 1.7vw, 1.35rem);
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-action-dock--ready .broadcast-action-dock__controls {
+    grid-template-columns: minmax(250px, 1.35fr) minmax(390px, 1fr);
+    align-items: stretch;
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-action-dock--ready .broadcast-action-dock__button--primary {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .broadcast-focus.has-no-results-panel:not(.is-stage-only):not(.is-completed) .broadcast-action-dock--ready .broadcast-action-dock__secondary {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .broadcast-focus__winner-hero .winner-hero__card {
+    right: 10px;
+    bottom: 12px;
+    width: calc(100% - 20px);
+    min-height: 0;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 12px 14px;
+  }
+
+  .broadcast-focus__winner-hero .winner-hero__name,
+  .broadcast-focus__winner-hero.is-long-name .winner-hero__name,
+  .broadcast-focus__winner-hero.is-very-long-name .winner-hero__name {
+    font-size: clamp(28px, 8vw, 48px);
+  }
+
+  .broadcast-focus__winner-hero .winner-hero__details {
+    display: none;
+  }
+
+  .broadcast-focus.is-result-docking .broadcast-focus__winner-hero .winner-hero__card {
+    animation-name: cinematic-winner-dock-mobile;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Motion definitions
+   -------------------------------------------------------------------------- */
+
+@keyframes cinematic-result-lock {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.92);
+  }
+  38%,
+  76% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+}
+
+@keyframes cinematic-dart-pov {
+  0% {
+    filter: saturate(1) brightness(1);
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+  66% {
+    filter: saturate(1.04) brightness(1.01);
+    transform: translate3d(0, 0.1%, 0) scale(1.18);
+  }
+  88% {
+    filter: saturate(1.08) brightness(1.015);
+    transform: translate3d(0, 0.38%, 0) scale(1.36);
+  }
+  100% {
+    filter: saturate(1.12) brightness(1.02);
+    transform: translate3d(0, 0.75%, 0) scale(1.72);
+  }
+}
+
+@keyframes cinematic-dart-impact {
+  0% {
+    filter: saturate(1.12) brightness(1.08);
+    transform: translate3d(0, 0.75%, 0) scale(1.72);
+  }
+  42% {
+    filter: saturate(1.2) brightness(1.14);
+    transform: translate3d(0.18%, 0.55%, 0) scale(1.66);
+  }
+  100% {
+    filter: saturate(1.08) brightness(1.02);
+    transform: translate3d(0, 0.75%, 0) scale(1.72);
+  }
+}
+
+@keyframes cinematic-winner-ribbon-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(42px, 18px, 0) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes cinematic-winner-name {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.82);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cinematic-winner-dock {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  54% {
+    opacity: 0.96;
+    transform: translate3d(clamp(110px, 10vw, 190px), -2%, 0) scale(0.82);
+  }
+  100% {
+    opacity: 0.08;
+    transform: translate3d(clamp(300px, 28vw, 520px), -5%, 0) scale(0.46);
+  }
+}
+
+@keyframes cinematic-winner-dock-mobile {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0.08;
+    transform: translate3d(0, 160px, 0) scale(0.56);
+  }
+}
+
+@keyframes cinematic-burst-dock {
+  to {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+}
+
+@keyframes cinematic-result-rail-in {
+  0% {
+    opacity: 0.28;
+    transform: translate3d(32px, 0, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes cinematic-result-row-receive {
+  0% {
+    background: #fff;
+    box-shadow: inset 0 0 0 var(--hot-pink);
+    transform: translateX(16px);
+  }
+  58% {
+    background: #fff0f4;
+    box-shadow:
+      inset 7px 0 0 var(--hot-pink),
+      0 0 0 4px rgb(255 182 193 / 22%);
+    transform: translateX(0);
+  }
+  100% {
+    background: #fff8fa;
+    box-shadow: inset 4px 0 0 var(--hot-pink);
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .broadcast-focus,
+  .broadcast-focus *,
+  .broadcast-focus *::before,
+  .broadcast-focus *::after {
+    scroll-behavior: auto;
+  }
+
+  .broadcast-focus.reveal-phase--dart-launched .broadcast-focus__camera,
+  .broadcast-focus.reveal-phase--dart-impacted .broadcast-focus__camera,
+  .broadcast-focus.reveal-phase--result-committed .broadcast-focus__stage::after,
+  .broadcast-focus__winner-hero .winner-hero__card,
+  .broadcast-focus__winner-hero .winner-hero__name,
+  .broadcast-focus.is-result-docking .broadcast-focus__winner-hero .winner-hero__card,
+  .broadcast-focus.is-result-docking .broadcast-focus__winner-hero .winner-hero__burst,
+  .broadcast-focus.is-result-docking .broadcast-focus__results,
+  .broadcast-focus.is-result-docking .current-round-winners__list li.is-latest {
+    animation-duration: 1ms;
+  }
+
+  /* State visibility is unchanged: proof wheel, hero ribbon, and docked list
+     still appear in order even when their movement is reduced. */
+  .broadcast-focus.is-winner-hero .broadcast-focus__camera,
+  .broadcast-focus__visual.is-winner-hero .broadcast-focus__camera {
+    opacity: 1;
+  }
+}
