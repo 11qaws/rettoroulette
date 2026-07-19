@@ -954,6 +954,8 @@ function App() {
       capture.angularVelocity,
       drawOptions.length,
       drawOptionWeights,
+      undefined,
+      capture.selectionGeometry,
     );
   };
 

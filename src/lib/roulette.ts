@@ -98,8 +98,18 @@ export interface SpinPhysicalCommit {
   geometrySignature: string;
   /** Slice found beneath the fixed pointer at the committed stop coordinate. */
   winnerIndex: number;
+  /** Click-time angular footprint of the full visible selection marker. */
+  boundaryToleranceDegrees: number;
   /** Exact within-slice coordinate derived from the stop, never retargeted. */
   landing: RouletteFinishLanding;
+}
+
+/** Click-time layout geometry of the fixed visible selection marker. */
+export interface SpinSelectionGeometry {
+  /** Radius including the permanent visible contact ring in CSS pixels. */
+  anchorRadiusPixels: number;
+  /** Distance from the wheel centre to the dot centre in the same CSS pixels. */
+  anchorCenterRadiusPixels: number;
 }
 
 export interface DartImpactPoint extends DartShotPlan {
@@ -581,6 +591,26 @@ export function getDartBoundaryToleranceDegrees(impactRadiusRatio: number) {
   return Math.min(DART_BOUNDARY_MAX_DEGREES, angularTolerance);
 }
 
+/** Converts the visible selection marker's physical footprint into an angle. */
+export function getSpinBoundaryToleranceDegrees(
+  geometry: SpinSelectionGeometry,
+): number | null {
+  const anchorRadius = geometry.anchorRadiusPixels;
+  const anchorCenterRadius = geometry.anchorCenterRadiusPixels;
+  if (
+    !Number.isFinite(anchorRadius)
+    || !Number.isFinite(anchorCenterRadius)
+    || anchorRadius <= 0
+    || anchorCenterRadius <= 0
+    || anchorRadius >= anchorCenterRadius
+  ) return null;
+
+  const linearRatio = Math.min(1, anchorRadius / anchorCenterRadius);
+  const angularTolerance = (Math.asin(linearRatio) * 180) / Math.PI;
+
+  return Math.min(SPIN_BOUNDARY_MAX_DEGREES, angularTolerance);
+}
+
 /**
  * Captures the live rotor state, fixes a result-neutral braking coordinate,
  * then resolves the automatic result from the slice beneath the fixed pointer
@@ -591,10 +621,14 @@ export function createSpinPhysicalCommit(
   currentRotation: number,
   angularVelocity: number,
   participantCount: number,
-  weights?: readonly number[],
-  random: RandomSource = randomUnit,
+  weights: readonly number[] | undefined,
+  random: RandomSource | undefined,
+  selectionGeometry: SpinSelectionGeometry,
 ): SpinPhysicalCommit | null {
   if (participantCount < 1) return null;
+
+  const boundaryToleranceDegrees = getSpinBoundaryToleranceDegrees(selectionGeometry);
+  if (boundaryToleranceDegrees === null) return null;
 
   const capturedRotation = Number.isFinite(currentRotation) ? currentRotation : 0;
   const safeVelocity = Math.max(1, finiteNonNegative(angularVelocity, 1));
@@ -602,14 +636,14 @@ export function createSpinPhysicalCommit(
   // The fractional turn is sampled before looking at any slice. Uniform angle
   // preserves weighted odds because visible wedge area remains the only input.
   const plannedTravelDegrees = baseFullTurns * 360
-    + Math.min(nextUnitRandom(random), 1 - Number.EPSILON) * 360;
+    + Math.min(nextUnitRandom(random ?? randomUnit), 1 - Number.EPSILON) * 360;
   const stopRotation = capturedRotation + plannedTravelDegrees;
   const resolved = resolvePhysicalLanding(
     stopRotation,
     participantCount,
     weights,
     AUTO_POINTER_ANGLE,
-    SPIN_BOUNDARY_MAX_DEGREES,
+    boundaryToleranceDegrees,
     SPIN_BOUNDARY_RATIO_PER_SIDE,
   );
   if (!resolved) return null;
@@ -621,6 +655,7 @@ export function createSpinPhysicalCommit(
     stopRotation,
     geometrySignature: createRouletteGeometrySignature(participantCount, weights),
     winnerIndex: resolved.winnerIndex,
+    boundaryToleranceDegrees,
     landing: resolved.landing,
   };
 }

@@ -43,4 +43,35 @@ describe('RouletteWheel timing contract', () => {
     expect(markup).toContain('data-slice-color="var(--lemon, #ffd166)"');
     expect(markup).toContain('data-slice-color="var(--mint, #34e0a8)"');
   });
+
+  it('publishes the click-time pointer footprint beside the explicit selection anchor', () => {
+    const markup = renderToStaticMarkup(
+      <RouletteWheel
+        participants={['아모레또', '유레카', '세나']}
+        winnerIndex={1}
+        spinning
+        spinKey={1}
+        spinCommit={{
+          capturedRotation: 100,
+          angularVelocity: 1_080,
+          plannedTravelDegrees: 1_440,
+          stopRotation: 1_540,
+          geometrySignature: '0.333333333333|0.333333333333|0.333333333333',
+          winnerIndex: 1,
+          boundaryToleranceDegrees: 0.8615,
+          landing: {
+            kind: 'interior',
+            positionRatio: 0.5,
+            entryGapDegrees: 12,
+            leadDegrees: 12,
+            boundaryHit: false,
+          },
+        }}
+        onSpinEnd={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('data-boundary-tolerance="0.8615"');
+    expect(markup).toContain('class="roulette-wheel__selection-anchor"');
+  });
 });

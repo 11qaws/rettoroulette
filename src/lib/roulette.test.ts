@@ -24,6 +24,7 @@ import {
   getRouletteSliceGeometry,
   getRouletteSliceIndexAtScreenAngle,
   getDartBoundaryToleranceDegrees,
+  getSpinBoundaryToleranceDegrees,
   isRoulettePhotoFinish,
   nextWheelRotation,
   normalizeRouletteWeights,
@@ -84,6 +85,14 @@ describe('targetWheelRotation', () => {
 const normalized = (angle: number) => ((angle % 360) + 360) % 360;
 const localAngleAtPointer = (rotation: number) => normalized(AUTO_POINTER_ANGLE - rotation);
 const localAngleAt = (screenAngle: number, rotation: number) => normalized(screenAngle - rotation);
+const desktopSpinSelection = {
+  anchorRadiusPixels: 5.12,
+  anchorCenterRadiusPixels: 336.32,
+};
+const compactSpinSelection = {
+  anchorRadiusPixels: 4,
+  anchorCenterRadiusPixels: 88.32,
+};
 
 describe('automatic roulette physical commit', () => {
   it('derives the winner and exact landing coordinate from the clicked rotor frame', () => {
@@ -92,7 +101,14 @@ describe('automatic roulette physical commit', () => {
     const captures = [0, 44.5, 89.9, 137.25, 271.4, 719.75];
     for (const [index, capturedRotation] of captures.entries()) {
       const friction = (index + 0.5) / captures.length;
-      const commit = createSpinPhysicalCommit(capturedRotation, 1_080, 3, weights, () => friction);
+      const commit = createSpinPhysicalCommit(
+        capturedRotation,
+        1_080,
+        3,
+        weights,
+        () => friction,
+        desktopSpinSelection,
+      );
       expect(commit).not.toBeNull();
       if (!commit) continue;
 
@@ -130,7 +146,7 @@ describe('automatic roulette physical commit', () => {
     for (let index = 0; index < samples; index += 1) {
       const commit = createSpinPhysicalCommit(137.25, 1_080, 3, weights, () => (
         (index + 0.5) / samples
-      ));
+      ), desktopSpinSelection);
       if (commit) counts[commit.winnerIndex] += 1;
     }
 
@@ -140,7 +156,14 @@ describe('automatic roulette physical commit', () => {
   });
 
   it('refuses to replay a physical stop against stale wedge geometry', () => {
-    const commit = createSpinPhysicalCommit(137.25, 1_080, 3, [1, 2, 1], () => 0.42);
+    const commit = createSpinPhysicalCommit(
+      137.25,
+      1_080,
+      3,
+      [1, 2, 1],
+      () => 0.42,
+      desktopSpinSelection,
+    );
     expect(commit).not.toBeNull();
     if (!commit) return;
 
@@ -162,6 +185,7 @@ describe('automatic roulette physical commit', () => {
           participantCount,
           weights,
           () => (index + 0.5) / samples,
+          desktopSpinSelection,
         );
         if (commit?.landing.kind === 'near-start') kinds.start += 1;
         else if (commit?.landing.kind === 'near-end') kinds.end += 1;
@@ -174,22 +198,98 @@ describe('automatic roulette physical commit', () => {
     const many = countBoundaryLandings(32);
     const weighted = countBoundaryLandings(4, [1, 4, 2, 3]);
     expect(SPIN_BOUNDARY_RATIO_PER_SIDE).toBeLessThanOrEqual(0.05);
-    expect((five.start + five.end) / five.samples).toBeGreaterThan(0.07);
-    expect((five.start + five.end) / five.samples).toBeLessThan(0.075);
+    expect((five.start + five.end) / five.samples).toBeGreaterThan(0.024);
+    expect((five.start + five.end) / five.samples).toBeLessThan(0.0245);
     expect((many.start + many.end) / many.samples).toBeLessThanOrEqual(0.101);
     expect(Math.abs(many.start - many.end)).toBeLessThanOrEqual(2);
-    expect((weighted.start + weighted.end) / weighted.samples).toBeLessThanOrEqual(0.101);
+    expect((weighted.start + weighted.end) / weighted.samples).toBeGreaterThan(0.019);
+    expect((weighted.start + weighted.end) / weighted.samples).toBeLessThan(0.0196);
     expect(Math.abs(weighted.start - weighted.end)).toBeLessThanOrEqual(2);
   });
 
-  it('treats a visually close pointer stop as a boundary without exceeding ten percent', () => {
-    const close = createSpinPhysicalCommit(0, 1_080, 5, undefined, () => 357.5 / 360);
-    const outside = createSpinPhysicalCommit(0, 1_080, 5, undefined, () => 357 / 360);
+  it('treats only a stop touched by the full visible pointer marker as a boundary', () => {
+    const tolerance = getSpinBoundaryToleranceDegrees(desktopSpinSelection);
+    expect(tolerance).not.toBeNull();
+    if (tolerance === null) return;
+    const closeGap = tolerance - 0.001;
+    const outsideGap = tolerance + 0.001;
+    const close = createSpinPhysicalCommit(
+      0,
+      1_080,
+      5,
+      undefined,
+      () => (360 - closeGap) / 360,
+      desktopSpinSelection,
+    );
+    const outside = createSpinPhysicalCommit(
+      0,
+      1_080,
+      5,
+      undefined,
+      () => (360 - outsideGap) / 360,
+      desktopSpinSelection,
+    );
 
-    expect(close?.landing.positionRatio).toBeCloseTo(2.5 / 72, 8);
+    expect(close?.boundaryToleranceDegrees).toBeCloseTo(tolerance, 8);
+    expect(close?.landing.positionRatio).toBeCloseTo(closeGap / 72, 8);
     expect(close?.landing.kind).toBe('near-start');
-    expect(outside?.landing.positionRatio).toBeCloseTo(3 / 72, 8);
+    expect(outside?.landing.positionRatio).toBeCloseTo(outsideGap / 72, 8);
     expect(outside?.landing.kind).toBe('interior');
+  });
+
+  it('keeps the same physical winner while responsive pointer size changes only the proof', () => {
+    const random = () => (360 - 1.2) / 360;
+    const desktop = createSpinPhysicalCommit(
+      0,
+      1_080,
+      5,
+      undefined,
+      random,
+      desktopSpinSelection,
+    );
+    const compact = createSpinPhysicalCommit(
+      0,
+      1_080,
+      5,
+      undefined,
+      random,
+      compactSpinSelection,
+    );
+
+    expect(desktop?.winnerIndex).toBe(compact?.winnerIndex);
+    expect(desktop?.landing.positionRatio).toBeCloseTo(compact?.landing.positionRatio ?? -1, 10);
+    expect(desktop?.landing.kind).toBe('interior');
+    expect(compact?.landing.kind).toBe('near-start');
+  });
+});
+
+describe('spin pointer boundary geometry', () => {
+  it('converts the entire visible contact marker into a scale-aware angle', () => {
+    expect(getSpinBoundaryToleranceDegrees(desktopSpinSelection)).toBeCloseTo(0.8723, 3);
+    expect(getSpinBoundaryToleranceDegrees(compactSpinSelection)).toBeCloseTo(2.5958, 3);
+    expect(getSpinBoundaryToleranceDegrees({
+      anchorRadiusPixels: desktopSpinSelection.anchorRadiusPixels * 2,
+      anchorCenterRadiusPixels: desktopSpinSelection.anchorCenterRadiusPixels * 2,
+    })).toBeCloseTo(getSpinBoundaryToleranceDegrees(desktopSpinSelection) ?? -1, 10);
+  });
+
+  it('rejects invalid layout measurements instead of silently widening the proof', () => {
+    expect(getSpinBoundaryToleranceDegrees({
+      anchorRadiusPixels: 0,
+      anchorCenterRadiusPixels: 320,
+    })).toBeNull();
+    expect(getSpinBoundaryToleranceDegrees({
+      anchorRadiusPixels: 4,
+      anchorCenterRadiusPixels: Number.NaN,
+    })).toBeNull();
+    expect(getSpinBoundaryToleranceDegrees({
+      anchorRadiusPixels: 320,
+      anchorCenterRadiusPixels: 320,
+    })).toBeNull();
+    expect(createSpinPhysicalCommit(0, 1_080, 5, undefined, () => 0.5, {
+      anchorRadiusPixels: 4,
+      anchorCenterRadiusPixels: 0,
+    })).toBeNull();
   });
 });
 

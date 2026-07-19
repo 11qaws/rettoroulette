@@ -26,6 +26,7 @@ import {
   type RouletteFinishLanding,
   type RouletteFinishPlan,
   type SpinPhysicalCommit,
+  type SpinSelectionGeometry,
 } from '../lib/roulette';
 import type { WheelPresentation } from '../types';
 import './RouletteWheel.css';
@@ -70,6 +71,7 @@ export interface DartAimCapture {
 export interface RouletteRotorCapture {
   rotation: number;
   angularVelocity: number;
+  selectionGeometry: SpinSelectionGeometry;
 }
 
 export interface RouletteWheelHandle {
@@ -232,6 +234,77 @@ function compactName(name: string, count: number) {
     : normalized;
 }
 
+function readBorderBoxWidth(element: HTMLElement) {
+  const style = window.getComputedStyle(element);
+  const declaredWidth = Number.parseFloat(style.width);
+  if (!Number.isFinite(declaredWidth) || declaredWidth <= 0) return null;
+  if (style.boxSizing === 'border-box') return declaredWidth;
+
+  const borderAndPadding = [
+    style.borderLeftWidth,
+    style.borderRightWidth,
+    style.paddingLeft,
+    style.paddingRight,
+  ].reduce((total, value) => total + (Number.parseFloat(value) || 0), 0);
+
+  return declaredWidth + borderAndPadding;
+}
+
+function readFirstBoxShadowSpread(element: HTMLElement) {
+  const shadow = window.getComputedStyle(element).boxShadow;
+  if (!shadow || shadow === 'none') return 0;
+
+  // Commas inside rgb()/color functions do not separate shadow layers. The
+  // first layer is the permanent visible contact ring; later layers are only
+  // result pulses and must never make the next draw's hit area larger.
+  let functionDepth = 0;
+  let firstLayer = shadow;
+  for (let index = 0; index < shadow.length; index += 1) {
+    const character = shadow[index];
+    if (character === '(') functionDepth += 1;
+    else if (character === ')') functionDepth = Math.max(0, functionDepth - 1);
+    else if (character === ',' && functionDepth === 0) {
+      firstLayer = shadow.slice(0, index);
+      break;
+    }
+  }
+
+  const lengths = [...firstLayer.matchAll(/(-?\d*\.?\d+)px/g)]
+    .map((match) => Number.parseFloat(match[1]));
+  const spread = lengths.length >= 4 ? lengths[3] : 0;
+  return Number.isFinite(spread) ? Math.max(0, spread) : 0;
+}
+
+function captureSpinSelectionGeometry(
+  pointer: HTMLElement | null,
+  anchor: HTMLElement | null,
+  rim: HTMLElement | null,
+): SpinSelectionGeometry | null {
+  if (!pointer || !anchor || !rim || rim.offsetWidth <= 0) return null;
+
+  const anchorBorderBoxWidth = readBorderBoxWidth(anchor);
+  const anchorDiameterPixels = anchorBorderBoxWidth === null
+    ? null
+    : anchorBorderBoxWidth + readFirstBoxShadowSpread(anchor) * 2;
+  const rimRect = rim.getBoundingClientRect();
+  const pointerRect = pointer.getBoundingClientRect();
+  const renderedScale = rimRect.width / rim.offsetWidth;
+  if (
+    anchorDiameterPixels === null
+    || !Number.isFinite(renderedScale)
+    || renderedScale <= 0
+  ) return null;
+
+  const wheelCenterY = rimRect.top + rimRect.height / 2;
+  const anchorCenterRadiusPixels = Math.abs(wheelCenterY - pointerRect.bottom) / renderedScale;
+  if (!Number.isFinite(anchorCenterRadiusPixels) || anchorCenterRadiusPixels <= 0) return null;
+
+  return {
+    anchorRadiusPixels: anchorDiameterPixels / 2,
+    anchorCenterRadiusPixels,
+  };
+}
+
 const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(function RouletteWheel({
   participants,
   weights,
@@ -283,6 +356,8 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   const onIdleCruiseRef = useRef(onIdleCruise);
   const discRef = useRef<HTMLDivElement>(null);
   const rimRef = useRef<HTMLDivElement>(null);
+  const pointerRef = useRef<HTMLDivElement>(null);
+  const selectionAnchorRef = useRef<HTMLSpanElement>(null);
   const rotationRef = useRef(0);
   const activeRevealIdRef = useRef(revealId ?? spinKey);
   const activeRunRef = useRef<ActiveWheelRun | null>(null);
@@ -376,12 +451,21 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   }, [dartShot, paintDartAim]);
 
   useImperativeHandle(ref, () => ({
-    captureRotor: () => idleMotionPhase === 'cruise'
-      ? {
-          rotation: rotationRef.current,
-          angularVelocity: idleAngularVelocityRef.current,
-        }
-      : null,
+    captureRotor: () => {
+      if (idleMotionPhase !== 'cruise') return null;
+      const selectionGeometry = captureSpinSelectionGeometry(
+        pointerRef.current,
+        selectionAnchorRef.current,
+        rimRef.current,
+      );
+      if (!selectionGeometry) return null;
+
+      return {
+        rotation: rotationRef.current,
+        angularVelocity: idleAngularVelocityRef.current,
+        selectionGeometry,
+      };
+    },
     freezeDartAim: () => {
       if (!isDartPresentation) return null;
       let shot = lastPaintedAimRef.current;
@@ -1179,6 +1263,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
       data-boundary-side={currentLandingVisual?.boundarySide ?? undefined}
       data-winner-side={currentLandingVisual?.winnerSide ?? undefined}
       data-winner-index={validWinner ? winnerIndex : undefined}
+      data-boundary-tolerance={spinCommit?.boundaryToleranceDegrees?.toFixed(4)}
       data-participant-count={participantCount}
       data-auto-whirl-duration={autoWhirlDuration.toFixed(3)}
       data-photo-finish-duration={autoPhotoFinishDuration.toFixed(3)}
@@ -1190,9 +1275,9 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
         <span className="roulette-wheel__spark roulette-wheel__spark--two" aria-hidden="true">●</span>
         <span className="roulette-wheel__spark roulette-wheel__spark--three" aria-hidden="true">★</span>
 
-        <div className="roulette-wheel__pointer" aria-hidden="true">
+        <div ref={pointerRef} className="roulette-wheel__pointer" aria-hidden="true">
           <span className="roulette-wheel__pointer-needle">
-            <span className="roulette-wheel__selection-anchor" />
+            <span ref={selectionAnchorRef} className="roulette-wheel__selection-anchor" />
           </span>
           <span className="roulette-wheel__pointer-pin" />
         </div>

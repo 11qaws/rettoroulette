@@ -1,15 +1,27 @@
+@property --roulette-pointer-tick-amplitude {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 7deg;
+}
+
 .roulette-wheel {
   --wheel-size: min(86vw, 42rem);
   --wheel-stage-padding: clamp(2.25rem, 7vw, 4rem);
   --wheel-rim-border: clamp(0.55rem, 1.8vw, 0.9rem);
   --wheel-spin-duration: 3.6s;
   --wheel-pointer-height: clamp(2.5rem, calc(var(--wheel-size) * 0.09), 3.8rem);
+  --roulette-pointer-tick-amplitude: 7deg;
   position: relative;
   width: 100%;
   display: grid;
   place-items: center;
   color: var(--ink, #251c32);
   isolation: isolate;
+}
+
+.roulette-wheel.is-spinning:not(.is-dart) {
+  /* Settle the click-time motion onto the true 12 o'clock axis before proof. */
+  animation: roulette-pointer-damping 320ms cubic-bezier(0.16, 0.76, 0.2, 1) both;
 }
 
 .roulette-wheel.is-auto-brake {
@@ -295,6 +307,7 @@
   display: block;
   /* The pin is the physical hinge; only the lower needle swings. */
   transform-origin: 50% var(--pointer-hinge-y);
+  transform: rotate(0deg);
 }
 
 .roulette-wheel__pointer-needle::before {
@@ -337,6 +350,7 @@
   border: 0.1rem solid var(--cream, #fff9e7);
   border-radius: 50%;
   background: var(--ink, #251c32);
+  /* The first shadow is the visible contact ring measured by captureRotor(). */
   box-shadow: 0 0 0 0.08rem var(--hot-pink, #ff4f87);
   transform: translate(-50%, 50%);
 }
@@ -396,6 +410,7 @@
 }
 
 .roulette-wheel.is-auto-brake .roulette-wheel__pointer-needle,
+.roulette-wheel.is-auto-photo-finish .roulette-wheel__pointer-needle,
 .roulette-wheel.is-idle-spinning:not(.is-dart) .roulette-wheel__pointer-needle {
   animation: roulette-pointer-tick 115ms ease-in-out infinite;
 }
@@ -406,12 +421,13 @@
     drop-shadow(0 0 0.9rem color-mix(in srgb, var(--lemon, #ffe45c) 88%, transparent));
 }
 
-.roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__pointer-needle {
-  animation: roulette-pointer-final-tick 520ms cubic-bezier(0.2, 0.82, 0.24, 1) 2 both;
-}
-
 .roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__pointer-needle::before {
   background: linear-gradient(180deg, var(--lemon, #ffe45c), var(--hot-pink, #ff4f87));
+  animation: roulette-pointer-proof-glow 620ms ease-in-out 2 both;
+}
+
+.roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__selection-anchor {
+  animation: roulette-selection-proof 620ms ease-in-out 2 both;
 }
 
 .roulette-wheel.is-dart .roulette-wheel__pointer {
@@ -456,22 +472,39 @@
 
 @keyframes roulette-pointer-tick {
   0%, 100% {
-    transform: rotate(-7deg);
+    transform: rotate(calc(0deg - var(--roulette-pointer-tick-amplitude)));
   }
   50% {
-    transform: rotate(7deg);
+    transform: rotate(var(--roulette-pointer-tick-amplitude));
   }
 }
 
-@keyframes roulette-pointer-final-tick {
+@keyframes roulette-pointer-damping {
+  from {
+    --roulette-pointer-tick-amplitude: 7deg;
+  }
+  to {
+    --roulette-pointer-tick-amplitude: 0deg;
+  }
+}
+
+@keyframes roulette-pointer-proof-glow {
   0%, 100% {
-    transform: rotate(0deg) scale(1);
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
   }
-  42% {
-    transform: rotate(7deg) scale(1.08);
+  50% {
+    filter: brightness(1.18) drop-shadow(0 0 0.42rem color-mix(in srgb, var(--lemon, #ffe45c) 76%, transparent));
   }
-  68% {
-    transform: rotate(-3deg) scale(1.035);
+}
+
+@keyframes roulette-selection-proof {
+  0%, 100% {
+    box-shadow: 0 0 0 0.08rem var(--hot-pink, #ff4f87);
+  }
+  50% {
+    box-shadow:
+      0 0 0 0.08rem var(--hot-pink, #ff4f87),
+      0 0 0 0.34rem color-mix(in srgb, var(--lemon, #ffe45c) 72%, transparent);
   }
 }
 
@@ -596,12 +629,22 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .roulette-wheel.is-spinning:not(.is-dart) {
+    --roulette-pointer-tick-amplitude: 0deg;
+    animation: none;
+  }
+
   .roulette-wheel__disc {
     transition-duration: 360ms;
   }
 
   .roulette-wheel.is-spinning .roulette-wheel__pointer,
-  .roulette-wheel.is-spinning .roulette-wheel__pointer-needle,
+  .roulette-wheel.is-spinning:not(.is-dart) .roulette-wheel__pointer-needle,
+  .roulette-wheel.is-idle-spinning:not(.is-dart) .roulette-wheel__pointer-needle,
+  .roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__pointer-needle::before,
+  .roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__selection-anchor,
+  .roulette-wheel.is-idle-spinning .roulette-wheel__rim,
+  .roulette-wheel.is-idle-spinning .roulette-wheel__hub,
   .roulette-wheel.is-spinning .roulette-wheel__hub,
   .roulette-wheel.has-result .roulette-wheel__slice--winner,
   .roulette-wheel__slice--boundary-winner,

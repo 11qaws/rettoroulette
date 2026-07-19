@@ -205,6 +205,7 @@ export default function DrawPreviewDirector({
         previewNames.length,
         previewWeights,
         createPreviewRandom(sampleIndex + 701),
+        capture.selectionGeometry,
       );
       if (!nextSpinCommit) {
         armedRunIdRef.current = 0;
