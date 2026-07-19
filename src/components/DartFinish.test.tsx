@@ -18,6 +18,8 @@ describe('DartFinish', () => {
     expect(markup).not.toContain('dart-finish--launch');
     expect(markup).not.toContain('dart-finish--approach');
     expect(markup).toContain('dart-glyph__shaft');
+    expect(markup).toContain('dart-glyph__contact-tip');
+    expect(markup).toContain('data-dart-contact-point="screen"');
     expect(markup).not.toContain('경계선!');
   });
 
@@ -26,7 +28,19 @@ describe('DartFinish', () => {
 
     expect(markup).toContain('embedded-dart--impact');
     expect(markup).toContain('dart-glyph__shaft');
+    expect(markup).toContain('dart-glyph__contact-tip');
+    expect(markup).toContain('data-dart-contact-point="board"');
     expect(markup).not.toContain('embedded-dart-contact-proof');
+  });
+
+  it('exposes exactly one canonical contact point in each dart coordinate space', () => {
+    const flightMarkup = renderToStaticMarkup(<DartFinish phase="flight" />);
+    const embeddedMarkup = renderToStaticMarkup(
+      <EmbeddedDart phase="impact" impactRotation={0} />,
+    );
+
+    expect(flightMarkup.match(/data-dart-contact-point=/g)).toHaveLength(1);
+    expect(embeddedMarkup.match(/data-dart-contact-point=/g)).toHaveLength(1);
   });
 });
 

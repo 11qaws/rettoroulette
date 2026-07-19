@@ -170,6 +170,26 @@
   box-shadow: inset 0.12rem 0.12rem 0 color-mix(in srgb, white 76%, transparent);
 }
 
+/* The canonical physical contact point. Its centre is the shared x/y result
+   coordinate in both screen-space flight and board-space attachment. */
+.dart-glyph__contact-tip {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  width: clamp(0.24rem, 13%, 0.38rem);
+  aspect-ratio: 1;
+  border: 0.07rem solid var(--cream, #fff9e7);
+  border-radius: 50%;
+  background: var(--ink, #251c32);
+  box-shadow:
+    0 0 0 0.06rem color-mix(in srgb, var(--hot-pink, #ff4f87) 72%, transparent),
+    0 0 0.34rem color-mix(in srgb, var(--lemon, #ffe45c) 68%, transparent);
+  transform: translate(-50%, -50%);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
 .dart-finish__projectile-fin,
 .embedded-dart__fin {
   position: absolute;
@@ -284,6 +304,8 @@
   filter: drop-shadow(0.12rem 0.2rem 0 color-mix(in srgb, var(--ink, #251c32) 38%, transparent));
 }
 
+/* The shaft begins at the canonical tip and extends back toward the viewer.
+   translateY(0) makes its top-centre exactly equal to the judged point. */
 .dart-glyph__shaft {
   position: absolute;
   z-index: 0;
@@ -294,7 +316,7 @@
   border: 0.08rem solid var(--ink, #251c32);
   border-radius: 999px;
   background: linear-gradient(180deg, var(--cream, #fff9e7), var(--sky, #83c9ff));
-  transform: translate(-50%, -4%);
+  transform: translate(-50%, 0);
   transform-origin: 50% 0;
 }
 

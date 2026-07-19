@@ -31,7 +31,39 @@ type WinnerNameplateStyle = CSSProperties & {
   '--candidate-color': string;
 };
 
+type DartContactSpace = 'screen' | 'board';
+
 const PROOF_NICKNAME_MAX_LENGTH = 8;
+
+/**
+ * One shared, head-on dart silhouette. The contact tip is deliberately the
+ * last layer and sits at the glyph origin, so the judged point is never an
+ * arbitrary sprite centre or the far end of the shaft.
+ */
+function DartGlyph({ contactSpace }: { contactSpace: DartContactSpace }) {
+  const isScreenSpace = contactSpace === 'screen';
+  const coreClassName = isScreenSpace
+    ? 'dart-finish__projectile-core'
+    : 'embedded-dart__core';
+  const finClassName = isScreenSpace
+    ? 'dart-finish__projectile-fin'
+    : 'embedded-dart__fin';
+
+  return (
+    <>
+      <span className="dart-glyph__shaft" />
+      <span className={coreClassName} />
+      <span className={`${finClassName} ${finClassName}--north`} />
+      <span className={`${finClassName} ${finClassName}--east`} />
+      <span className={`${finClassName} ${finClassName}--south`} />
+      <span className={`${finClassName} ${finClassName}--west`} />
+      <span
+        className="dart-glyph__contact-tip"
+        data-dart-contact-point={contactSpace}
+      />
+    </>
+  );
+}
 
 function nicknameGraphemes(name: string) {
   if (typeof Intl.Segmenter === 'function') {
@@ -109,12 +141,7 @@ export default function DartFinish({
         <span className="dart-finish__ring dart-finish__ring--three" />
 
         <span className="dart-finish__projectile">
-          <span className="dart-glyph__shaft" />
-          <span className="dart-finish__projectile-core" />
-          <span className="dart-finish__projectile-fin dart-finish__projectile-fin--north" />
-          <span className="dart-finish__projectile-fin dart-finish__projectile-fin--east" />
-          <span className="dart-finish__projectile-fin dart-finish__projectile-fin--south" />
-          <span className="dart-finish__projectile-fin dart-finish__projectile-fin--west" />
+          <DartGlyph contactSpace="screen" />
         </span>
 
         <span className="dart-finish__impact-ring dart-finish__impact-ring--one" />
@@ -238,12 +265,7 @@ export function EmbeddedDart({
       aria-hidden="true"
     >
       <span className="embedded-dart__pin" data-dart-impact-anchor="board">
-        <span className="dart-glyph__shaft" />
-        <span className="embedded-dart__core" />
-        <span className="embedded-dart__fin embedded-dart__fin--north" />
-        <span className="embedded-dart__fin embedded-dart__fin--east" />
-        <span className="embedded-dart__fin embedded-dart__fin--south" />
-        <span className="embedded-dart__fin embedded-dart__fin--west" />
+        <DartGlyph contactSpace="board" />
       </span>
     </span>
   );
