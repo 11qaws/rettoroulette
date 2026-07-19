@@ -62,9 +62,11 @@
   .reveal-phase--motion-started,
   .reveal-phase--boundary-entered,
   .reveal-phase--boundary-crossed,
+  .reveal-phase--boundary-held,
   .reveal-phase--dart-launched,
   .reveal-phase--dart-impacted,
   .reveal-phase--dart-attached,
+  .reveal-phase--dart-names-revealed,
   .reveal-phase--rotation-stopped,
   .reveal-phase--proof-hold-done
 ) .broadcast-focus__camera {
@@ -92,9 +94,11 @@
   .reveal-phase--motion-started,
   .reveal-phase--boundary-entered,
   .reveal-phase--boundary-crossed,
+  .reveal-phase--boundary-held,
   .reveal-phase--dart-launched,
   .reveal-phase--dart-impacted,
   .reveal-phase--dart-attached,
+  .reveal-phase--dart-names-revealed,
   .reveal-phase--rotation-stopped,
   .reveal-phase--proof-hold-done
 ) .broadcast-focus__visual.is-auto-spinning .broadcast-focus__camera {
@@ -107,14 +111,17 @@
   .reveal-phase--motion-started,
   .reveal-phase--boundary-entered,
   .reveal-phase--boundary-crossed,
+  .reveal-phase--boundary-held,
   .reveal-phase--dart-launched,
   .reveal-phase--dart-impacted,
   .reveal-phase--dart-attached,
+  .reveal-phase--dart-names-revealed,
   .reveal-phase--rotation-stopped,
   .reveal-phase--proof-hold-done
 ) .roulette-wheel:is(
   .is-boundary-approach,
   .is-boundary-creep,
+  .is-boundary-held,
   .is-stop-hold,
   .is-dart-flight,
   .is-dart-after-impact,
@@ -150,6 +157,13 @@
   --cinematic-camera-ease: cubic-bezier(0.11, 0.75, 0.12, 1);
 }
 
+.broadcast-focus.reveal-phase--boundary-held {
+  --cinematic-camera-scale: 1.66;
+  --cinematic-camera-y: 0.6%;
+  --cinematic-camera-duration: 420ms;
+  --cinematic-camera-ease: cubic-bezier(0.11, 0.75, 0.12, 1);
+}
+
 /* Dart lottery: the board must remain at speed. The camera closes distance
    slowly at first, then surges into the committed, varied impact point. */
 .broadcast-focus.reveal-phase--dart-launched .broadcast-focus__camera {
@@ -173,6 +187,19 @@
   --cinematic-camera-y: 0.2%;
   --cinematic-camera-duration: 720ms;
   --cinematic-camera-ease: cubic-bezier(0.2, 0.7, 0.22, 1);
+}
+
+.broadcast-focus.reveal-phase--dart-names-revealed {
+  --cinematic-camera-scale: 1.28;
+  --cinematic-camera-y: 0.2%;
+  --cinematic-camera-duration: 520ms;
+  --cinematic-camera-ease: cubic-bezier(0.16, 0.78, 0.2, 1);
+}
+
+.broadcast-focus.reveal-phase--dart-names-revealed .broadcast-focus__camera {
+  transform-origin:
+    var(--cinematic-final-x, 50%)
+    var(--cinematic-final-y, 14%);
 }
 
 /* Auto-wheel proof holds the close boundary. Dart proof shows the whole
@@ -235,9 +262,11 @@
   .reveal-phase--motion-started,
   .reveal-phase--boundary-entered,
   .reveal-phase--boundary-crossed,
+  .reveal-phase--boundary-held,
   .reveal-phase--dart-launched,
   .reveal-phase--dart-impacted,
   .reveal-phase--dart-attached,
+  .reveal-phase--dart-names-revealed,
   .reveal-phase--rotation-stopped,
   .reveal-phase--proof-hold-done
 ) :is(
@@ -274,9 +303,11 @@
       .reveal-phase--motion-started,
       .reveal-phase--boundary-entered,
       .reveal-phase--boundary-crossed,
+      .reveal-phase--boundary-held,
       .reveal-phase--dart-launched,
       .reveal-phase--dart-impacted,
       .reveal-phase--dart-attached,
+      .reveal-phase--dart-names-revealed,
       .reveal-phase--rotation-stopped,
       .reveal-phase--proof-hold-done
     )
@@ -291,9 +322,11 @@
       .reveal-phase--motion-started,
       .reveal-phase--boundary-entered,
       .reveal-phase--boundary-crossed,
+      .reveal-phase--boundary-held,
       .reveal-phase--dart-launched,
       .reveal-phase--dart-impacted,
       .reveal-phase--dart-attached,
+      .reveal-phase--dart-names-revealed,
       .reveal-phase--rotation-stopped,
       .reveal-phase--proof-hold-done
     )
@@ -306,9 +339,11 @@
       .reveal-phase--motion-started,
       .reveal-phase--boundary-entered,
       .reveal-phase--boundary-crossed,
+      .reveal-phase--boundary-held,
       .reveal-phase--dart-launched,
       .reveal-phase--dart-impacted,
       .reveal-phase--dart-attached,
+      .reveal-phase--dart-names-revealed,
       .reveal-phase--rotation-stopped,
       .reveal-phase--proof-hold-done
     )
@@ -323,9 +358,11 @@
       .reveal-phase--motion-started,
       .reveal-phase--boundary-entered,
       .reveal-phase--boundary-crossed,
+      .reveal-phase--boundary-held,
       .reveal-phase--dart-launched,
       .reveal-phase--dart-impacted,
       .reveal-phase--dart-attached,
+      .reveal-phase--dart-names-revealed,
       .reveal-phase--rotation-stopped,
       .reveal-phase--proof-hold-done
     )

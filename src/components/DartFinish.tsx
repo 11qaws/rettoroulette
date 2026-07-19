@@ -24,8 +24,8 @@ type DartFinishStyle = CSSProperties & {
 };
 
 type BoundaryNamesStyle = CSSProperties & {
-  '--boundary-before-color': string;
-  '--boundary-after-color': string;
+  '--boundary-left-color': string;
+  '--boundary-right-color': string;
 };
 
 /**
@@ -87,14 +87,17 @@ export default function DartFinish({
 }
 
 export interface BoundaryNamesProps {
-  beforeName: string;
-  afterName: string;
-  beforeColor: string;
-  afterColor: string;
+  leftName: string;
+  rightName: string;
+  leftColor: string;
+  rightColor: string;
   visible: boolean;
+  namesVisible?: boolean;
   mode: 'spin' | 'dart';
+  /** Moves the neutral card to the final twelve-o'clock proof point. */
+  finalPoint?: boolean;
   /** Remains neutral until the physical stop proves which side won. */
-  winnerSide?: 'before' | 'after';
+  winnerSide?: 'left' | 'right';
 }
 
 export function isDartBoundaryPhaseVisible(phase: DartFinishPhase) {
@@ -106,31 +109,33 @@ export function isDartBoundaryPhaseVisible(phase: DartFinishPhase) {
  * Both names remain neutral until the physical stop proves the result.
  */
 export function BoundaryNames({
-  beforeName,
-  afterName,
-  beforeColor,
-  afterColor,
+  leftName,
+  rightName,
+  leftColor,
+  rightColor,
   visible,
+  namesVisible = true,
   mode,
+  finalPoint = false,
   winnerSide,
 }: BoundaryNamesProps) {
   const style: BoundaryNamesStyle = {
-    '--boundary-before-color': beforeColor,
-    '--boundary-after-color': afterColor,
+    '--boundary-left-color': leftColor,
+    '--boundary-right-color': rightColor,
   };
 
   return (
     <div
-      className={`boundary-names boundary-names--${mode}${visible ? ' is-visible' : ''}${winnerSide ? ' is-final' : ''}`}
+      className={`boundary-names boundary-names--${mode}${visible ? ' is-visible' : ''}${namesVisible ? ' has-names' : ' is-colors-only'}${finalPoint ? ' is-final-point' : ''}${winnerSide ? ' is-final' : ''}`}
       style={style}
       aria-hidden="true"
     >
-      <span className={`boundary-names__candidate boundary-names__candidate--after${winnerSide === 'after' ? ' is-winner' : ''}`}>
-        {afterName}
+      <span className={`boundary-names__candidate boundary-names__candidate--left${winnerSide === 'left' ? ' is-winner' : ''}`}>
+        <span className="boundary-names__text">{leftName}</span>
       </span>
       <span className="boundary-names__marker">경계</span>
-      <span className={`boundary-names__candidate boundary-names__candidate--before${winnerSide === 'before' ? ' is-winner' : ''}`}>
-        {beforeName}
+      <span className={`boundary-names__candidate boundary-names__candidate--right${winnerSide === 'right' ? ' is-winner' : ''}`}>
+        <span className="boundary-names__text">{rightName}</span>
       </span>
     </div>
   );

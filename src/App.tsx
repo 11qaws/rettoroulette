@@ -9,6 +9,7 @@ import ParticipantSetup from './components/ParticipantSetup';
 import RouletteWheel, {
   type RouletteRevealEvent,
   type RouletteRevealPhase,
+  type RouletteWheelHandle,
 } from './components/RouletteWheel';
 import RoundSetupPanel from './components/RoundSetupPanel';
 import WinnerHero from './components/WinnerHero';
@@ -42,8 +43,12 @@ import {
   type PresentationRunToken,
 } from './lib/presentationRun';
 import {
-  createDartShotPlan,
+  createDartAimSession,
+  createDartPhysicalCommit,
+  createRouletteFinishLanding,
   resolveDartImpactPoint,
+  type DartAimSession,
+  type DartPhysicalCommit,
   type DartShotPlan,
   type RouletteFinishLanding,
 } from './lib/roulette';
@@ -101,6 +106,8 @@ type PlannedPresentation = {
   landing: RouletteFinishLanding;
   /** Result-neutral physical coordinates fixed once for a dart reveal. */
   dartShot?: DartShotPlan;
+  /** Rotor/aim impact that physically selected a dart winner at click time. */
+  dartCommit?: DartPhysicalCommit;
   recipient?: string;
 };
 
@@ -171,23 +178,6 @@ function isStoredDrawRecord(value: unknown): value is DrawRecord {
     && (item.mode === 'wheel' || item.mode === 'marble')
     && (item.target === 'people' || item.target === 'prizes')
     && typeof item.winner === 'string';
-}
-
-/** Result-neutral visual variation created only after a winner is selected. */
-function createFinishLanding(presentation: WheelPresentation): RouletteFinishLanding {
-  const photoFinish = presentation === 'spin' || Math.random() < 0.24;
-  return photoFinish
-    ? {
-        entryGapDegrees: 12 + Math.random() * 6,
-        leadDegrees: 0.25 + Math.random() * 0.55,
-        minimumProofLeadDegrees: presentation === 'spin' ? 4 : undefined,
-        boundaryHit: true,
-      }
-    : {
-        entryGapDegrees: 8 + Math.random() * 10,
-        leadDegrees: 7 + Math.random() * 9,
-        boundaryHit: false,
-      };
 }
 
 /** A compact audit marker without persisting an unbounded copy of a large roster. */
@@ -267,6 +257,7 @@ function App() {
   const [currentRound, setCurrentRound] = useState<CurrentRound | null>(null);
   const [broadcastSession, setBroadcastSession] = useState<BroadcastSession | null>(null);
   const [rotorReady, setRotorReady] = useState(false);
+  const [dartAimSession, setDartAimSession] = useState<DartAimSession | null>(null);
   const [history, setHistory] = useState<DrawRecord[]>([]);
   const [historyHydrated, setHistoryHydrated] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>('participants');
@@ -289,6 +280,8 @@ function App() {
   const winnerHeroTimerRef = useRef<number | null>(null);
   const winnerDockTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const dartAimSequenceRef = useRef(0);
+  const liveWheelRef = useRef<RouletteWheelHandle>(null);
   const historyStorageWarningShownRef = useRef(false);
   const pendingRecoveryNeedsCleanupRef = useRef(false);
   const resolvedRevealIdsRef = useRef(new Set<number>());
@@ -302,6 +295,26 @@ function App() {
   const setUseWeights = useCallback((value: boolean) => {
     setWeightModes((modes) => ({ ...modes, [drawTarget]: value }));
   }, [drawTarget]);
+
+  const primeDartAim = useCallback(() => {
+    const id = dartAimSequenceRef.current + 1;
+    dartAimSequenceRef.current = id;
+    const startedAt = typeof performance === 'undefined' ? Date.now() : performance.now();
+    setDartAimSession(createDartAimSession(id, startedAt));
+  }, []);
+
+  useEffect(() => {
+    const shouldAim =
+      (raffleStatus === 'ready' && wheelPresentation === 'dart')
+      || (raffleStatus === 'awaiting-dart' && currentRound?.wheelPresentation === 'dart');
+    if (shouldAim) {
+      primeDartAim();
+      return;
+    }
+    if (raffleStatus === 'configuring' || raffleStatus === 'completed') {
+      setDartAimSession(null);
+    }
+  }, [currentRound?.id, currentRound?.results.length, currentRound?.wheelPresentation, primeDartAim, raffleStatus, wheelPresentation]);
 
   const handleRouletteRevealPhase = useCallback((event: RouletteRevealEvent) => {
     // Animation callbacks can arrive after a round was reset. Only the wheel
@@ -608,9 +621,32 @@ function App() {
     recipientSnapshot: string | undefined,
     withoutReplacement: boolean,
     wheelReveal: WheelPresentation,
+    dartPhysicalCommit?: DartPhysicalCommit,
   ) => {
     const options = [...snapshot];
     const selectedAt = new Date().toISOString();
+
+    if (wheelReveal === 'dart') {
+      if (
+        !dartPhysicalCommit
+        || dartPhysicalCommit.winnerIndex < 0
+        || dartPhysicalCommit.winnerIndex >= options.length
+      ) return [];
+
+      return [{
+        options,
+        winnerIndex: dartPhysicalCommit.winnerIndex,
+        target,
+        selectedAt,
+        recipient: recipientSnapshot,
+        candidateFingerprint: fingerprintOptions(options),
+        candidateTotalWeight: totalEffectiveWeight(options),
+        landing: dartPhysicalCommit.landing,
+        dartShot: dartPhysicalCommit.shot,
+        dartCommit: dartPhysicalCommit,
+      }];
+    }
+
     const drawPlan = withoutReplacement
       ? buildWeightedDrawPlanWithoutReplacement(options, count)
       : buildWeightedDrawPlanWithReplacement(options, count);
@@ -624,8 +660,7 @@ function App() {
         recipient: recipientSnapshot,
         candidateFingerprint: fingerprintOptions(options),
         candidateTotalWeight: totalEffectiveWeight(options),
-        landing: createFinishLanding(wheelReveal),
-        dartShot: wheelReveal === 'dart' ? createDartShotPlan() : undefined,
+        landing: createRouletteFinishLanding(wheelReveal),
       }));
     }
 
@@ -644,8 +679,7 @@ function App() {
         recipient: recipientSnapshot,
         candidateFingerprint: fingerprintOptions(candidateSnapshot),
         candidateTotalWeight: totalEffectiveWeight(candidateSnapshot),
-        landing: createFinishLanding(wheelReveal),
-        dartShot: wheelReveal === 'dart' ? createDartShotPlan() : undefined,
+        landing: createRouletteFinishLanding(wheelReveal),
       };
       remaining.splice(winnerIndex, 1);
       return [presentation];
@@ -676,7 +710,7 @@ function App() {
     // Keep one short, visible frame between "the result is fixed" and the
     // presentation. The wheel continues its idle high-speed rotation in this
     // phase, so the pause proves ordering without killing momentum.
-    presentationStartTimerRef.current = window.setTimeout(() => {
+    const beginPresentation = () => {
       if (presentationRunRef.current !== revealId) return;
       presentationStartTimerRef.current = null;
       if (!transitionRaffle('start-presentation')) return;
@@ -686,7 +720,10 @@ function App() {
       setWinnerIndex(presentation.winnerIndex);
       setCinematicRevealPhase('motion-started');
       setSpinning(true);
-    }, 140);
+    };
+
+    if (presentation.dartCommit) beginPresentation();
+    else presentationStartTimerRef.current = window.setTimeout(beginPresentation, 140);
 
     return true;
   }, [cancelWinnerRevealTimers, transitionRaffle]);
@@ -852,6 +889,18 @@ function App() {
     }, 2_200);
   };
 
+  const freezePhysicalDart = () => {
+    const capture = liveWheelRef.current?.freezeDartAim();
+    if (!capture) return null;
+    return createDartPhysicalCommit(
+      capture.rotation,
+      capture.angularVelocity,
+      drawOptions.length,
+      drawOptionWeights,
+      capture.shot,
+    );
+  };
+
   const startDraw = () => {
     if (raffleStatusRef.current !== 'ready') return;
     if (!rotorReady) return;
@@ -862,6 +911,12 @@ function App() {
     const possibleCount = effectiveWinnerCount;
     if (possibleCount < 1) {
       showToast(drawTarget === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
+      return;
+    }
+
+    const dartCommit = wheelPresentation === 'dart' ? freezePhysicalDart() : undefined;
+    if (wheelPresentation === 'dart' && !dartCommit) {
+      showToast('다트 조준점이 준비될 때까지 잠시 기다려 주세요.');
       return;
     }
 
@@ -876,8 +931,10 @@ function App() {
       recipientSnapshot,
       withoutReplacement,
       wheelPresentation,
+      dartCommit ?? undefined,
     );
     if (presentations.length === 0) {
+      if (dartCommit) primeDartAim();
       showToast(drawTarget === 'people' ? '추첨할 참여자가 없어요.' : '추첨할 상품이 없어요.');
       return;
     }
@@ -904,7 +961,10 @@ function App() {
       return committed ? [committed] : [];
     });
     const firstPresentation = committedPresentations[0];
-    if (!firstPresentation || committedPresentations.length !== presentations.length) return;
+    if (!firstPresentation || committedPresentations.length !== presentations.length) {
+      if (dartCommit) primeDartAim();
+      return;
+    }
 
     const pendingSaved = persistPendingResults(
       nextRound.id,
@@ -914,6 +974,7 @@ function App() {
       if (pendingSaved) {
         try { localStorage.removeItem(PENDING_RAFFLE_KEY); } catch { /* ignored */ }
       }
+      if (dartCommit) primeDartAim();
       return;
     }
 
@@ -938,6 +999,12 @@ function App() {
       return;
     }
 
+    const dartCommit = freezePhysicalDart();
+    if (!dartCommit) {
+      showToast('다트 조준점이 준비될 때까지 잠시 기다려 주세요.');
+      return;
+    }
+
     const nextPlan = buildPresentationPlan(
       drawOptions,
       1,
@@ -945,16 +1012,24 @@ function App() {
       currentRound.recipient,
       currentRound.target === 'prizes' || currentRound.removeAfterDraw,
       currentRound.wheelPresentation,
+      dartCommit,
     )[0];
-    if (!nextPlan) return;
+    if (!nextPlan) {
+      primeDartAim();
+      return;
+    }
     const nextPresentation = attachLockedResult(nextPlan, currentRound, currentRound.results.length + 1);
-    if (!nextPresentation) return;
+    if (!nextPresentation) {
+      primeDartAim();
+      return;
+    }
 
     const pendingSaved = persistPendingResults(currentRound.id, [nextPresentation.lockedResult]);
     if (!launchCommittedPresentation(nextPresentation)) {
       if (pendingSaved) {
         try { localStorage.removeItem(PENDING_RAFFLE_KEY); } catch { /* ignored */ }
       }
+      primeDartAim();
       return;
     }
     setToolsOpen(false);
@@ -1465,7 +1540,7 @@ function App() {
       : raffleStatus === 'awaiting-dart'
         ? noAvailableDrawOptions
           ? `${unavailableDrawHint}가 없어 다음 다트를 시작할 수 없어요. 이번 회차를 여기서 마치거나, 결과 뒤에 다음 회차 설정을 바꿔 주세요.`
-          : `${currentRoundResults.length + 1}번째 다트는 발사 버튼을 누르는 순간 그 한 결과가 확정되고, 바로 다트 복권 연출이 시작됩니다.`
+          : `${currentRoundResults.length + 1}번째 다트는 클릭 순간 조준점과 원판 위치로 결과가 확정됩니다.`
         : raffleStatus === 'completed'
           ? currentRound?.endedEarly
             ? '공개된 결과와 기록은 유지됩니다. 다음 회차를 같은 조건으로 이어가거나, 명단·규칙을 새로 정할 수 있어요.'
@@ -1478,7 +1553,7 @@ function App() {
               ? `${roundRecipient}님에게 드릴 상품을 뽑아 주세요.`
               : roundMode === 'wheel'
                 ? roundWheelPresentation === 'dart'
-                  ? '원판은 이미 고속 회전 중입니다. 발사 버튼을 누르는 순간 결과가 고정되고 다트가 정면으로 날아갑니다.'
+                  ? '움직이는 조준점과 원판 위치가 클릭 순간 함께 고정되고 다트가 바로 날아갑니다.'
                   : '원판은 이미 고속 회전 중입니다. 결과 고정 버튼을 누르면 그 순간 결과가 정해지고 원판이 감속합니다.'
                 : '레이스 시작을 누르는 순간 후보와 결과가 고정되고, 그 다음에 방송 연출이 시작됩니다.';
 
@@ -1494,6 +1569,7 @@ function App() {
 
     return mode === 'wheel' ? (
       <RouletteWheel
+        ref={preview ? undefined : liveWheelRef}
         participants={names}
         weights={sliceWeights}
         itemType={target === 'prizes' ? 'prize' : 'participant'}
@@ -1510,6 +1586,8 @@ function App() {
         revealId={preview ? undefined : activePresentation?.revealId}
         landing={preview ? undefined : activePresentation?.landing}
         dartShot={preview ? undefined : activePresentation?.dartShot}
+        dartAim={preview ? undefined : dartAimSession ?? undefined}
+        dartCommit={preview ? undefined : activePresentation?.dartCommit}
         onRevealPhase={preview ? undefined : handleRouletteRevealPhase}
         onIdleCruise={preview ? undefined : () => setRotorReady(true)}
         onSpinEnd={preview ? () => undefined : completeDraw}

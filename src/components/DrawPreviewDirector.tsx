@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { DrawMode, DrawTarget, WheelPresentation } from '../types';
-import { createDartShotPlan, type DartShotPlan } from '../lib/roulette';
+import {
+  createDartShotPlan,
+  createRouletteFinishLanding,
+  type DartShotPlan,
+  type RouletteFinishLanding,
+} from '../lib/roulette';
 import type { RouletteRevealEvent, RouletteRevealPhase } from './RouletteWheel';
 import MarbleRace from './MarbleRace';
 import RouletteWheel from './RouletteWheel';
@@ -21,6 +26,21 @@ function createPreviewRandom(seed: number) {
     state = Math.imul(state ^ (state >>> 15), 0x735a2d97);
     state ^= state >>> 15;
     return (state >>> 0) / 0x1_0000_0000;
+  };
+}
+
+function createPreviewLandingRandom(seed: number, presentation: WheelPresentation) {
+  const base = createPreviewRandom(seed);
+  const spinRegions = [0.1, 0.4, 0.8];
+  const dartRegions = [0.1, 0.2, 0.7];
+  const regions = presentation === 'spin' ? spinRegions : dartRegions;
+  let first = true;
+  return () => {
+    if (first) {
+      first = false;
+      return regions[seed % regions.length];
+    }
+    return base();
   };
 }
 
@@ -51,6 +71,9 @@ export default function DrawPreviewDirector({
   const [visualRunId, setVisualRunId] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState<number | null>(null);
   const [dartShot, setDartShot] = useState<DartShotPlan>(() => createDartShotPlan(() => 0.5));
+  const [landing, setLanding] = useState<RouletteFinishLanding>(() => (
+    createRouletteFinishLanding(presentation, () => 0.5)
+  ));
   const [moving, setMoving] = useState(false);
   const [phase, setPhase] = useState<PreviewPhase>('idle');
   const [inViewport, setInViewport] = useState(true);
@@ -98,13 +121,15 @@ export default function DrawPreviewDirector({
       const nextWinner = sampleIndexRef.current % previewNames.length;
       sampleIndexRef.current += 1;
       spinKeyRef.current += 1;
-      setDartShot(createDartShotPlan(createPreviewRandom(sampleIndexRef.current)));
+      const previewRandom = createPreviewLandingRandom(sampleIndexRef.current, presentation);
+      setLanding(createRouletteFinishLanding(presentation, previewRandom));
+      setDartShot(createDartShotPlan(createPreviewRandom(sampleIndexRef.current + 101)));
       setWinnerIndex(nextWinner);
       setSpinKey(spinKeyRef.current);
       setPhase('motion');
       setMoving(true);
     }, mode === 'marble' ? 520 : PREVIEW_CRUISE_DELAY);
-  }, [active, clearTimers, mode, previewNames.length, reducedMotion, schedule]);
+  }, [active, clearTimers, mode, presentation, previewNames.length, reducedMotion, schedule]);
 
   const finishCycle = useCallback((runId: number) => {
     if (runId !== runIdRef.current) return;
@@ -193,7 +218,8 @@ export default function DrawPreviewDirector({
             spinKey={spinKey}
             revealId={spinKey}
             presentation={presentation}
-            landing={{ entryGapDegrees: 14, leadDegrees: 0.55, boundaryHit: true }}
+            scriptedDartPreview
+            landing={landing}
             dartShot={presentation === 'dart' ? dartShot : undefined}
             onRevealPhase={handleRevealPhase}
             onSpinEnd={() => finishCycle(visualRunId)}

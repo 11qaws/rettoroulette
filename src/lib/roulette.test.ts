@@ -4,18 +4,24 @@ import {
   AUTO_POINTER_ANGLE,
   DART_IMPACT_ANGLE,
   DART_FLIGHT_DURATION_SECONDS,
+  buildCommittedDartRouletteFinishPlan,
   buildDartRouletteFinishPlan,
   buildRouletteFinishPlan,
   calculateAutoPhotoFinishTiming,
   calculateDartFlightTiming,
   calculateDartPostImpactDuration,
+  createDartAimSession,
+  createDartPhysicalCommit,
   createDartShotPlan,
+  createRouletteFinishLanding,
+  createRouletteGeometrySignature,
   getRouletteSliceGeometry,
   getRouletteSliceIndexAtScreenAngle,
   isRoulettePhotoFinish,
   nextWheelRotation,
   normalizeRouletteWeights,
   resolveDartImpactPoint,
+  sampleDartAimSession,
   targetWheelRotation,
 } from './roulette';
 
@@ -57,6 +63,15 @@ describe('targetWheelRotation', () => {
   it('falls back to equal wedges when supplied weights have no positive value', () => {
     expect(normalizeRouletteWeights(4, [0, -3, Number.NaN, 0])).toEqual([0.25, 0.25, 0.25, 0.25]);
   });
+
+  it('signs the normalized physical geometry rather than raw weight scale', () => {
+    expect(createRouletteGeometrySignature(3, [1, 2, 1])).toBe(
+      createRouletteGeometrySignature(3, [10, 20, 10]),
+    );
+    expect(createRouletteGeometrySignature(3, [1, 2, 1])).not.toBe(
+      createRouletteGeometrySignature(3, [2, 1, 1]),
+    );
+  });
 });
 
 const normalized = (angle: number) => ((angle % 360) + 360) % 360;
@@ -92,6 +107,40 @@ describe('dart shot placement', () => {
     expect(point.finalXPercent).toBe(50);
     expect(point.finalYPercent).toBeCloseTo(14, 10);
     expect(point.jitterA).toEqual({ xPixels: 2, yPixels: -3 });
+  });
+});
+
+describe('result-neutral landing variety', () => {
+  const sequence = (...values: number[]) => {
+    let index = 0;
+    return () => values[Math.min(index++, values.length - 1)] ?? 0.5;
+  };
+
+  it('samples both boundary sides and the interior without touching winner odds', () => {
+    expect(createRouletteFinishLanding('spin', sequence(0.1, 0.5, 0.5)).kind).toBe('near-end');
+    expect(createRouletteFinishLanding('spin', sequence(0.4, 0.5, 0.5)).kind).toBe('near-start');
+    const interior = createRouletteFinishLanding('spin', sequence(0.8, 0.25));
+    expect(interior.kind).toBe('interior');
+    expect(interior.positionRatio).toBeCloseTo(0.37, 10);
+
+    expect(createRouletteFinishLanding('dart', sequence(0.1, 0.5, 0.5)).kind).toBe('near-end');
+    expect(createRouletteFinishLanding('dart', sequence(0.2, 0.5, 0.5)).kind).toBe('near-start');
+    expect(createRouletteFinishLanding('dart', sequence(0.7, 0.5)).kind).toBe('interior');
+  });
+
+  it('keeps a deterministic moving aim inside the visible safe arc', () => {
+    const aim = createDartAimSession(7, 1_000, () => 0.5);
+    const first = sampleDartAimSession(aim, 1_000);
+    const repeated = sampleDartAimSession(aim, 1_000);
+    expect(first).toEqual(repeated);
+
+    for (let time = 1_000; time <= 12_000; time += 137) {
+      const shot = sampleDartAimSession(aim, time);
+      expect(shot.impactAngleDegrees).toBeGreaterThanOrEqual(-115);
+      expect(shot.impactAngleDegrees).toBeLessThanOrEqual(-65);
+      expect(shot.impactRadiusRatio).toBeGreaterThanOrEqual(0.58);
+      expect(shot.impactRadiusRatio).toBeLessThanOrEqual(0.8);
+    }
   });
 });
 
@@ -161,7 +210,7 @@ describe('buildRouletteFinishPlan', () => {
     const winner = getRouletteSliceGeometry(2, [999, 1])[1];
     const winnerSpan = winner.endAngle - winner.startAngle;
 
-    expect(plan.leadDegrees).toBeCloseTo(winnerSpan * 0.9, 10);
+    expect(plan.leadDegrees).toBeCloseTo(winnerSpan / 2, 10);
     expect(plan.landingAngle).toBeGreaterThan(winner.startAngle);
     expect(plan.landingAngle).toBeLessThan(winner.endAngle);
     expect(localAngleAtPointer(plan.finalRotation)).toBeCloseTo(normalized(plan.landingAngle), 10);
@@ -235,6 +284,57 @@ describe('buildRouletteFinishPlan', () => {
             participantCount,
             weights,
           )).toBe(winnerIndex);
+        }
+      }
+    }
+  });
+
+  it('supports both physical boundary sides and interior stops without reversing', () => {
+    for (const participantCount of [2, 3, 5, 8, 10]) {
+      const weightSets = [
+        undefined,
+        Array.from({ length: participantCount }, (_, index) => index + 1),
+      ];
+      for (const weights of weightSets) {
+        for (const winnerIndex of [0, Math.floor(participantCount / 2), participantCount - 1]) {
+          const landings = [
+            { kind: 'near-end' as const, entryGapDegrees: 14, leadDegrees: 2.4, boundaryHit: true },
+            { kind: 'near-start' as const, entryGapDegrees: 14, leadDegrees: 2.4, boundaryHit: true },
+            { kind: 'interior' as const, positionRatio: 0.43, entryGapDegrees: 0, leadDegrees: 0, boundaryHit: false },
+          ];
+
+          for (const landing of landings) {
+            const plan = buildRouletteFinishPlan(
+              137.25,
+              winnerIndex,
+              participantCount,
+              4,
+              weights,
+              landing,
+            );
+            expect(plan.finalRotation).toBeGreaterThanOrEqual(plan.focusRotation);
+            expect(getRouletteSliceIndexAtScreenAngle(
+              plan.finalRotation,
+              participantCount,
+              weights,
+            )).toBe(winnerIndex);
+
+            if (landing.kind === 'near-end') {
+              expect(plan.crossesBoundary).toBe(true);
+              expect(plan.winnerDisplaySide).toBe('left');
+              expect(plan.adjacentIndex).toBe((winnerIndex + 1) % participantCount);
+              expect(plan.boundaryRotation).toBeLessThan(plan.finalRotation);
+            } else if (landing.kind === 'near-start') {
+              expect(plan.crossesBoundary).toBe(false);
+              expect(plan.winnerDisplaySide).toBe('right');
+              expect(plan.adjacentIndex).toBe((winnerIndex - 1 + participantCount) % participantCount);
+              expect(plan.finalRotation).toBeLessThan(plan.boundaryRotation);
+            } else {
+              expect(plan.boundarySide).toBeNull();
+              expect(plan.adjacentIndex).toBeNull();
+              expect(plan.winnerDisplaySide).toBeNull();
+            }
+          }
         }
       }
     }
@@ -432,5 +532,62 @@ describe('buildDartRouletteFinishPlan', () => {
     expect(timing.duration).toBeGreaterThanOrEqual(1);
     expect(timing.duration).toBeLessThanOrEqual(1.3);
     expect(timing.distance / timing.duration).toBeCloseTo(1080, 10);
+  });
+});
+
+describe('physical dart commit', () => {
+  const shot = {
+    impactAngleDegrees: -91,
+    impactRadiusRatio: 0.71,
+    jitterA: { xPixels: 2, yPixels: -1 },
+    jitterB: { xPixels: -3, yPixels: 2 },
+    rollDegrees: 4,
+  };
+
+  it('uses the predicted impact itself to select and preserve the winner', () => {
+    const seenKinds = new Set<string>();
+
+    for (let rotation = 0; rotation < 360; rotation += 1) {
+      const commit = createDartPhysicalCommit(rotation, 1080, 5, undefined, shot);
+      expect(commit).not.toBeNull();
+      if (!commit) continue;
+      seenKinds.add(commit.landing.kind ?? 'legacy');
+      expect(getRouletteSliceIndexAtScreenAngle(
+        commit.impactRotation,
+        5,
+        undefined,
+        commit.shot.impactAngleDegrees,
+      )).toBe(commit.winnerIndex);
+
+      const plan = buildCommittedDartRouletteFinishPlan(commit, 5, 2);
+      expect(plan.impactRotation).toBe(commit.impactRotation);
+      expect(localAngleAt(plan.impactAngleDegrees, plan.impactRotation)).toBeCloseTo(
+        normalized(plan.landingAngle),
+        8,
+      );
+      expect(getRouletteSliceIndexAtScreenAngle(plan.finalRotation, 5)).toBe(commit.winnerIndex);
+    }
+
+    expect(seenKinds).toEqual(new Set(['near-start', 'near-end', 'interior']));
+  });
+
+  it('keeps weighted physical impacts inside the exact committed wedge', () => {
+    const weights = [1, 4, 2, 3];
+    for (const rotation of [0, 37, 122, 244, 359]) {
+      const commit = createDartPhysicalCommit(rotation, 1080, 4, weights, shot);
+      expect(commit).not.toBeNull();
+      if (!commit) continue;
+      expect(commit.geometrySignature).toBe(createRouletteGeometrySignature(4, weights));
+      const plan = buildCommittedDartRouletteFinishPlan(commit, 4, 3, weights);
+      expect(getRouletteSliceIndexAtScreenAngle(
+        commit.impactRotation,
+        4,
+        weights,
+        shot.impactAngleDegrees,
+      )).toBe(commit.winnerIndex);
+      expect(getRouletteSliceIndexAtScreenAngle(plan.finalRotation, 4, weights)).toBe(
+        commit.winnerIndex,
+      );
+    }
   });
 });

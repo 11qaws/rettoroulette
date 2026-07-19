@@ -223,6 +223,12 @@
   filter: blur(0.2px);
 }
 
+.roulette-wheel.is-dart-after-impact.is-dart-names-revealed .roulette-wheel__label,
+.roulette-wheel.is-stop-hold.is-dart .roulette-wheel__label {
+  opacity: 0.92;
+  filter: blur(0);
+}
+
 .roulette-wheel__hub {
   position: absolute;
   z-index: 5;
@@ -264,6 +270,9 @@
 .roulette-wheel__pointer {
   --pointer-width: clamp(1.8rem, calc(var(--wheel-size) * 0.065), 2.8rem);
   --pointer-height: var(--wheel-pointer-height);
+  --pointer-pin-size: calc(var(--pointer-width) * 0.38);
+  --pointer-pin-top: -0.15rem;
+  --pointer-hinge-y: calc(var(--pointer-pin-top) + var(--pointer-pin-size) / 2);
   position: absolute;
   z-index: 8;
   top: calc(50% - var(--wheel-size) / 2 - var(--pointer-height) + var(--wheel-rim-border) + 0.08rem);
@@ -272,12 +281,18 @@
   height: var(--pointer-height);
   filter: drop-shadow(0 0.38rem 0 var(--ink, #251c32));
   transform: translateX(-50%);
-  /* The triangle may tick, but its selecting tip never leaves twelve. */
-  transform-origin: 50% 100%;
   pointer-events: none;
 }
 
-.roulette-wheel__pointer::before {
+.roulette-wheel__pointer-needle {
+  position: absolute;
+  inset: 0;
+  display: block;
+  /* The pin is the physical hinge; only the lower needle swings. */
+  transform-origin: 50% var(--pointer-hinge-y);
+}
+
+.roulette-wheel__pointer-needle::before {
   position: absolute;
   inset: 0;
   content: '';
@@ -285,7 +300,7 @@
   clip-path: polygon(4% 5%, 96% 5%, 50% 100%);
 }
 
-.roulette-wheel__pointer::after {
+.roulette-wheel__pointer-needle::after {
   position: absolute;
   inset: 0.34rem;
   content: '';
@@ -297,10 +312,10 @@
 .roulette-wheel__pointer-pin {
   position: absolute;
   z-index: 2;
-  top: -0.15rem;
+  top: var(--pointer-pin-top);
   left: 50%;
-  width: 38%;
-  aspect-ratio: 1;
+  width: var(--pointer-pin-size);
+  height: var(--pointer-pin-size);
   border: 0.18rem solid var(--ink, #251c32);
   border-radius: 50%;
   background: var(--lemon, #ffe45c);
@@ -372,6 +387,11 @@
 
 .roulette-wheel.is-auto-brake .roulette-wheel__pointer,
 .roulette-wheel.is-idle-spinning:not(.is-dart) .roulette-wheel__pointer {
+  animation: none;
+}
+
+.roulette-wheel.is-auto-brake .roulette-wheel__pointer-needle,
+.roulette-wheel.is-idle-spinning:not(.is-dart) .roulette-wheel__pointer-needle {
   animation: roulette-pointer-tick 115ms ease-in-out infinite;
 }
 
@@ -379,10 +399,13 @@
   filter:
     drop-shadow(0 0.38rem 0 var(--ink, #251c32))
     drop-shadow(0 0 0.9rem color-mix(in srgb, var(--lemon, #ffe45c) 88%, transparent));
+}
+
+.roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__pointer-needle {
   animation: roulette-pointer-final-tick 520ms cubic-bezier(0.2, 0.82, 0.24, 1) 2 both;
 }
 
-.roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__pointer::before {
+.roulette-wheel.is-boundary-focus:not(.is-dart) .roulette-wheel__pointer-needle::before {
   background: linear-gradient(180deg, var(--lemon, #ffe45c), var(--hot-pink, #ff4f87));
 }
 
@@ -428,22 +451,22 @@
 
 @keyframes roulette-pointer-tick {
   0%, 100% {
-    transform: translateX(-50%) rotate(-7deg);
+    transform: rotate(-7deg);
   }
   50% {
-    transform: translateX(-50%) rotate(7deg);
+    transform: rotate(7deg);
   }
 }
 
 @keyframes roulette-pointer-final-tick {
   0%, 100% {
-    transform: translateX(-50%) rotate(0deg) scale(1);
+    transform: rotate(0deg) scale(1);
   }
   42% {
-    transform: translateX(-50%) rotate(7deg) scale(1.08);
+    transform: rotate(7deg) scale(1.08);
   }
   68% {
-    transform: translateX(-50%) rotate(-3deg) scale(1.035);
+    transform: rotate(-3deg) scale(1.035);
   }
 }
 
@@ -573,6 +596,7 @@
   }
 
   .roulette-wheel.is-spinning .roulette-wheel__pointer,
+  .roulette-wheel.is-spinning .roulette-wheel__pointer-needle,
   .roulette-wheel.is-spinning .roulette-wheel__hub,
   .roulette-wheel.has-result .roulette-wheel__slice--winner,
   .roulette-wheel__slice--boundary-winner,

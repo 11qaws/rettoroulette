@@ -85,14 +85,16 @@
 }
 
 .draw-preview-director.preview-phase--boundary-entered .draw-preview-director__viewport,
-.draw-preview-director.preview-phase--boundary-crossed .draw-preview-director__viewport {
+.draw-preview-director.preview-phase--boundary-crossed .draw-preview-director__viewport,
+.draw-preview-director.preview-phase--boundary-held .draw-preview-director__viewport {
   transform: translateY(8%) scale(1.28);
   filter: saturate(1.08) contrast(1.03);
 }
 
 .draw-preview-director.preview-phase--dart-launched .draw-preview-director__viewport,
 .draw-preview-director.preview-phase--dart-impacted .draw-preview-director__viewport,
-.draw-preview-director.preview-phase--dart-attached .draw-preview-director__viewport {
+.draw-preview-director.preview-phase--dart-attached .draw-preview-director__viewport,
+.draw-preview-director.preview-phase--dart-names-revealed .draw-preview-director__viewport {
   transform: translateY(7%) scale(1.22);
 }
 

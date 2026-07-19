@@ -173,6 +173,7 @@
   #root .broadcast-focus:is(
     .reveal-phase--boundary-entered,
     .reveal-phase--boundary-crossed,
+    .reveal-phase--boundary-held,
     .reveal-phase--rotation-stopped
   ):not(:has(.roulette-wheel.is-dart)) .broadcast-focus__camera {
     transform-origin: 50% 0%;
@@ -248,6 +249,7 @@
 
   #root .broadcast-focus:is(
     .reveal-phase--boundary-crossed,
+    .reveal-phase--boundary-held,
     .reveal-phase--rotation-stopped
   ):not(:has(.roulette-wheel.is-dart)) {
     --cinematic-camera-scale: 1.44;

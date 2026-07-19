@@ -3,8 +3,12 @@ export const DART_IMPACT_ANGLE = -90;
 export const DART_FLIGHT_DURATION_SECONDS = 1.15;
 export const DART_POST_IMPACT_MIN_SECONDS = 1.05;
 export const DART_POST_IMPACT_MAX_SECONDS = 2.35;
-export const PHOTO_FINISH_MAX_LEAD_DEGREES = 0.9;
+export const PHOTO_FINISH_MAX_LEAD_DEGREES = 2.2;
 export const AUTO_PHOTO_FINISH_MIN_SECONDS = 1.45;
+export const DART_BOUNDARY_MAX_DEGREES = 2.2;
+
+export type RouletteLandingKind = 'near-start' | 'near-end' | 'interior';
+export type RouletteBoundarySide = 'start' | 'end';
 
 export interface DartFlightTiming {
   /** Whole turns added before the selected local landing reaches twelve. */
@@ -18,6 +22,10 @@ export interface DartFlightTiming {
 }
 
 export interface RouletteFinishLanding {
+  /** Physical region inside the already selected winning slice. */
+  kind?: RouletteLandingKind;
+  /** Exact normalized slice coordinate: 0 is start, 1 is end. */
+  positionRatio?: number;
   /** How far outside the winning slice the close-up begins. */
   entryGapDegrees: number;
   /** How far the pointer travels into the winning slice before stopping. */
@@ -41,6 +49,31 @@ export interface DartShotPlan {
   jitterB: { xPixels: number; yPixels: number };
   /** Small face-on roll shared by the flying and embedded dart. */
   rollDegrees: number;
+}
+
+/** Result-neutral moving aim prepared before a dart winner exists. */
+export interface DartAimSession {
+  id: number;
+  startedAt: number;
+  baseAngleDegrees: number;
+  angleAmplitudeDegrees: number;
+  baseRadiusRatio: number;
+  radiusAmplitudeRatio: number;
+  phaseRadians: number;
+  jitterA: { xPixels: number; yPixels: number };
+  jitterB: { xPixels: number; yPixels: number };
+  rollDegrees: number;
+}
+
+/** Click-time physical result derived from the painted aim and live rotor. */
+export interface DartPhysicalCommit {
+  shot: DartShotPlan;
+  impactRotation: number;
+  flightDurationSeconds: number;
+  /** Guards the rotor geometry used at click time from stale visual props. */
+  geometrySignature: string;
+  winnerIndex: number;
+  landing: RouletteFinishLanding;
 }
 
 export interface DartImpactPoint extends DartShotPlan {
@@ -68,6 +101,13 @@ export interface RouletteFinishPlan {
   boundaryAngle: number;
   /** Wheel-local angle beneath the pointer at the final stop. */
   landingAngle: number;
+  landingKind: RouletteLandingKind;
+  boundarySide: RouletteBoundarySide | null;
+  adjacentIndex: number | null;
+  winnerDisplaySide: 'left' | 'right' | null;
+  crossesBoundary: boolean;
+  boundaryDistanceDegrees: number;
+  positionRatio: number;
 }
 
 export interface AutoPhotoFinishTiming {
@@ -116,9 +156,47 @@ function nextUnitRandom(random: () => number) {
 }
 
 /**
- * Creates one result-neutral dart shot after the draw winner has been fixed.
- * Keeping the point on the upper half preserves the readable left/right
- * boundary direction while making consecutive shots visibly distinct.
+ * Creates result-neutral finish variety only after an automatic winner exists.
+ * Dart live draws use physical impact instead; this also drives deterministic
+ * preview samples and keeps legacy callers on the same three-region model.
+ */
+export function createRouletteFinishLanding(
+  presentation: 'spin' | 'dart',
+  random: () => number = Math.random,
+): RouletteFinishLanding {
+  const regionRoll = nextUnitRandom(random);
+  const firstBoundaryCut = presentation === 'spin' ? 0.3 : 0.15;
+  const secondBoundaryCut = presentation === 'spin' ? 0.6 : 0.3;
+
+  if (regionRoll < firstBoundaryCut || regionRoll < secondBoundaryCut) {
+    const kind: RouletteLandingKind = regionRoll < firstBoundaryCut
+      ? 'near-end'
+      : 'near-start';
+    const leadDegrees = presentation === 'spin'
+      ? 1.8 + nextUnitRandom(random) * 2.6
+      : 0.25 + nextUnitRandom(random) * 0.6;
+
+    return {
+      kind,
+      entryGapDegrees: 10 + nextUnitRandom(random) * 8,
+      leadDegrees,
+      boundaryHit: true,
+    };
+  }
+
+  return {
+    kind: 'interior',
+    positionRatio: 0.24 + nextUnitRandom(random) * 0.52,
+    entryGapDegrees: 0,
+    leadDegrees: 0,
+    boundaryHit: false,
+  };
+}
+
+/**
+ * Creates one result-neutral static shot. Live draws normally freeze a sample
+ * from a pre-draw DartAimSession; previews and compatibility tests may use it
+ * directly.
  */
 export function createDartShotPlan(random: () => number = Math.random): DartShotPlan {
   return {
@@ -133,6 +211,62 @@ export function createDartShotPlan(random: () => number = Math.random): DartShot
       yPixels: (nextUnitRandom(random) * 2 - 1) * 5,
     },
     rollDegrees: -12 + nextUnitRandom(random) * 24,
+  };
+}
+
+export function createDartAimSession(
+  id: number,
+  startedAt: number,
+  random: () => number = Math.random,
+): DartAimSession {
+  return {
+    id,
+    startedAt: Number.isFinite(startedAt) ? startedAt : 0,
+    baseAngleDegrees: -106 + nextUnitRandom(random) * 32,
+    angleAmplitudeDegrees: 4.5 + nextUnitRandom(random) * 3,
+    baseRadiusRatio: 0.63 + nextUnitRandom(random) * 0.12,
+    radiusAmplitudeRatio: 0.018 + nextUnitRandom(random) * 0.025,
+    phaseRadians: nextUnitRandom(random) * Math.PI * 2,
+    jitterA: {
+      xPixels: (nextUnitRandom(random) * 2 - 1) * 7,
+      yPixels: (nextUnitRandom(random) * 2 - 1) * 5,
+    },
+    jitterB: {
+      xPixels: (nextUnitRandom(random) * 2 - 1) * 7,
+      yPixels: (nextUnitRandom(random) * 2 - 1) * 5,
+    },
+    rollDegrees: -12 + nextUnitRandom(random) * 24,
+  };
+}
+
+/** Deterministic motion: frame rate never consumes randomness or changes odds. */
+export function sampleDartAimSession(session: DartAimSession, now: number): DartShotPlan {
+  const elapsedSeconds = Math.max(0, (finiteNonNegative(now, session.startedAt) - session.startedAt) / 1_000);
+  const primary = elapsedSeconds * 2.05 + session.phaseRadians;
+  const secondary = elapsedSeconds * 4.7 + session.phaseRadians * 0.63;
+  const impactAngleDegrees = finiteClamped(
+    session.baseAngleDegrees
+      + Math.sin(primary) * session.angleAmplitudeDegrees
+      + Math.sin(secondary) * session.angleAmplitudeDegrees * 0.24,
+    -115,
+    -65,
+    DART_IMPACT_ANGLE,
+  );
+  const impactRadiusRatio = finiteClamped(
+    session.baseRadiusRatio
+      + Math.sin(elapsedSeconds * 2.35 + session.phaseRadians * 1.31)
+        * session.radiusAmplitudeRatio,
+    0.58,
+    0.8,
+    0.72,
+  );
+
+  return {
+    impactAngleDegrees,
+    impactRadiusRatio,
+    jitterA: { ...session.jitterA },
+    jitterB: { ...session.jitterB },
+    rollDegrees: session.rollDegrees,
   };
 }
 
@@ -262,7 +396,8 @@ export function isRoulettePhotoFinish(
   return Boolean(
     requested
     && participantCount > 1
-    && plan.leadDegrees <= PHOTO_FINISH_MAX_LEAD_DEGREES,
+    && plan.landingKind !== 'interior'
+    && plan.boundaryDistanceDegrees <= PHOTO_FINISH_MAX_LEAD_DEGREES,
   );
 }
 
@@ -324,6 +459,16 @@ export function normalizeRouletteWeights(
   return positiveWeights.map((weight) => weight / total);
 }
 
+/** Stable signature for the visible slice geometry used by a physical dart. */
+export function createRouletteGeometrySignature(
+  participantCount: number,
+  weights?: readonly number[],
+) {
+  return normalizeRouletteWeights(participantCount, weights)
+    .map((weight) => weight.toFixed(12))
+    .join('|');
+}
+
 /**
  * Calculates every wedge from the same normalized weights used by the draw.
  * Slice zero begins at the usual twelve-o'clock origin (-90 degrees).
@@ -372,6 +517,72 @@ export function getRouletteSliceIndexAtScreenAngle(
 }
 
 /**
+ * Commits the dart result from the painted target and the live rotor rather
+ * than rotating a preselected winner into place. The result is still known
+ * and persistable at click time, before any reveal animation begins.
+ */
+export function createDartPhysicalCommit(
+  currentRotation: number,
+  angularVelocity: number,
+  participantCount: number,
+  weights: readonly number[] | undefined,
+  shot: DartShotPlan,
+  flightDurationSeconds = DART_FLIGHT_DURATION_SECONDS,
+): DartPhysicalCommit | null {
+  if (participantCount < 1) return null;
+
+  const safeRotation = Number.isFinite(currentRotation) ? currentRotation : 0;
+  const safeVelocity = Math.max(1, finiteNonNegative(angularVelocity, 1));
+  const safeDuration = finiteClamped(flightDurationSeconds, 1, 1.3, DART_FLIGHT_DURATION_SECONDS);
+  const impactPoint = resolveDartImpactPoint(shot);
+  const impactRotation = safeRotation + safeVelocity * safeDuration;
+  const winnerIndex = getRouletteSliceIndexAtScreenAngle(
+    impactRotation,
+    participantCount,
+    weights,
+    impactPoint.impactAngleDegrees,
+  );
+  const winner = getRouletteSliceGeometry(participantCount, weights)[winnerIndex];
+  if (!winner) return null;
+
+  const span = winner.endAngle - winner.startAngle;
+  const localAngle = normalizeAngle(impactPoint.impactAngleDegrees - impactRotation);
+  const offsetFromStart = clamp(normalizeAngle(localAngle - winner.startAngle), 0, span);
+  const positionRatio = span > 0 ? clamp(offsetFromStart / span, 0, 1) : 0.5;
+  const distanceFromStart = offsetFromStart;
+  const distanceFromEnd = Math.max(0, span - offsetFromStart);
+  const threshold = Math.min(DART_BOUNDARY_MAX_DEGREES, span * 0.16);
+  const nearStart = distanceFromStart <= threshold;
+  const nearEnd = distanceFromEnd <= threshold;
+  const kind: RouletteLandingKind = nearStart
+    ? 'near-start'
+    : nearEnd
+      ? 'near-end'
+      : 'interior';
+
+  return {
+    shot: {
+      impactAngleDegrees: impactPoint.impactAngleDegrees,
+      impactRadiusRatio: impactPoint.impactRadiusRatio,
+      jitterA: { ...impactPoint.jitterA },
+      jitterB: { ...impactPoint.jitterB },
+      rollDegrees: impactPoint.rollDegrees,
+    },
+    impactRotation,
+    flightDurationSeconds: safeDuration,
+    geometrySignature: createRouletteGeometrySignature(participantCount, weights),
+    winnerIndex,
+    landing: {
+      kind,
+      positionRatio,
+      entryGapDegrees: 12,
+      leadDegrees: Math.min(distanceFromStart, distanceFromEnd),
+      boundaryHit: kind !== 'interior',
+    },
+  };
+}
+
+/**
  * Places the centre of a wheel slice beneath a fixed presentation point.
  * The pointer and dart share this calculation; only the reveal changes.
  */
@@ -403,15 +614,143 @@ export function nextWheelRotation(
   return currentRotation + Math.max(0, fullTurns) * 360 + alignmentDelta;
 }
 
-/**
- * Builds the three clockwise positions used by the shared auto/dart finish.
- *
- * Positive wheel rotation makes the fixed pointer move backwards through the
- * wheel's local angles. The close-up therefore starts just beyond the
- * winner's end angle, crosses that boundary, and stops inside the winner.
- * Distances are clamped to their respective wedges so even very narrow or
- * wrap-around weighted slices cannot accidentally expose another result.
- */
+type ResolvedLandingGeometry = {
+  kind: RouletteLandingKind;
+  boundarySide: RouletteBoundarySide | null;
+  adjacentIndex: number | null;
+  winnerDisplaySide: 'left' | 'right' | null;
+  crossesBoundary: boolean;
+  entryGapDegrees: number;
+  boundaryDistanceDegrees: number;
+  positionRatio: number;
+  focusAngle: number;
+  boundaryAngle: number;
+  landingAngle: number;
+};
+
+function resolveLandingGeometry(
+  winnerIndex: number,
+  participantCount: number,
+  weights: readonly number[] | undefined,
+  landing: RouletteFinishLanding,
+): ResolvedLandingGeometry | null {
+  const slices = getRouletteSliceGeometry(participantCount, weights);
+  const winner = slices[winnerIndex];
+  if (!winner) return null;
+
+  const winnerSpan = winner.endAngle - winner.startAngle;
+  const legacyKind: RouletteLandingKind = landing.boundaryHit === false
+    ? 'interior'
+    : 'near-end';
+  const kind = landing.kind ?? legacyKind;
+  const hasExactRatio = Number.isFinite(landing.positionRatio);
+  const requestedRatio = finiteClamped(
+    landing.positionRatio ?? 0.5,
+    0,
+    1,
+    0.5,
+  );
+  const requestedLead = finiteNonNegative(landing.leadDegrees, 12);
+  const requestedProofClearance = finiteNonNegative(landing.minimumProofLeadDegrees ?? 0, 0);
+
+  if (kind === 'interior') {
+    const legacyRatio = winnerSpan > 0 ? 1 - requestedLead / winnerSpan : 0.5;
+    const positionRatio = finiteClamped(
+      hasExactRatio ? requestedRatio : legacyRatio,
+      0.001,
+      0.999,
+      0.5,
+    );
+    const landingAngle = winner.startAngle + winnerSpan * positionRatio;
+    const distanceFromStart = winnerSpan * positionRatio;
+    const distanceFromEnd = winnerSpan - distanceFromStart;
+    const boundarySide: RouletteBoundarySide = distanceFromStart <= distanceFromEnd
+      ? 'start'
+      : 'end';
+
+    return {
+      kind,
+      boundarySide: null,
+      adjacentIndex: null,
+      winnerDisplaySide: null,
+      crossesBoundary: false,
+      entryGapDegrees: 0,
+      boundaryDistanceDegrees: Math.min(distanceFromStart, distanceFromEnd),
+      positionRatio,
+      focusAngle: landingAngle,
+      boundaryAngle: boundarySide === 'start' ? winner.startAngle : winner.endAngle,
+      landingAngle,
+    };
+  }
+
+  const boundarySide: RouletteBoundarySide = kind === 'near-start' ? 'start' : 'end';
+  const ratioClearance = boundarySide === 'start'
+    ? requestedRatio * winnerSpan
+    : (1 - requestedRatio) * winnerSpan;
+  const rawClearance = hasExactRatio ? ratioClearance : requestedLead;
+  const minimumClearance = hasExactRatio
+    ? 0
+    : Math.min(0.1, winnerSpan * 0.1);
+  const proofClearance = Math.min(requestedProofClearance, winnerSpan / 2);
+  const boundaryDistanceDegrees = clamp(
+    Math.max(rawClearance, proofClearance),
+    minimumClearance,
+    winnerSpan / 2,
+  );
+  const positionRatio = boundarySide === 'start'
+    ? boundaryDistanceDegrees / winnerSpan
+    : 1 - boundaryDistanceDegrees / winnerSpan;
+  const requestedEntryGap = finiteNonNegative(landing.entryGapDegrees, 8);
+
+  if (boundarySide === 'start') {
+    const focusPadding = Math.min(2, winnerSpan * 0.12);
+    const maximumFocusDistance = Math.max(boundaryDistanceDegrees, winnerSpan * 0.9);
+    const minimumFocusDistance = Math.min(
+      maximumFocusDistance,
+      boundaryDistanceDegrees + focusPadding,
+    );
+    const entryGapDegrees = clamp(
+      requestedEntryGap,
+      minimumFocusDistance,
+      maximumFocusDistance,
+    );
+
+    return {
+      kind,
+      boundarySide,
+      adjacentIndex: (winnerIndex - 1 + participantCount) % participantCount,
+      winnerDisplaySide: 'right',
+      crossesBoundary: false,
+      entryGapDegrees,
+      boundaryDistanceDegrees,
+      positionRatio,
+      focusAngle: winner.startAngle + entryGapDegrees,
+      boundaryAngle: winner.startAngle,
+      landingAngle: winner.startAngle + boundaryDistanceDegrees,
+    };
+  }
+
+  const nextSlice = slices[(winnerIndex + 1) % slices.length];
+  const nextSpan = nextSlice.endAngle - nextSlice.startAngle;
+  const minimumEntryGap = Math.min(0.1, nextSpan * 0.1);
+  const entryGapDegrees = clamp(requestedEntryGap, minimumEntryGap, nextSpan * 0.9);
+
+  return {
+    kind,
+    boundarySide,
+    adjacentIndex: (winnerIndex + 1) % participantCount,
+    winnerDisplaySide: 'left',
+    crossesBoundary: true,
+    entryGapDegrees,
+    boundaryDistanceDegrees,
+    positionRatio,
+    focusAngle: winner.endAngle + entryGapDegrees,
+    boundaryAngle: winner.endAngle,
+    landingAngle: winner.endAngle - boundaryDistanceDegrees,
+  };
+}
+
+/** Builds a monotonic clockwise finish for either edge or the slice interior. */
 export function buildRouletteFinishPlan(
   currentRotation: number,
   winnerIndex: number,
@@ -425,10 +764,9 @@ export function buildRouletteFinishPlan(
   presentationAngle = AUTO_POINTER_ANGLE,
 ): RouletteFinishPlan {
   const safeCurrentRotation = Number.isFinite(currentRotation) ? currentRotation : 0;
-  const slices = getRouletteSliceGeometry(participantCount, weights);
-  const winner = slices[winnerIndex];
+  const geometry = resolveLandingGeometry(winnerIndex, participantCount, weights, landing);
 
-  if (!winner) {
+  if (!geometry) {
     return {
       focusRotation: safeCurrentRotation,
       boundaryRotation: safeCurrentRotation,
@@ -438,47 +776,48 @@ export function buildRouletteFinishPlan(
       focusAngle: 0,
       boundaryAngle: 0,
       landingAngle: 0,
+      landingKind: 'interior',
+      boundarySide: null,
+      adjacentIndex: null,
+      winnerDisplaySide: null,
+      crossesBoundary: false,
+      boundaryDistanceDegrees: 0,
+      positionRatio: 0.5,
     };
   }
 
-  const nextSlice = slices[(winnerIndex + 1) % slices.length];
-  const winnerSpan = winner.endAngle - winner.startAngle;
-  const nextSpan = nextSlice.endAngle - nextSlice.startAngle;
-  const requestedEntryGap = finiteNonNegative(landing.entryGapDegrees, 8);
-  const requestedLead = finiteNonNegative(landing.leadDegrees, 12);
-  const requestedProofClearance = finiteNonNegative(landing.minimumProofLeadDegrees ?? 0, 0);
-
-  // Leave ten per cent of either wedge untouched so the focus and final
-  // positions remain unambiguously on their intended sides of the boundary.
-  const minimumEntryGap = Math.min(0.1, nextSpan * 0.1);
-  const minimumLead = Math.min(0.1, winnerSpan * 0.1);
-  const proofClearance = Math.min(requestedProofClearance, winnerSpan / 2);
-  const entryGapDegrees = clamp(requestedEntryGap, minimumEntryGap, nextSpan * 0.9);
-  const leadDegrees = clamp(
-    Math.max(requestedLead, proofClearance),
-    minimumLead,
-    winnerSpan * 0.9,
-  );
-  const boundaryAngle = winner.endAngle;
-  const focusAngle = boundaryAngle + entryGapDegrees;
-  const landingAngle = boundaryAngle - leadDegrees;
-  const focusTarget = normalizeAngle(presentationAngle - focusAngle);
+  const focusTarget = normalizeAngle(presentationAngle - geometry.focusAngle);
   const currentAngle = normalizeAngle(safeCurrentRotation);
   const alignmentDelta = normalizeAngle(focusTarget - currentAngle);
   const safeTurns = finiteNonNegative(fullTurns, 0);
   const focusRotation = safeCurrentRotation + safeTurns * 360 + alignmentDelta;
-  const boundaryRotation = focusRotation + entryGapDegrees;
-  const finalRotation = boundaryRotation + leadDegrees;
+  const finalRotation = geometry.kind === 'interior'
+    ? focusRotation
+    : geometry.boundarySide === 'start'
+      ? focusRotation + geometry.focusAngle - geometry.landingAngle
+      : focusRotation + geometry.entryGapDegrees + geometry.boundaryDistanceDegrees;
+  const boundaryRotation = geometry.kind === 'interior'
+    ? finalRotation
+    : geometry.boundarySide === 'start'
+      ? finalRotation + geometry.boundaryDistanceDegrees
+      : focusRotation + geometry.entryGapDegrees;
 
   return {
     focusRotation,
     boundaryRotation,
     finalRotation,
-    entryGapDegrees,
-    leadDegrees,
-    focusAngle,
-    boundaryAngle,
-    landingAngle,
+    entryGapDegrees: geometry.entryGapDegrees,
+    leadDegrees: geometry.boundaryDistanceDegrees,
+    focusAngle: geometry.focusAngle,
+    boundaryAngle: geometry.boundaryAngle,
+    landingAngle: geometry.landingAngle,
+    landingKind: geometry.kind,
+    boundarySide: geometry.boundarySide,
+    adjacentIndex: geometry.adjacentIndex,
+    winnerDisplaySide: geometry.winnerDisplaySide,
+    crossesBoundary: geometry.crossesBoundary,
+    boundaryDistanceDegrees: geometry.boundaryDistanceDegrees,
+    positionRatio: geometry.positionRatio,
   };
 }
 
@@ -528,6 +867,75 @@ export function buildDartRouletteFinishPlan(
     boundaryRotation: impactRotation,
     finalRotation: finalPlan.finalRotation,
     impactRotation,
+    coastTurns: safeCoastTurns,
+    impactAngleDegrees: impactPoint.impactAngleDegrees,
+    impactRadiusRatio: impactPoint.impactRadiusRatio,
+  };
+}
+
+/**
+ * Continues from an already committed physical impact. Unlike the legacy
+ * preview helper above, this never rotates a selected winner into the shot;
+ * the impact rotation itself was what selected the winner.
+ */
+export function buildCommittedDartRouletteFinishPlan(
+  commit: DartPhysicalCommit,
+  participantCount: number,
+  coastTurns: number,
+  weights?: readonly number[],
+): DartRouletteFinishPlan {
+  const impactPoint = resolveDartImpactPoint(commit.shot);
+  const geometry = resolveLandingGeometry(
+    commit.winnerIndex,
+    participantCount,
+    weights,
+    commit.landing,
+  );
+  const safeCoastTurns = Math.max(1, Math.floor(finiteNonNegative(coastTurns, 1)));
+  const alignmentToPointer = normalizeAngle(AUTO_POINTER_ANGLE - impactPoint.impactAngleDegrees);
+  const finalRotation = commit.impactRotation + safeCoastTurns * 360 + alignmentToPointer;
+
+  if (!geometry) {
+    return {
+      focusRotation: commit.impactRotation,
+      boundaryRotation: commit.impactRotation,
+      finalRotation,
+      entryGapDegrees: 0,
+      leadDegrees: 0,
+      focusAngle: 0,
+      boundaryAngle: 0,
+      landingAngle: 0,
+      landingKind: 'interior',
+      boundarySide: null,
+      adjacentIndex: null,
+      winnerDisplaySide: null,
+      crossesBoundary: false,
+      boundaryDistanceDegrees: 0,
+      positionRatio: 0.5,
+      impactRotation: commit.impactRotation,
+      coastTurns: safeCoastTurns,
+      impactAngleDegrees: impactPoint.impactAngleDegrees,
+      impactRadiusRatio: impactPoint.impactRadiusRatio,
+    };
+  }
+
+  return {
+    focusRotation: commit.impactRotation,
+    boundaryRotation: commit.impactRotation,
+    finalRotation,
+    entryGapDegrees: geometry.entryGapDegrees,
+    leadDegrees: geometry.boundaryDistanceDegrees,
+    focusAngle: geometry.landingAngle,
+    boundaryAngle: geometry.boundaryAngle,
+    landingAngle: geometry.landingAngle,
+    landingKind: geometry.kind,
+    boundarySide: geometry.boundarySide,
+    adjacentIndex: geometry.adjacentIndex,
+    winnerDisplaySide: geometry.winnerDisplaySide,
+    crossesBoundary: false,
+    boundaryDistanceDegrees: geometry.boundaryDistanceDegrees,
+    positionRatio: geometry.positionRatio,
+    impactRotation: commit.impactRotation,
     coastTurns: safeCoastTurns,
     impactAngleDegrees: impactPoint.impactAngleDegrees,
     impactRadiusRatio: impactPoint.impactRadiusRatio,
