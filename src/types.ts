@@ -19,6 +19,8 @@ export interface Prize {
 
 export interface DrawRecord {
   id: string;
+  /** Groups consecutive rounds shown in one open broadcast stage. */
+  sessionId?: string;
   /** Selection time, fixed at the button press that committed this result. */
   createdAt: string;
   /** Optional on-air reveal time after the wheel or dart animation finishes. */

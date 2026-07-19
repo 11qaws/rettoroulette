@@ -1,11 +1,14 @@
 {
   "name": "rettoroulette",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.10.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "pages:build": "npm run build && node scripts/pages.mjs sync",
+    "pages:verify": "node scripts/pages.mjs verify",
+    "pages:health": "node scripts/pages.mjs health",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

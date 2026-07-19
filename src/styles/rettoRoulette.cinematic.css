@@ -239,6 +239,18 @@
     visibility 0s linear var(--cinematic-ui-duration);
 }
 
+/* Motion owns the canvas. Titles and proof copy may never sit on top of the
+   wheel, including the short result-lock beat before rotor deceleration. */
+.broadcast-focus.is-stage-only :is(
+  .broadcast-focus__heading,
+  .broadcast-focus__fairness,
+  .broadcast-focus__prompt,
+  .broadcast-focus__results,
+  .broadcast-focus__action
+) {
+  display: none;
+}
+
 /* Keep the live count, but quiet everything that competes with the wheel. */
 @supports selector(.app-shell:has(.broadcast-focus)) {
   .app-shell--live:has(
@@ -309,6 +321,45 @@
 /* --------------------------------------------------------------------------
    Winner ribbon and result docking
    -------------------------------------------------------------------------- */
+
+.broadcast-focus.has-hero-panel {
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 29vw, 500px);
+}
+
+.broadcast-focus__hero {
+  grid-area: results;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+}
+
+.winner-hero.broadcast-focus__hero-card {
+  width: 100%;
+  min-height: clamp(300px, 50vh, 520px);
+  padding: clamp(12px, 1.5vw, 20px);
+  border-width: 2px;
+}
+
+.broadcast-focus__hero-card .winner-hero__card {
+  width: 100%;
+  gap: 10px;
+  padding: clamp(20px, 2.3vw, 34px) 16px;
+}
+
+.broadcast-focus__hero-card .winner-hero__name,
+.broadcast-focus__hero-card.is-long-name .winner-hero__name,
+.broadcast-focus__hero-card.is-very-long-name .winner-hero__name {
+  font-size: clamp(34px, 4.2vw, 64px);
+}
+
+.broadcast-focus__hero-card.is-long-name .winner-hero__name {
+  font-size: clamp(28px, 3.4vw, 50px);
+}
+
+.broadcast-focus__hero-card.is-very-long-name .winner-hero__name {
+  font-size: clamp(22px, 2.8vw, 40px);
+}
 
 /* The proof wheel remains visible under the announcement. */
 .broadcast-focus.is-winner-hero .broadcast-focus__camera,
@@ -548,6 +599,14 @@
   max-block-size: none;
 }
 
+.broadcast-focus.is-completed :is(
+  .broadcast-focus__heading,
+  .broadcast-focus__fairness,
+  .broadcast-focus__prompt
+) {
+  display: none;
+}
+
 .broadcast-focus.is-completed .broadcast-focus__action {
   visibility: visible;
   opacity: 1;
@@ -729,7 +788,7 @@
   .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel,
   .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel.is-dart,
   .broadcast-focus.is-completed .broadcast-focus__visual .roulette-wheel.roulette-wheel:not(.is-dart) {
-    --wheel-size: clamp(580px, min(39vw, 68vh), 760px);
+    --wheel-size: min(calc(100% - 2.7rem), 68vh, 760px);
     --wheel-stage-padding: 1.35rem;
   }
 
@@ -856,6 +915,18 @@
 }
 
 @media (max-width: 900px) {
+  .broadcast-focus.has-hero-panel {
+    grid-template-areas:
+      'stage'
+      'results';
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .winner-hero.broadcast-focus__hero-card {
+    min-height: min(330px, 48vh);
+  }
+
   .broadcast-focus__winner-hero .winner-hero__card {
     right: 10px;
     bottom: 12px;

@@ -3,6 +3,8 @@ export const DART_IMPACT_ANGLE = -90;
 export const DART_FLIGHT_DURATION_SECONDS = 1.15;
 export const DART_POST_IMPACT_MIN_SECONDS = 1.05;
 export const DART_POST_IMPACT_MAX_SECONDS = 2.35;
+export const PHOTO_FINISH_MAX_LEAD_DEGREES = 0.9;
+export const AUTO_PHOTO_FINISH_MIN_SECONDS = 1.45;
 
 export interface DartFlightTiming {
   /** Whole turns added before the selected local landing reaches twelve. */
@@ -41,6 +43,13 @@ export interface RouletteFinishPlan {
   boundaryAngle: number;
   /** Wheel-local angle beneath the pointer at the final stop. */
   landingAngle: number;
+}
+
+export interface AutoPhotoFinishTiming {
+  brakeDuration: number;
+  photoFinishDuration: number;
+  photoFinishEntryVelocity: number;
+  brakeBezier: string;
 }
 
 export interface DartRouletteFinishPlan extends RouletteFinishPlan {
@@ -150,6 +159,50 @@ export function calculateDartFlightTiming(
     distance: safeBaseDistance,
     duration: safeBaseDistance / safeVelocity,
     angularVelocity: safeVelocity,
+  };
+}
+
+export function isRoulettePhotoFinish(
+  requested: boolean | undefined,
+  participantCount: number,
+  plan: RouletteFinishPlan,
+) {
+  return Boolean(
+    requested
+    && participantCount > 1
+    && plan.leadDegrees <= PHOTO_FINISH_MAX_LEAD_DEGREES,
+  );
+}
+
+/**
+ * Matches the end velocity of the high-speed brake to the first velocity of
+ * the final quadratic creep. This prevents a visual speed jump between the
+ * two physical auto-wheel stages.
+ */
+export function calculateAutoPhotoFinishTiming(
+  startingRotation: number,
+  plan: RouletteFinishPlan,
+  startingVelocity: number,
+): AutoPhotoFinishTiming {
+  const safeStartingVelocity = Math.max(1, finiteNonNegative(startingVelocity, 1));
+  const brakeDistance = Math.max(1, plan.focusRotation - startingRotation);
+  const photoFinishDistance = Math.max(0.1, plan.finalRotation - plan.focusRotation);
+  const photoFinishDuration = AUTO_PHOTO_FINISH_MIN_SECONDS
+    + Math.min(0.3, photoFinishDistance / 90);
+  const photoFinishEntryVelocity = (2 * photoFinishDistance) / photoFinishDuration;
+  const brakeDuration = Math.max(
+    2.8,
+    Math.min(4.9, (2 * brakeDistance) / (safeStartingVelocity + photoFinishEntryVelocity)),
+  );
+  const velocitySum = safeStartingVelocity + photoFinishEntryVelocity;
+  const y1 = (2 * safeStartingVelocity) / (3 * velocitySum);
+  const y2 = 1 - (2 * photoFinishEntryVelocity) / (3 * velocitySum);
+
+  return {
+    brakeDuration,
+    photoFinishDuration,
+    photoFinishEntryVelocity,
+    brakeBezier: `cubic-bezier(0.3333, ${y1.toFixed(4)}, 0.6667, ${y2.toFixed(4)})`,
   };
 }
 

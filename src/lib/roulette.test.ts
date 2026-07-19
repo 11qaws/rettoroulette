@@ -6,9 +6,11 @@ import {
   DART_FLIGHT_DURATION_SECONDS,
   buildDartRouletteFinishPlan,
   buildRouletteFinishPlan,
+  calculateAutoPhotoFinishTiming,
   calculateDartFlightTiming,
   calculateDartPostImpactDuration,
   getRouletteSliceGeometry,
+  isRoulettePhotoFinish,
   nextWheelRotation,
   normalizeRouletteWeights,
   targetWheelRotation,
@@ -152,6 +154,44 @@ describe('buildRouletteFinishPlan', () => {
     expect(plan.leadDegrees).toBeGreaterThan(0);
     expect(plan.focusRotation).toBeLessThan(plan.boundaryRotation);
     expect(plan.boundaryRotation).toBeLessThan(plan.finalRotation);
+  });
+});
+
+describe('auto roulette photo finish', () => {
+  it('activates only for a genuinely near-boundary landing', () => {
+    const near = buildRouletteFinishPlan(0, 0, 8, 4, undefined, {
+      entryGapDegrees: 15,
+      leadDegrees: 0.6,
+      boundaryHit: true,
+    });
+    const ordinary = buildRouletteFinishPlan(0, 0, 8, 4, undefined, {
+      entryGapDegrees: 15,
+      leadDegrees: 8,
+      boundaryHit: true,
+    });
+
+    expect(isRoulettePhotoFinish(true, 8, near)).toBe(true);
+    expect(isRoulettePhotoFinish(false, 8, near)).toBe(false);
+    expect(isRoulettePhotoFinish(true, 1, near)).toBe(false);
+    expect(isRoulettePhotoFinish(true, 8, ordinary)).toBe(false);
+  });
+
+  it('matches the brake exit speed to a slow final creep lasting at least 1.45s', () => {
+    const startingRotation = 0;
+    const startingVelocity = 780;
+    const plan = buildRouletteFinishPlan(startingRotation, 2, 10, 4, undefined, {
+      entryGapDegrees: 16,
+      leadDegrees: 0.5,
+      boundaryHit: true,
+    });
+    const timing = calculateAutoPhotoFinishTiming(startingRotation, plan, startingVelocity);
+    const brakeDistance = plan.focusRotation - startingRotation;
+    const brakeExitVelocity = (2 * brakeDistance) / timing.brakeDuration - startingVelocity;
+
+    expect(timing.photoFinishDuration).toBeGreaterThanOrEqual(1.45);
+    expect(timing.brakeDuration).toBeGreaterThanOrEqual(2.8);
+    expect(brakeExitVelocity).toBeCloseTo(timing.photoFinishEntryVelocity, 8);
+    expect(plan.finalRotation - plan.boundaryRotation).toBeCloseTo(0.5, 10);
   });
 });
 

@@ -180,7 +180,7 @@ export default function DrawPreviewDirector({
             spinKey={spinKey}
             revealId={spinKey}
             presentation={presentation}
-            landing={{ entryGapDegrees: 10, leadDegrees: 8, boundaryHit: presentation === 'dart' }}
+            landing={{ entryGapDegrees: 14, leadDegrees: 0.55, boundaryHit: true }}
             onRevealPhase={handleRevealPhase}
             onSpinEnd={() => finishCycle(visualRunId)}
           />

@@ -781,12 +781,12 @@
 }
 
 .broadcast-focus__visual .roulette-wheel {
-  --wheel-size: min(52vw, 39rem, 53vh);
+  --wheel-size: min(calc(100% - 2rem), 39rem, 53vh);
 }
 
 /* The dart camera needs room for the fixed twelve-o'clock impact point. */
 .broadcast-focus__visual .roulette-wheel.is-dart {
-  --wheel-size: min(52vw, 38rem, 52vh);
+  --wheel-size: min(calc(100% - 2rem), 38rem, 52vh);
   --wheel-stage-padding: clamp(1.5rem, 3.4vw, 2.7rem);
 }
 
@@ -882,7 +882,7 @@
 }
 
 .broadcast-focus.is-stage-only .broadcast-focus__visual .roulette-wheel {
-  --wheel-size: min(62vw, 42rem, 59vh);
+  --wheel-size: min(calc(100% - 3rem), 42rem, 59vh);
   --wheel-stage-padding: clamp(1.1rem, 2.4vw, 2rem);
 }
 

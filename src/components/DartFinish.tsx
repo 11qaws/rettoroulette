@@ -60,6 +60,9 @@ export default function DartFinish({
     <div className={rootClassName} data-phase={phase} style={style} aria-hidden="true">
       <span className="dart-finish__flash" />
       <span className="dart-finish__speed-field" />
+      <span className="dart-finish__target" data-dart-impact-anchor="screen">
+        <span />
+      </span>
 
       <span className="dart-finish__ring dart-finish__ring--one" />
       <span className="dart-finish__ring dart-finish__ring--two" />
@@ -115,12 +118,12 @@ export function BoundaryNames({
       style={style}
       aria-hidden="true"
     >
-      <span className="boundary-names__candidate boundary-names__candidate--before">
-        {beforeName}
-      </span>
-      <span className="boundary-names__marker">경계</span>
       <span className="boundary-names__candidate boundary-names__candidate--after">
         {afterName}
+      </span>
+      <span className="boundary-names__marker">경계</span>
+      <span className="boundary-names__candidate boundary-names__candidate--before">
+        {beforeName}
       </span>
     </div>
   );
@@ -153,7 +156,7 @@ export function EmbeddedDart({
       style={style}
       aria-hidden="true"
     >
-      <span className="embedded-dart__pin">
+      <span className="embedded-dart__pin" data-dart-impact-anchor="board">
         <span className="embedded-dart__core" />
         <span className="embedded-dart__fin embedded-dart__fin--north" />
         <span className="embedded-dart__fin embedded-dart__fin--east" />

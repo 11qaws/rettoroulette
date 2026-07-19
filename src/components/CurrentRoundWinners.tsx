@@ -12,10 +12,10 @@ export type CurrentRoundWinner = {
 };
 
 export interface CurrentRoundWinnersProps {
-  /** Every winner from the completed current draw, in draw order. */
+  /** Every winner revealed in the current broadcast session, in reveal order. */
   winners: readonly CurrentRoundWinner[];
-  /** Number requested for this draw. Defaults to the number of supplied winners. */
-  drawCount?: number;
+  /** Places still waiting to be revealed in the active round. */
+  pendingCount?: number;
   /** Visible unit for the result target, for example 명 or 개. */
   unit?: string;
   /** Shown beneath the list, for example the duplicate-winner removal policy. */
@@ -29,9 +29,9 @@ export interface CurrentRoundWinnersProps {
   className?: string;
 }
 
-function normalizedCount(drawCount: number | undefined, fallback: number) {
-  if (typeof drawCount !== 'number' || !Number.isFinite(drawCount)) return fallback;
-  return Math.max(0, Math.floor(drawCount));
+function normalizedCount(value: number | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.floor(value));
 }
 
 function itemKey(winner: CurrentRoundWinner, index: number) {
@@ -39,7 +39,7 @@ function itemKey(winner: CurrentRoundWinner, index: number) {
 }
 
 /**
- * A persistent broadcast board for the winners from one completed draw.
+ * A persistent broadcast board for every winner revealed in one stage session.
  *
  * The complete revealed-winner array is always rendered in draw order. Pending
  * places are intentionally represented by one summary instead of dozens of
@@ -47,11 +47,11 @@ function itemKey(winner: CurrentRoundWinner, index: number) {
  */
 export default function CurrentRoundWinners({
   winners,
-  drawCount,
+  pendingCount: pendingCountProp,
   unit = '명',
   removalMessage,
   latestWinnerId,
-  title = '이번 룰렛 당첨자',
+  title = '전체 당첨자',
   announcement,
   className,
 }: CurrentRoundWinnersProps) {
@@ -59,9 +59,7 @@ export default function CurrentRoundWinners({
   const bodyRef = useRef<HTMLDivElement>(null);
   const scrollTargetRef = useRef<HTMLLIElement>(null);
   const previousWinnerCountRef = useRef(0);
-  const requestedCount = normalizedCount(drawCount, winners.length);
-  const count = Math.max(requestedCount, winners.length);
-  const pendingCount = count - winners.length;
+  const pendingCount = normalizedCount(pendingCountProp);
   const latestIndex = latestWinnerId
     ? winners.findIndex((winner) => winner.id === latestWinnerId)
     : -1;
@@ -75,12 +73,10 @@ export default function CurrentRoundWinners({
     className,
   ].filter(Boolean).join(' ');
   const unitSubjectParticle = unit === '명' ? '이' : '가';
-  const announcementText = announcement ?? (winners.length > 0 ? `이번 추첨 당첨자 ${winners.length}${unit}${unitSubjectParticle} 발표되었습니다.` : undefined);
+  const announcementText = announcement ?? (winners.length > 0 ? `방송 누적 당첨자 ${winners.length}${unit}${unitSubjectParticle} 발표되었습니다.` : undefined);
   const eyebrow = winners.length === 0
-    ? `🍸 ${unit === '명' ? '전체 당첨자' : '뽑힌 상품'} 준비`
-    : isComplete
-      ? `🎉 ${unit === '명' ? '전체 당첨자' : '뽑힌 상품'}`
-      : `🎉 ${unit === '명' ? '전체 당첨자' : '뽑힌 상품'} · ${winners.length}${unit} 발표`;
+    ? `🍸 ${unit === '명' ? '방송 전체 당첨자' : '방송에서 뽑힌 상품'}`
+    : `🎉 누적 ${winners.length}${unit}`;
 
   useEffect(() => {
     const didAppend = winners.length > previousWinnerCountRef.current;
@@ -130,11 +126,9 @@ export default function CurrentRoundWinners({
         </div>
         <span
           className="current-round-winners__count"
-          aria-label={winners.length > 0
-            ? `전체 ${count}${unit} 중 ${winners.length}${unit} 발표`
-            : `전체 ${count}${unit} 중 아직 발표된 당첨자 없음`}
+          aria-label={`방송 누적 ${winners.length}${unit}`}
         >
-          {winners.length}/{count}
+          누적 {winners.length}{unit}
         </span>
       </header>
 
@@ -143,16 +137,12 @@ export default function CurrentRoundWinners({
           <div className="current-round-winners__empty">
             <span className="current-round-winners__empty-mark" aria-hidden="true">🍸</span>
             <strong>아직 당첨자가 없습니다</strong>
-            <small>
-              {count > 0
-                ? `추첨을 시작하면 ${count}${unit}의 결과가 순서대로 표시됩니다.`
-                : '추첨을 시작하면 결과가 순서대로 표시됩니다.'}
-            </small>
+            <small>결과가 발표될 때마다 이 방송의 전체 명단에 쌓입니다.</small>
           </div>
         ) : (
           <ol
             className={`current-round-winners__list${useTwoColumns ? ' current-round-winners__list--two-column' : ''}`}
-            aria-label={`${title} · 전체 ${count}${unit} 중 ${winners.length}${unit} 발표`}
+            aria-label={`${title} · 방송 누적 ${winners.length}${unit}`}
           >
             {winners.map((winner, index) => {
               const isLatest = index === latestIndex;
@@ -172,7 +162,7 @@ export default function CurrentRoundWinners({
                     {winner.detail && <small>{winner.detail}</small>}
                   </span>
                   <span className="current-round-winners__state">
-                    {isLatest ? (isComplete ? '마지막 당첨' : '방금 당첨') : '당첨'}
+                    {isLatest ? '방금 당첨' : '당첨'}
                   </span>
                 </li>
               );
@@ -183,12 +173,12 @@ export default function CurrentRoundWinners({
         {winners.length > 0 && pendingCount > 0 ? (
           <p
             className="current-round-winners__pending-summary"
-            aria-label={`아직 추첨되지 않은 ${pendingCount}${unit}`}
+            aria-label={`이번 회차에서 아직 추첨되지 않은 ${pendingCount}${unit}`}
           >
             <span className="current-round-winners__pending-icon" aria-hidden="true">…</span>
             <span>
-              <strong>추첨 대기</strong>
-              <small>아직 {pendingCount}{unit} 남았어요</small>
+              <strong>이번 회차 대기</strong>
+              <small>{pendingCount}{unit} 남음</small>
             </span>
             <b aria-hidden="true">+{pendingCount}</b>
           </p>

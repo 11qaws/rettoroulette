@@ -1,6 +1,4 @@
 .dart-finish {
-  --dart-impact-x: 50%;
-  --dart-impact-y: 14%;
   --dart-launch-duration: 0.43s;
   --dart-approach-duration: 0.72s;
   position: absolute;
@@ -14,6 +12,7 @@
 
 .dart-finish__flash,
 .dart-finish__speed-field,
+.dart-finish__target,
 .dart-finish__ring,
 .dart-finish__projectile,
 .dart-finish__impact-ring,
@@ -23,6 +22,39 @@
   left: var(--dart-impact-x);
   top: var(--dart-impact-y);
   pointer-events: none;
+}
+
+.dart-finish__target {
+  z-index: 7;
+  width: calc(var(--dart-face-size) * 1.18);
+  aspect-ratio: 1;
+  border: 0.1rem solid color-mix(in srgb, var(--cream, #fff9e7) 92%, transparent);
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 47%, var(--ink, #251c32) 47% 53%, transparent 53%),
+    linear-gradient(transparent 47%, var(--ink, #251c32) 47% 53%, transparent 53%);
+  box-shadow:
+    0 0 0 0.16rem color-mix(in srgb, var(--hot-pink, #ff4f87) 82%, transparent),
+    0 0 0.8rem color-mix(in srgb, var(--cream, #fff9e7) 70%, transparent);
+  opacity: 0.74;
+  transform: translate(-50%, -50%);
+  transition: opacity 120ms ease, transform 160ms ease;
+}
+
+.dart-finish__target > span {
+  position: absolute;
+  inset: 34%;
+  border-radius: 50%;
+  background: var(--lemon, #ffe45c);
+}
+
+.dart-finish--impact .dart-finish__target {
+  animation: dart-target-hit 50ms linear both;
+}
+
+.dart-finish--coast .dart-finish__target,
+.dart-finish--settled .dart-finish__target {
+  opacity: 0;
 }
 
 .dart-finish__flash {
@@ -80,7 +112,7 @@
 /* A dart seen from directly behind: no diagonal entry, only depth and speed. */
 .dart-finish__projectile {
   z-index: 8;
-  width: clamp(1.4rem, 4.8vw, 2.6rem);
+  width: var(--dart-face-size);
   aspect-ratio: 1;
   opacity: 0;
   transform: translate(-50%, -50%) scale(5.8);
@@ -212,13 +244,16 @@
 .dart-finish--impact .dart-finish__impact-spark--two { animation-delay: 45ms; }
 .dart-finish--impact .dart-finish__impact-spark--three { animation-delay: 80ms; }
 
+.dart-finish--impact .dart-finish__projectile {
+  animation: dart-projectile-handoff 100ms linear both;
+}
+
 .dart-finish--impact.is-boundary-hit .dart-finish__boundary-callout {
   animation: dart-boundary-callout 430ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
 }
 
 /* The physical dart is in rotor space and therefore inherits every turn. */
 .embedded-dart {
-  --dart-impact-y: 14%;
   position: absolute;
   z-index: 8;
   inset: 0;
@@ -231,11 +266,23 @@
 .embedded-dart__pin {
   position: absolute;
   top: var(--dart-impact-y);
-  left: 50%;
-  width: clamp(1.3rem, 4.2vw, 2.25rem);
+  left: var(--dart-impact-x);
+  width: var(--dart-face-size);
   aspect-ratio: 1;
   transform: translate(-50%, -50%) scale(1);
   filter: drop-shadow(0.12rem 0.2rem 0 color-mix(in srgb, var(--ink, #251c32) 38%, transparent));
+}
+
+.embedded-dart__pin::before {
+  position: absolute;
+  z-index: -1;
+  inset: -18%;
+  content: '';
+  border: 0.12rem solid var(--cream, #fff9e7);
+  border-radius: 50%;
+  box-shadow: 0 0 0 0.12rem color-mix(in srgb, var(--lemon, #ffe45c) 88%, transparent);
+  opacity: 0;
+  transform: scale(0.45);
 }
 
 .embedded-dart__pin::after {
@@ -261,6 +308,10 @@
 
 .embedded-dart--impact .embedded-dart__pin {
   animation: embedded-dart-bite 300ms cubic-bezier(0.16, 0.86, 0.24, 1) both;
+}
+
+.embedded-dart--impact .embedded-dart__pin::before {
+  animation: embedded-dart-contact-proof 300ms cubic-bezier(0.16, 0.86, 0.24, 1) both;
 }
 
 .embedded-dart.is-boundary-hit .embedded-dart__core {
@@ -367,7 +418,17 @@
 @keyframes dart-front-approach {
   from { opacity: 1; transform: translate(-50%, -50%) scale(2.15); filter: blur(0.08rem); }
   78% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); filter: blur(0); }
-  to { opacity: 0; transform: translate(-50%, -50%) scale(0.9); filter: blur(0); }
+  to { opacity: 0.34; transform: translate(-50%, -50%) scale(1); filter: blur(0); }
+}
+
+@keyframes dart-projectile-handoff {
+  from { opacity: 0.34; transform: translate(-50%, -50%) scale(1); filter: blur(0); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.96); filter: blur(0); }
+}
+
+@keyframes dart-target-hit {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(0.72); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.45); }
 }
 
 @keyframes dart-tunnel-ring {
@@ -399,9 +460,15 @@
 }
 
 @keyframes embedded-dart-bite {
-  from { transform: translate(-50%, -50%) scale(1.7); }
-  45% { transform: translate(-50%, -50%) scale(0.82); }
+  from { transform: translate(-50%, -50%) scale(1.05); }
+  45% { transform: translate(-50%, -50%) scale(0.9); }
   to { transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes embedded-dart-contact-proof {
+  0% { opacity: 1; transform: scale(0.45); }
+  48% { opacity: 0.92; transform: scale(1.08); }
+  100% { opacity: 0; transform: scale(1.55); }
 }
 
 @keyframes boundary-names-impact {

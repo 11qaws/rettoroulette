@@ -6,29 +6,35 @@
  * result that has already been fixed. This keeps the on-air explanation and
  * the actual behaviour aligned.
  */
-export type RaffleStatus =
-  | 'roster'
-  | 'configuring'
-  | 'ready'
-  | 'locking'
-  | 'presenting'
-  | 'awaiting-dart'
-  | 'completed';
+export const RAFFLE_STATUSES = [
+  'roster',
+  'configuring',
+  'ready',
+  'locking',
+  'presenting',
+  'awaiting-dart',
+  'completed',
+] as const;
 
-export type RaffleEvent =
-  | 'save-roster'
-  | 'cancel-roster-configuring'
-  | 'cancel-roster-ready'
-  | 'cancel-roster-completed'
-  | 'open-roster'
-  | 'open-configuration'
-  | 'open-stage'
-  | 'lock-result'
-  | 'start-presentation'
-  | 'await-next-dart'
-  | 'complete-round'
-  | 'end-round-early'
-  | 'start-next-round';
+export type RaffleStatus = typeof RAFFLE_STATUSES[number];
+
+export const RAFFLE_EVENTS = [
+  'save-roster',
+  'cancel-roster-configuring',
+  'cancel-roster-ready',
+  'cancel-roster-completed',
+  'open-roster',
+  'open-configuration',
+  'open-stage',
+  'lock-result',
+  'start-presentation',
+  'await-next-dart',
+  'complete-round',
+  'end-round-early',
+  'start-next-round',
+] as const;
+
+export type RaffleEvent = typeof RAFFLE_EVENTS[number];
 
 type RaffleStatusMeta = {
   step: 1 | 2 | 3 | 4;

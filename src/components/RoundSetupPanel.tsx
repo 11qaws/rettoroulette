@@ -1,19 +1,19 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 
-import type { DrawMode, DrawTarget, Participant, Prize, WheelPresentation } from '../types';
+import type { DrawTarget, Participant, Prize, WheelPresentation } from '../types';
 import PrizeEditor from './PrizeEditor';
 import './RoundSetupPanel.css';
 
 type PrizePatch = Partial<Pick<Prize, 'name' | 'quantity'>>;
-type PresentationChoice = 'spin' | 'dart' | 'marble';
+type PresentationChoice = WheelPresentation;
 
 export interface RoundSetupPanelProps {
   target: DrawTarget;
-  drawMode: DrawMode;
   wheelPresentation: WheelPresentation;
   participantTotal: number;
   eligibleParticipants: Participant[];
   candidateParticipants: Participant[];
+  drawOptionCount: number;
   excludedCount: number;
   poolLimit: number;
   winnerCount: number;
@@ -51,11 +51,11 @@ function clampWholeNumber(value: number, min: number, max: number) {
 
 export default function RoundSetupPanel({
   target,
-  drawMode,
   wheelPresentation,
   participantTotal,
   eligibleParticipants,
   candidateParticipants,
+  drawOptionCount,
   excludedCount,
   poolLimit,
   winnerCount,
@@ -88,7 +88,7 @@ export default function RoundSetupPanel({
   const countInputId = useId();
   const poolInputId = useId();
   const countUnit = target === 'people' ? '명' : '개';
-  const presentationChoice: PresentationChoice = drawMode === 'marble' ? 'marble' : wheelPresentation;
+  const presentationChoice: PresentationChoice = wheelPresentation;
   const validPrizes = prizes.filter((prize) => prize.name.trim() && prize.quantity > 0);
   const validPrizeInventory = validPrizes.reduce((sum, prize) => sum + Math.max(0, prize.quantity), 0);
   const sourceValue = target === 'people'
@@ -100,6 +100,14 @@ export default function RoundSetupPanel({
       : `${validPrizes.length}종 · 재고 ${validPrizeInventory}개`;
   const maximumForInput = Math.max(1, maximumWinnerCount);
   const poolSampleSize = poolLimit > 0 ? poolLimit : Math.min(10, eligibleParticipants.length);
+  const extraSettingCount = [
+    poolLimit > 0,
+    target === 'people' ? Boolean(rewardLabel.trim()) : Boolean(recipient.trim()),
+    Boolean(drawLabel.trim()),
+  ].filter(Boolean).length;
+  const [advancedOpen, setAdvancedOpen] = useState(
+    useWeights || poolLimit > 0 || Boolean(rewardLabel.trim() || recipient.trim() || drawLabel.trim()),
+  );
 
   return (
     <section className="round-setup round-setup--compact" aria-label="추첨 설정">
@@ -119,16 +127,21 @@ export default function RoundSetupPanel({
         <span className="round-setup__label">{target === 'people' ? '명단' : '상품'}</span>
         <div className="round-setup__source-summary">
           <strong>{sourceValue}</strong>
-          {target === 'people' && candidateParticipants.length > 0 && candidateParticipants.length !== participantTotal && (
-            <span>후보 {candidateParticipants.length}명</span>
+          {target === 'people' && drawOptionCount > 0 && drawOptionCount !== participantTotal && (
+            <span>추첨 가능 {drawOptionCount}명</span>
           )}
         </div>
-        {target === 'people' && participantTotal > 0 ? (
+        {target === 'people' ? (
           <div className="round-setup__source-actions">
             {excludedCount > 0 && onRestoreExcluded && (
               <button type="button" disabled={disabled} onClick={onRestoreExcluded}>{excludedCount}명 복귀</button>
             )}
-            <button type="button" disabled={disabled} onClick={onEditRoster}>편집</button>
+            <button
+              type="button"
+              className={participantTotal === 0 ? 'is-primary' : undefined}
+              disabled={disabled}
+              onClick={onEditRoster}
+            >{participantTotal === 0 ? '명단 추가' : '편집'}</button>
           </div>
         ) : null}
       </div>
@@ -162,7 +175,8 @@ export default function RoundSetupPanel({
             type="number"
             min="1"
             max={maximumForInput}
-            value={Math.max(1, winnerCount)}
+            value={maximumWinnerCount === 0 ? '' : Math.max(1, winnerCount)}
+            placeholder="—"
             disabled={disabled || maximumWinnerCount === 0}
             onChange={(event) => onWinnerCountChange(clampWholeNumber(Number(event.target.value), 1, maximumForInput))}
           />
@@ -188,31 +202,36 @@ export default function RoundSetupPanel({
         </div>
       </div>
 
-      <div className="round-setup__row round-setup__row--rules">
-        <span className="round-setup__label">규칙</span>
-        <div className="round-setup__rule-controls">
-          <div className="round-setup__segmented" role="group" aria-label="확률">
-            <button type="button" aria-pressed={!useWeights} disabled={disabled} onClick={() => onUseWeightsChange(false)}>동일 확률</button>
-            <button type="button" aria-pressed={useWeights} disabled={disabled} onClick={() => onUseWeightsChange(true)}>직접 지정</button>
-          </div>
-          {target === 'people' ? (
-            <label className="round-setup__switch">
-              <input type="checkbox" checked={removeAfterDraw} disabled={disabled} onChange={(event) => onRemoveAfterDrawChange(event.target.checked)} />
-              <span aria-hidden="true" />
-              당첨 후 제외
-            </label>
-          ) : (
-            <span className="round-setup__fixed-rule">당첨 상품 재고 차감</span>
-          )}
-        </div>
-      </div>
-
-      <details className="round-setup__advanced" open={(useWeights || poolLimit > 0 || drawMode === 'marble') || undefined}>
+      <details
+        className="round-setup__advanced"
+        open={advancedOpen}
+        onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+      >
         <summary>
-          <span>고급 설정</span>
-          <em>{useWeights ? '확률 지정' : poolLimit > 0 ? `후보 ${candidateParticipants.length}명` : drawMode === 'marble' ? '마블' : ''}</em>
+          <span>세부 설정</span>
+          <em>
+            {useWeights ? '확률 지정' : '동일 확률'}
+            {' · '}
+            {target === 'people' ? removeAfterDraw ? '당첨 후 제외' : '중복 허용' : '재고 차감'}
+            {extraSettingCount > 0 ? ` · 추가 ${extraSettingCount}` : ''}
+          </em>
         </summary>
         <div className="round-setup__advanced-body">
+          <section className="round-setup__advanced-rules" aria-label="추첨 규칙">
+            <div className="round-setup__segmented" role="group" aria-label="확률">
+              <button type="button" aria-pressed={!useWeights} disabled={disabled} onClick={() => onUseWeightsChange(false)}>동일 확률</button>
+              <button type="button" aria-pressed={useWeights} disabled={disabled} onClick={() => onUseWeightsChange(true)}>직접 지정</button>
+            </div>
+            {target === 'people' ? (
+              <div className="round-setup__segmented" role="group" aria-label="중복 당첨 규칙">
+                <button type="button" aria-pressed={removeAfterDraw} disabled={disabled} onClick={() => onRemoveAfterDrawChange(true)}>당첨 후 제외</button>
+                <button type="button" aria-pressed={!removeAfterDraw} disabled={disabled} onClick={() => onRemoveAfterDrawChange(false)}>중복 허용</button>
+              </div>
+            ) : (
+              <span className="round-setup__fixed-rule">당첨 상품 재고 차감</span>
+            )}
+          </section>
+
           {target === 'people' ? (
             <label className="round-setup__field">
               <span>상품명 <em>선택</em></span>
@@ -255,14 +274,6 @@ export default function RoundSetupPanel({
               )}
             </section>
           )}
-
-          <button
-            type="button"
-            className="round-setup__marble-choice"
-            aria-pressed={presentationChoice === 'marble'}
-            disabled={disabled}
-            onClick={() => onPresentationChange('marble')}
-          >마블 레이스</button>
 
           {useWeights && target === 'people' && candidateParticipants.length > 0 && (
             <section className="round-setup__weight-editor" aria-label="참여자별 추첨권">

@@ -21,6 +21,7 @@ export interface ParticipantSetupProps {
   onClear?: () => void;
   /** Mirrors the unsaved draft into the non-committing stage preview. */
   onDraftChange?: (participants: Participant[]) => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onStart: (participants: Participant[]) => void;
 }
 
@@ -52,12 +53,21 @@ function parseManualNames(value: string) {
     .filter((name) => !/^(?:답글쓰기|더보기|등록|댓글|프로필 사진)$/u.test(name));
 }
 
+function rosterFingerprint(items: readonly Participant[]) {
+  return JSON.stringify(dedupeParticipants([...items]).map((item) => ({
+    id: item.id,
+    name: item.name,
+    weight: item.weight,
+  })));
+}
+
 export default function ParticipantSetup({
   initialParticipants,
   initialStep = 'paste',
   onCancel,
   onClear,
   onDraftChange,
+  onDirtyChange,
   onStart,
 }: ParticipantSetupProps) {
   const [step, setStep] = useState<SetupStep>(initialStep);
@@ -69,10 +79,19 @@ export default function ParticipantSetup({
   const [summary, setSummary] = useState<ParseSummary | null>(null);
   const rootRef = useRef<HTMLElement>(null);
   const richClipboard = useRef('');
+  const initialFingerprint = useRef(rosterFingerprint(initialParticipants));
 
   useEffect(() => {
     onDraftChange?.(dedupeParticipants(draft));
   }, [draft, onDraftChange]);
+
+  useEffect(() => {
+    onDirtyChange?.(
+      rosterFingerprint(draft) !== initialFingerprint.current
+      || pastedPage.trim().length > 0
+      || manualNames.trim().length > 0,
+    );
+  }, [draft, manualNames, onDirtyChange, pastedPage]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -160,13 +179,9 @@ export default function ParticipantSetup({
     ]);
     setDraft(nextDraft);
     setManualNames('');
-    setEditorNotice(`${nextDraft.length - before}명을 명단에 추가했어요.`);
-  };
-
-  const addSingleOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey) return;
-    event.preventDefault();
-    addManualNames();
+    const addedCount = nextDraft.length - before;
+    const skippedCount = names.length - addedCount;
+    setEditorNotice(`${addedCount}명을 명단에 추가했어요.${skippedCount > 0 ? ` 중복 ${skippedCount}명은 제외했어요.` : ''}`);
   };
 
   const updateName = (id: string, name: string) => {
@@ -223,9 +238,9 @@ export default function ParticipantSetup({
 
       {step === 'paste' && (
         <div className="setup-pane setup-pane--paste">
-          <div className="setup-source-tabs" role="tablist" aria-label="명단 입력 방식">
-            <button type="button" role="tab" aria-selected="true">카페 댓글</button>
-            <button type="button" role="tab" aria-selected="false" onClick={() => setStep('edit')}>직접 입력</button>
+          <div className="setup-source-tabs" role="group" aria-label="명단 입력 방식">
+            <button type="button" aria-pressed="true">카페 댓글</button>
+            <button type="button" aria-pressed="false" onClick={() => setStep('edit')}>직접 입력</button>
           </div>
           <p className="setup-copy"><strong>Ctrl+A → Ctrl+C → 붙여넣기</strong></p>
           <textarea
@@ -269,9 +284,9 @@ export default function ParticipantSetup({
 
       {step === 'edit' && (
         <div className="setup-pane">
-          <div className="setup-source-tabs" role="tablist" aria-label="명단 입력 방식">
-            <button type="button" role="tab" aria-selected="false" onClick={() => setStep('paste')}>카페 댓글</button>
-            <button type="button" role="tab" aria-selected="true">직접 입력</button>
+          <div className="setup-source-tabs" role="group" aria-label="명단 입력 방식">
+            <button type="button" aria-pressed="false" onClick={() => setStep('paste')}>카페 댓글</button>
+            <button type="button" aria-pressed="true">직접 입력</button>
           </div>
           <label className="setup-field-label" htmlFor="manual-names">한 줄에 한 명</label>
           <textarea
@@ -283,7 +298,6 @@ export default function ParticipantSetup({
               setManualNames(event.target.value);
               setEditorNotice('');
             }}
-            onKeyDown={addSingleOnEnter}
             placeholder={'티얀키\n사악한고래밥\nSeioon'}
           />
           <div className="setup-inline-action">

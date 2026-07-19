@@ -227,14 +227,22 @@
   white-space: nowrap;
 }
 
-.preparation-preview__primary:hover {
+.preparation-preview__primary:hover:not(:disabled) {
   transform: translateY(1px);
   box-shadow: 0 3px 0 var(--hot-pink-strong);
 }
 
-.preparation-preview__primary:active {
+.preparation-preview__primary:active:not(:disabled) {
   transform: translateY(4px);
   box-shadow: none;
+}
+
+.preparation-preview__primary:disabled {
+  border-color: var(--line);
+  background: #f3eee9;
+  box-shadow: none;
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .roster-drawer {
