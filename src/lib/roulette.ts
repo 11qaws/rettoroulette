@@ -5,11 +5,15 @@ export const DART_IMPACT_ANGLE = -90;
 export const DART_FLIGHT_DURATION_SECONDS = 1.15;
 export const DART_POST_IMPACT_MIN_SECONDS = 1.05;
 export const DART_POST_IMPACT_MAX_SECONDS = 2.35;
-export const PHOTO_FINISH_MAX_LEAD_DEGREES = 2.2;
+export const PHOTO_FINISH_MAX_LEAD_DEGREES = 5.5;
 /** The two boundary candidates must remain readable for roughly two seconds. */
 export const AUTO_PHOTO_FINISH_MIN_SECONDS = 1.95;
-export const DART_BOUNDARY_MAX_DEGREES = 2.2;
-export const SPIN_BOUNDARY_MAX_DEGREES = 2.2;
+/** The dart face occupies a wider angular footprint than the pointer dot. */
+export const DART_BOUNDARY_MAX_DEGREES = 5.5;
+export const DART_BOUNDARY_RATIO_PER_SIDE = 0.16;
+export const DART_BOUNDARY_CONTACT_TOLERANCE_RADIUS_RATIO = 0.056;
+/** The pointer proof should agree with a visibly close divider at the rim. */
+export const SPIN_BOUNDARY_MAX_DEGREES = 2.6;
 /** At most ten percent of a slice is treated as a dramatic spin boundary. */
 export const SPIN_BOUNDARY_RATIO_PER_SIDE = 0.05;
 
@@ -512,14 +516,16 @@ function resolvePhysicalLanding(
   screenAngle: number,
   maximumBoundaryDegrees: number,
   boundaryRatioPerSide: number,
+  boundaryLimitBasis: 'slice' | 'wheel' = 'slice',
 ) {
+  const slices = getRouletteSliceGeometry(participantCount, weights);
   const winnerIndex = getRouletteSliceIndexAtScreenAngle(
     rotation,
     participantCount,
     weights,
     screenAngle,
   );
-  const winner = getRouletteSliceGeometry(participantCount, weights)[winnerIndex];
+  const winner = slices[winnerIndex];
   if (!winner) return null;
 
   const span = winner.endAngle - winner.startAngle;
@@ -531,17 +537,25 @@ function resolvePhysicalLanding(
   const positionRatio = span > 0 ? clamp(offsetFromStart / span, 0, 1) : 0.5;
   const distanceFromStart = offsetFromStart;
   const distanceFromEnd = Math.max(0, span - offsetFromStart);
+  const visibleSliceCount = slices.filter(
+    (slice) => slice.endAngle - slice.startAngle > 1e-9,
+  ).length;
+  const ratioLimit = boundaryLimitBasis === 'wheel'
+    ? visibleSliceCount > 0
+      ? (360 * finiteClamped(boundaryRatioPerSide, 0, 0.5, 0)) / visibleSliceCount
+      : 0
+    : span * finiteClamped(boundaryRatioPerSide, 0, 0.5, 0);
   const threshold = Math.min(
     finiteNonNegative(maximumBoundaryDegrees, 0),
-    span * finiteClamped(boundaryRatioPerSide, 0, 0.5, 0),
+    ratioLimit,
   );
   const nearStart = distanceFromStart <= threshold;
   const nearEnd = distanceFromEnd <= threshold;
-  const kind: RouletteLandingKind = nearStart
-    ? 'near-start'
-    : nearEnd
-      ? 'near-end'
-      : 'interior';
+  const kind: RouletteLandingKind = nearStart || nearEnd
+    ? distanceFromStart <= distanceFromEnd
+      ? 'near-start'
+      : 'near-end'
+    : 'interior';
 
   return {
     winnerIndex,
@@ -553,6 +567,18 @@ function resolvePhysicalLanding(
       boundaryHit: kind !== 'interior',
     } satisfies RouletteFinishLanding,
   };
+}
+
+/** Converts the rendered dart face width at its actual radius into degrees. */
+export function getDartBoundaryToleranceDegrees(impactRadiusRatio: number) {
+  const safeRadius = finiteClamped(impactRadiusRatio, 0.1, 1, 1);
+  const linearRatio = Math.min(
+    1,
+    DART_BOUNDARY_CONTACT_TOLERANCE_RADIUS_RATIO / safeRadius,
+  );
+  const angularTolerance = (Math.asin(linearRatio) * 180) / Math.PI;
+
+  return Math.min(DART_BOUNDARY_MAX_DEGREES, angularTolerance);
 }
 
 /**
@@ -684,13 +710,17 @@ export function createDartPhysicalCommit(
   const safeDuration = finiteClamped(flightDurationSeconds, 1, 1.3, DART_FLIGHT_DURATION_SECONDS);
   const impactPoint = resolveDartImpactPoint(shot);
   const impactRotation = safeRotation + safeVelocity * safeDuration;
+  const dartBoundaryDegrees = getDartBoundaryToleranceDegrees(
+    impactPoint.impactRadiusRatio,
+  );
   const resolved = resolvePhysicalLanding(
     impactRotation,
     participantCount,
     weights,
     impactPoint.impactAngleDegrees,
-    DART_BOUNDARY_MAX_DEGREES,
-    0.16,
+    dartBoundaryDegrees,
+    DART_BOUNDARY_RATIO_PER_SIDE,
+    'wheel',
   );
   if (!resolved) return null;
 

@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AUTO_POINTER_ANGLE,
   AUTO_PHOTO_FINISH_MIN_SECONDS,
+  DART_BOUNDARY_CONTACT_TOLERANCE_RADIUS_RATIO,
+  DART_BOUNDARY_RATIO_PER_SIDE,
   DART_IMPACT_ANGLE,
   DART_FLIGHT_DURATION_SECONDS,
   PHOTO_FINISH_MAX_LEAD_DEGREES,
@@ -21,6 +23,7 @@ import {
   createSpinPhysicalCommit,
   getRouletteSliceGeometry,
   getRouletteSliceIndexAtScreenAngle,
+  getDartBoundaryToleranceDegrees,
   isRoulettePhotoFinish,
   nextWheelRotation,
   normalizeRouletteWeights,
@@ -171,16 +174,78 @@ describe('automatic roulette physical commit', () => {
     const many = countBoundaryLandings(32);
     const weighted = countBoundaryLandings(4, [1, 4, 2, 3]);
     expect(SPIN_BOUNDARY_RATIO_PER_SIDE).toBeLessThanOrEqual(0.05);
-    expect((five.start + five.end) / five.samples).toBeGreaterThan(0.05);
-    expect((five.start + five.end) / five.samples).toBeLessThan(0.07);
+    expect((five.start + five.end) / five.samples).toBeGreaterThan(0.07);
+    expect((five.start + five.end) / five.samples).toBeLessThan(0.075);
     expect((many.start + many.end) / many.samples).toBeLessThanOrEqual(0.101);
     expect(Math.abs(many.start - many.end)).toBeLessThanOrEqual(2);
     expect((weighted.start + weighted.end) / weighted.samples).toBeLessThanOrEqual(0.101);
     expect(Math.abs(weighted.start - weighted.end)).toBeLessThanOrEqual(2);
   });
+
+  it('treats a visually close pointer stop as a boundary without exceeding ten percent', () => {
+    const close = createSpinPhysicalCommit(0, 1_080, 5, undefined, () => 357.5 / 360);
+    const outside = createSpinPhysicalCommit(0, 1_080, 5, undefined, () => 357 / 360);
+
+    expect(close?.landing.positionRatio).toBeCloseTo(2.5 / 72, 8);
+    expect(close?.landing.kind).toBe('near-start');
+    expect(outside?.landing.positionRatio).toBeCloseTo(3 / 72, 8);
+    expect(outside?.landing.kind).toBe('interior');
+  });
 });
 
 describe('dart shot placement', () => {
+  it('uses the dart face at its actual impact radius for distance-only boundary judgment', () => {
+    const outerTolerance = getDartBoundaryToleranceDegrees(0.8);
+    const innerTolerance = getDartBoundaryToleranceDegrees(0.58);
+
+    expect(DART_BOUNDARY_CONTACT_TOLERANCE_RADIUS_RATIO).toBe(0.056);
+    expect(DART_BOUNDARY_RATIO_PER_SIDE).toBe(0.16);
+    expect(outerTolerance).toBeGreaterThan(4);
+    expect(innerTolerance).toBeGreaterThan(5.4);
+    expect(innerTolerance).toBeLessThanOrEqual(5.5);
+  });
+
+  it('classifies a visually touching dart as boundary without changing its shot coordinate', () => {
+    const shot = {
+      impactAngleDegrees: -90,
+      impactRadiusRatio: 0.8,
+      jitterA: { xPixels: 0, yPixels: 0 },
+      jitterB: { xPixels: 0, yPixels: 0 },
+      rollDegrees: 0,
+    };
+    const close = createDartPhysicalCommit(194, 1_080, 5, undefined, shot);
+    const outside = createDartPhysicalCommit(193.5, 1_080, 5, undefined, shot);
+
+    expect(close?.shot).toEqual(shot);
+    expect(close?.landing.leadDegrees).toBeCloseTo(4, 8);
+    expect(close?.landing.kind).toBe('near-start');
+    expect(outside?.landing.leadDegrees).toBeCloseTo(4.5, 8);
+    expect(outside?.landing.kind).toBe('interior');
+  });
+
+  it.each([
+    { weights: [1, 99], rotation: 197, distance: 1 },
+    { weights: [1, 999], rotation: 197.9, distance: 0.1 },
+  ])('keeps dart distance visual on a narrow weighted slice for $weights', ({ weights, rotation, distance }) => {
+    const commit = createDartPhysicalCommit(
+      rotation,
+      1_080,
+      2,
+      weights,
+      {
+        impactAngleDegrees: -90,
+        impactRadiusRatio: 0.8,
+        jitterA: { xPixels: 0, yPixels: 0 },
+        jitterB: { xPixels: 0, yPixels: 0 },
+        rollDegrees: 0,
+      },
+    );
+
+    expect(commit?.winnerIndex).toBe(0);
+    expect(commit?.landing.leadDegrees).toBeCloseTo(distance, 8);
+    expect(commit?.landing.kind).not.toBe('interior');
+  });
+
   it('keeps generated shots inside the safe upper arc and jitter bounds', () => {
     const low = createDartShotPlan(() => 0);
     const high = createDartShotPlan(() => 1);
