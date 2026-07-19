@@ -869,7 +869,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
 
   useEffect(() => {
     if (!isDartPresentation) setDartPhase('idle');
-    else if (!spinning && validWinner) setDartPhase('settled');
+    else if (!spinning && validWinner && completedSpinKey.current === spinKey) setDartPhase('settled');
     else if (!spinning && !validWinner) setDartPhase('idle');
   }, [isDartPresentation, spinning, validWinner]);
 
@@ -1032,7 +1032,13 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   };
 
   const visuallySpinning = spinning && isAnimating;
-  const showWinner = validWinner && !spinning && !visuallySpinning;
+  const showWinner = Boolean(
+    validWinner
+    && completedSpinKey.current === spinKey
+    && !spinning
+    && !isAnimating,
+  );
+  const winnerName = validWinner && winnerIndex !== null ? participants[winnerIndex] : '';
   const isBoundaryFocus = boundaryVisualPhase !== 'idle';
   const isDartReady = isDartPresentation && participantCount > 0 && !spinning && !validWinner;
   const isIdleSpinning = idleSpinning && participantCount > 0 && !spinning && !validWinner;
@@ -1044,6 +1050,11 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
         ? 'boundary-creep'
         : spinPhase;
   const currentLandingVisual = landingVisual?.spinKey === spinKey ? landingVisual : null;
+  const winnerProofVisible = Boolean(
+    validWinner
+    && currentLandingVisual
+    && (spinPhase === 'stop-hold' || showWinner),
+  );
   const boundaryLeftIndex = validWinner ? currentLandingVisual?.leftIndex ?? null : null;
   const boundaryRightIndex = validWinner ? currentLandingVisual?.rightIndex ?? null : null;
   const isDartBoundaryStop = Boolean(
@@ -1051,6 +1062,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     participantCount > 1 &&
     validWinner &&
     landingBoundaryHit &&
+    winnerProofVisible &&
     dartPhase === 'settled',
   );
   const showBoundaryNames = participantCount > 1 && validWinner && (
@@ -1059,13 +1071,13 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
   );
   const isAutoBoundaryStopped = !isDartPresentation
     && landingBoundaryHit
-    && (spinPhase === 'stop-hold' || showWinner);
+    && winnerProofVisible;
   const boundaryWinnerSide =
     isAutoBoundaryStopped || isDartBoundaryStop
       ? currentLandingVisual?.winnerSide ?? undefined
       : undefined;
   const showBoundaryWinnerSlice = Boolean(
-    validWinner &&
+    winnerProofVisible &&
     landingBoundaryHit &&
     (
       isAutoBoundaryStopped ||
@@ -1073,9 +1085,8 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
     ),
   );
   const showWinnerNameplate = Boolean(
-    validWinner
+    winnerProofVisible
     && !landingBoundaryHit
-    && (spinPhase === 'stop-hold' || showWinner),
   );
   const rootClassName = [
     'roulette-wheel',
@@ -1264,7 +1275,7 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
               winnerSide={boundaryWinnerSide}
             />
           )}
-          {validWinner && winnerIndex !== null && (
+          {showWinnerNameplate && winnerIndex !== null && (
             <WinnerNameplate
               name={participants[winnerIndex]}
               color={slices[winnerIndex]?.color ?? WHEEL_COLORS[0]}
@@ -1284,8 +1295,8 @@ const RouletteWheel = forwardRef<RouletteWheelHandle, RouletteWheelProps>(functi
           ? '룰렛이 회전 중입니다.'
           : showWinner
             ? isPrizeDraw
-              ? `당첨 상품은 ${participants[winnerIndex]}입니다.`
-              : `당첨자는 ${participants[winnerIndex]}님입니다.`
+              ? `당첨 상품은 ${winnerName}입니다.`
+              : `당첨자는 ${winnerName}님입니다.`
             : participantCount > 0
               ? isPrizeDraw
                 ? `${participantCount}개 상품이 준비되었습니다.`

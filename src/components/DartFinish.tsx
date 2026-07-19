@@ -156,6 +156,8 @@ export interface WinnerNameplateProps {
 
 /** Uses the boundary candidate card as the common proof language for interior stops. */
 export function WinnerNameplate({ name, color, visible, mode }: WinnerNameplateProps) {
+  if (!visible) return null;
+
   const style: WinnerNameplateStyle = { '--candidate-color': color };
 
   return (

@@ -52,13 +52,21 @@ function createPreviewLandingRandom(seed: number, presentation: WheelPresentatio
   };
 }
 
-type PreviewPhase =
+export type PreviewPhase =
   | 'idle'
   | 'cruise'
   | 'result-committed'
   | 'motion-started'
   | 'hold'
   | RouletteRevealPhase;
+
+/**
+ * A committed preview result is private until its physical presentation has
+ * started. The stopped hold is the only non-moving phase allowed to retain it.
+ */
+export function canExposePreviewWinner(phase: PreviewPhase, moving: boolean) {
+  return moving || phase === 'hold';
+}
 
 type PreviewCameraStyle = CSSProperties & {
   '--cinematic-impact-x': string;
@@ -204,11 +212,13 @@ export default function DrawPreviewDirector({
     const nextSpinKey = spinKeyRef.current;
     setLanding(nextLanding);
     setDartCommit(nextDartCommit);
-    setWinnerIndex(nextWinner);
     setPhase('result-committed');
     schedule(() => {
       if (runId !== runIdRef.current) return;
+      // Match the live path: the committed winner enters the visual component
+      // in the same render as motion. A stopped wheel must never see it first.
       setSpinKey(nextSpinKey);
+      setWinnerIndex(nextWinner);
       setPhase('motion-started');
       setMoving(true);
     }, presentation === 'dart' ? 0 : 140);
@@ -292,6 +302,7 @@ export default function DrawPreviewDirector({
     reducedMotion ? 'is-reduced-motion' : '',
   ].filter(Boolean).join(' ');
   const previewImpactPoint = resolveDartImpactPoint(dartCommit?.shot);
+  const exposedWinnerIndex = canExposePreviewWinner(phase, moving) ? winnerIndex : null;
   const cameraStyle: PreviewCameraStyle = {
     '--cinematic-impact-x': `${previewImpactPoint.xPercent}%`,
     '--cinematic-impact-y': `${previewImpactPoint.yPercent}%`,
@@ -314,7 +325,7 @@ export default function DrawPreviewDirector({
             participants={previewNames}
             weights={previewWeights}
             itemType={target === 'prizes' ? 'prize' : 'participant'}
-            winnerIndex={winnerIndex}
+            winnerIndex={exposedWinnerIndex}
             spinning={moving}
             idleSpinning={active && phase !== 'idle' && !moving && winnerIndex === null}
             spinKey={spinKey}
@@ -332,7 +343,7 @@ export default function DrawPreviewDirector({
           <MarbleRace
             participants={previewNames}
             itemType={target === 'prizes' ? 'prize' : 'participant'}
-            winnerIndex={winnerIndex}
+            winnerIndex={exposedWinnerIndex}
             racing={moving}
             raceKey={spinKey}
             onRaceEnd={() => finishCycle(runIdRef.current)}

@@ -121,4 +121,13 @@ describe('WinnerNameplate', () => {
     expect(markup).toContain('WIN!');
     expect(markup).toContain('아모레또');
   });
+
+  it('does not keep a hidden WIN panel mounted before physical proof', () => {
+    const markup = renderToStaticMarkup(
+      <WinnerNameplate name="아모레또" color="#ffb6c1" visible={false} mode="spin" />,
+    );
+
+    expect(markup).toBe('');
+    expect(markup).not.toContain('WIN!');
+  });
 });
