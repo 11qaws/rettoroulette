@@ -19,17 +19,25 @@
   isolation: isolate;
 }
 
-.roulette-wheel.is-spinning:not(.is-dart) {
-  /* Settle the click-time motion onto the true 12 o'clock axis before proof. */
-  animation: roulette-pointer-damping 320ms cubic-bezier(0.16, 0.76, 0.2, 1) both;
-}
-
 .roulette-wheel.is-auto-brake {
   --wheel-spin-duration: var(--wheel-auto-whirl-duration, 4.2s);
 }
 
 .roulette-wheel.is-auto-photo-finish {
   --wheel-spin-duration: var(--wheel-photo-finish-duration, 1.55s);
+}
+
+/* Keep the physical clicker active until the final half-second. Interior
+   landings finish in auto-brake; boundary landings continue through the
+   photo-finish phase before the same final settle. */
+.roulette-wheel.is-auto-brake[data-boundary-hit='false']:not(.is-dart),
+.roulette-wheel.is-auto-photo-finish[data-boundary-hit='true']:not(.is-dart) {
+  animation-name: roulette-pointer-damping;
+  animation-duration: 500ms;
+  animation-timing-function: cubic-bezier(0.16, 0.76, 0.2, 1);
+  animation-iteration-count: 1;
+  animation-fill-mode: both;
+  animation-delay: max(0s, calc(var(--wheel-spin-duration, 4.2s) - 0.5s));
 }
 
 .roulette-wheel.is-dart-flight {
@@ -629,7 +637,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .roulette-wheel.is-spinning:not(.is-dart) {
+  .roulette-wheel.is-auto-brake:not(.is-dart),
+  .roulette-wheel.is-auto-photo-finish:not(.is-dart) {
     --roulette-pointer-tick-amplitude: 0deg;
     animation: none;
   }
